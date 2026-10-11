@@ -2,6 +2,9 @@
 # Builds hop-lanes-standalone.html: index.html with Three.js and the fonts inlined,
 # so it plays with no internet (file viewers, offline phones).
 set -euo pipefail
+for tool in npm python3 tar; do
+  command -v "$tool" >/dev/null || { echo "build-standalone: needs $tool (and network access to the npm registry)" >&2; exit 1; }
+done
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -25,6 +28,7 @@ def face(family, weight, pkg, file):
     return (f'@font-face {{ font-family: "{family}"; font-weight: {weight}; font-display: swap; '
             f'src: url(data:font/woff2;base64,{data}) format("woff2"); }}')
 
+# Latin subset only: the game shows English text and digits
 fonts = '\n'.join([
     face('Press Start 2P', 400, 'fontsource-press-start-2p-5.0.20', 'press-start-2p-latin-400-normal.woff2'),
     face('Rubik', 500, 'fontsource-rubik-5.0.20', 'rubik-latin-500-normal.woff2'),

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src https://cdnjs.cloudflare.com 'unsafe-inline'; style-src https://fonts.googleapis.com 'unsafe-inline'; font-src https://fonts.gstatic.com data:; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Hop Lanes Arcade</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Rubik:wght@500;800&display=swap">
@@ -32,9 +32,9 @@ body {
   font-family: var(--font-ui); overflow: hidden;
   -webkit-user-select: none; user-select: none; touch-action: manipulation;
 }
-#app { position: relative; height: 100%; display: flex; flex-direction: column; }
+#app { position: relative; height: 100%; display: flex; flex-direction: column; overscroll-behavior: none; -webkit-touch-callout: none; }
 #stage { position: relative; flex: 1; min-height: 0; touch-action: none; }
-#app { overscroll-behavior: none; -webkit-touch-callout: none; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 #stage canvas { display: block; width: 100%; height: 100%; }
 
 /* marquee */
@@ -81,6 +81,7 @@ body {
 .card svg { width: 52%; height: auto; image-rendering: pixelated; }
 .card.ready { animation: bob .6s ease-in-out infinite alternate; }
 .card .state { color: var(--gold); }
+.card.p2 .state { color: #fff; }   /* gold on red is too faint */
 @keyframes bob { to { transform: translateY(-6px); } }
 
 /* center banners */
@@ -88,13 +89,14 @@ body {
   position: absolute; z-index: 5; left: 16px; right: 16px; top: 38%;
   text-align: center; font-family: var(--font-pixel); pointer-events: none;
 }
-#banner h1 {
+#banner h2 {
   margin: 0; font-size: clamp(22px, 8vw, 54px); color: var(--gold); line-height: 1.2;
   text-shadow: 4px 4px 0 #1d3b6b; text-wrap: balance;
 }
 #banner p { white-space: pre-line; margin: 14px 0 0; font-size: clamp(8px, 2.4vw, 13px); line-height: 1.8; text-shadow: 2px 2px 0 #000; }
 #logo { position: absolute; z-index: 4; left: 16px; right: 16px; top: 92px; text-align: center; pointer-events: none; }
-#logo div {
+#logo h1 {
+  margin: 0; font-weight: 400;
   display: inline-block; font-family: var(--font-pixel); font-size: clamp(22px, 7.5vw, 50px); line-height: 1.15;
   color: #fff; text-shadow: 0 5px 0 #b33a26, 4px 9px 0 rgba(0,0,0,.35); transform: rotate(-4deg);
 }
@@ -146,7 +148,7 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
 }
 #start:active { transform: translateY(3px); box-shadow: 0 1px 0 #6b7080; }
 .pad-col { display: flex; flex-direction: column; align-items: center; gap: 6px; }
-#keys { font-family: var(--font-pixel); font-size: 7px; color: #7d86a3; text-align: center; line-height: 1.8; }
+#keys { font-family: var(--font-pixel); font-size: 8px; color: #a9b2cc; text-align: center; line-height: 1.8; }
 @media (max-width: 520px), (pointer: coarse) { #keys { display: none; } }
 /* phones: the deck is tighter so the field gets the height */
 /* START is not needed there: tapping the field joins and plays */
@@ -165,7 +167,7 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
   .hs b { font-size: 16px; }
   .score { top: 10px; font-size: 20px; }
   #logo { top: 60px; }
-  #logo div { font-size: 24px; }
+  #logo h1 { font-size: 24px; }
   #cards { bottom: auto; top: 50%; transform: translateY(-50%); justify-content: space-between; padding-inline: max(4px, env(safe-area-inset-left, 0px)) max(4px, env(safe-area-inset-right, 0px)); }
   .card { width: 128px; padding: 8px 6px; gap: 4px; font-size: 7px; }
   .card svg { width: 40%; }
@@ -180,11 +182,12 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
   .tap { width: 72px; }
   #start { opacity: .85; }
 }
-@media (prefers-reduced-motion: reduce) { .card.ready { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .card.ready { animation: none; } .tap, .card, .pad { transition: none; } }
 </style>
 </head>
 <body>
 <div id="app">
+  <p class="sr-only">Two-player road crossing game. Player 1 moves with W, A, S and D. Player 2 moves with the arrow keys. Space starts. On a touch screen, tap the game to hop and swipe to move.</p>
   <div id="stage">
     <div id="marquee">
       <div class="hs"><small>ALL TIME BEST</small><b id="best">0</b></div>
@@ -192,9 +195,9 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
     </div>
     <div id="score1" class="score" hidden><span>P1 FROG</span><b>0</b></div>
     <div id="score2" class="score" hidden><span>P2 FOX</span><b>0</b></div>
-    <div id="logo"><div><small>ARCADE</small>HOP<br>LANES</div></div>
-    <div id="banner" hidden><h1></h1><p></p></div>
-    <div id="results" hidden>
+    <div id="logo"><h1><small>ARCADE</small>HOP<br>LANES</h1></div>
+    <div id="banner" hidden aria-live="polite"><h2></h2><p></p></div>
+    <div id="results" hidden aria-live="polite">
       <h2 id="resTitle">GAME OVER</h2>
       <div class="row">
         <div class="r1" id="res1"><span>FROG</span><b>0</b></div>
@@ -239,11 +242,16 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
 <script>
 (() => {
 'use strict';
-if (!window.THREE) {
+// show one clear message and hide the controls that would do nothing
+function fail(why) {
+  for (const id of ['cards', 'deck', 'logo']) document.getElementById(id).hidden = true;
   const b = document.getElementById('banner');
   b.hidden = false;
-  b.querySelector('h1').textContent = 'CAN NOT LOAD';
-  b.querySelector('p').textContent = 'The 3D library did not load. Connect to the internet, or open hop-lanes-standalone.html.';
+  b.querySelector('h2').textContent = 'CAN NOT LOAD';
+  b.querySelector('p').textContent = why;
+}
+if (!window.THREE) {
+  fail('The 3D library did not load. Connect to the internet, or open hop-lanes-standalone.html.');
   return;
 }
 
@@ -342,7 +350,7 @@ drawPix($('pic2'), PIX.fox);
 let actx = null;
 function audio() {
   if (!actx) { try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
-  if (actx && actx.state === 'suspended') actx.resume();
+  if (actx && actx.state === 'suspended') actx.resume().catch(() => {});
 }
 function beep(freq, dur, type = 'square', vol = 0.06, slide = 0) {
   if (!actx) return;
@@ -365,24 +373,38 @@ const sfx = {
 
 // ---------- phone extras: buzz and keep the screen on (both optional) ----------
 function buzz(ms) { try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) {} }
-let wakeLock = null;
+let wakeLock = null, wantAwake = false;
 async function keepAwake(on) {
+  wantAwake = on;
   try {
     if (on && !wakeLock && navigator.wakeLock) {
-      wakeLock = await navigator.wakeLock.request('screen');
-      wakeLock.addEventListener('release', () => { wakeLock = null; });
+      const lock = await navigator.wakeLock.request('screen');
+      if (!wantAwake) { lock.release(); return; }   // the game ended while we waited
+      wakeLock = lock;
+      lock.addEventListener('release', () => { if (wakeLock === lock) wakeLock = null; });
     } else if (!on && wakeLock) await wakeLock.release();
   } catch (e) { wakeLock = null; }
 }
+// the browser drops the lock when the tab is hidden; take it again on return
+document.addEventListener('visibilitychange', () => {
+  if (wantAwake && document.visibilityState === 'visible') keepAwake(true);
+});
 
 // ---------- three.js setup ----------
-const lowPower = matchMedia('(pointer: coarse)').matches;
+const lowGpu = matchMedia('(pointer: coarse)').matches;              // phones/tablets: cheaper shadows and resolution
+const touchQuery = matchMedia('(pointer: coarse)');                  // touch hints follow the current input
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const BLINK_STEPS = reduceMotion ? 2.5 : 8;                          // rail light on/off changes per second
 const stage = $('stage');
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(lowPower ? 1.5 : 2, window.devicePixelRatio || 1));
+let renderer;
+try { renderer = new THREE.WebGLRenderer({ antialias: true }); }
+catch (e) { fail('This browser can not show 3D graphics. Turn on WebGL or try another browser.'); return; }
+renderer.setPixelRatio(Math.min(lowGpu ? 1.5 : 2, window.devicePixelRatio || 1));
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = lowPower ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = lowGpu ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
 stage.prepend(renderer.domElement);
+renderer.domElement.setAttribute('role', 'img');
+renderer.domElement.setAttribute('aria-label', 'Game view: roads, rivers and train tracks to hop across');
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x74d3f2);
@@ -394,7 +416,7 @@ const ONE = new THREE.Vector3(1, 1, 1);
 scene.add(new THREE.HemisphereLight(0xffffff, 0x8899aa, 0.65));
 const sun = new THREE.DirectionalLight(0xffffff, 0.6);
 sun.castShadow = true;
-sun.shadow.mapSize.setScalar(lowPower ? 1024 : 2048);
+sun.shadow.mapSize.setScalar(lowGpu ? 1024 : 2048);
 Object.assign(sun.shadow.camera, { left: -11, right: 11, top: 15, bottom: -15, near: 1, far: 50 });
 scene.add(sun, sun.target);
 
@@ -411,7 +433,8 @@ function resize() {
   Object.assign(camera, { left: -halfW, right: halfW, top: halfW / aspect, bottom: -halfW / aspect });
   camera.updateProjectionMatrix();
 }
-new ResizeObserver(resize).observe(stage);   // also catches font loads and deck height changes
+if ('ResizeObserver' in window) new ResizeObserver(resize).observe(stage);   // also catches font loads and deck height changes
+else window.addEventListener('resize', resize);
 resize();
 
 // ---------- merged voxel meshes ----------
@@ -538,9 +561,9 @@ const LIGHT_ON = new THREE.MeshLambertMaterial({ color: 0x331111, emissive: 0xff
 const lightGeo = new THREE.BoxGeometry(0.38, 0.2, 0.14);
 
 // ---------- world ----------
-let lanes = new Map();
+const lanes = new Map();
 let maxRow = -1;
-let worldGroup = new THREE.Group();
+const worldGroup = new THREE.Group();
 scene.add(worldGroup);
 let lastKind = 'grass', streak = 0;
 
@@ -665,7 +688,7 @@ function updateLanes(dt, now) {
       let on;
       if (!tr.active) {
         lane.timer -= dt;
-        const blink = Math.floor(lane.timer * 8);
+        const blink = Math.floor(lane.timer * BLINK_STEPS);
         on = lane.timer < TRAIN_WARN && blink % 2 === 0;
         if (lane.timer < TRAIN_WARN && !lane.warned) { lane.warned = true; if (near(lane.r)) sfx.horn(); }
         if (on && blink !== lane.lastBell && near(lane.r)) { lane.lastBell = blink; sfx.bell(); }
@@ -676,7 +699,7 @@ function updateLanes(dt, now) {
       } else {
         tr.x += lane.dir * TRAIN_SPEED * dt;
         tr.mesh.position.x = tr.x;
-        on = Math.floor(now / 120) % 2 === 1;
+        on = Math.floor(now * BLINK_STEPS / 1000) % 2 === 1;
         if (Math.abs(tr.x) > WRAP + tr.len / 2 + 3) {
           tr.active = false; tr.mesh.visible = false; lane.warned = false;
           lane.timer = rand(3.5, 8);
@@ -730,7 +753,7 @@ function tryMove(p, dx, dr) {
     if (lane.kind === 'grass' && lane.trees.has(tx)) return;
   }
   if (p.row + dr < camRow - BEHIND_LIMIT) return;
-  p.hop = { t: 0, fx: p.x, fz: -p.row, tx, tz: -(p.row + dr) };
+  p.hop = { t: 0, fromRow: p.row, fx: p.x, fz: -p.row, tx, tz: -(p.row + dr) };
   p.row += dr;
   if (p.row > p.score) { p.score = p.row; p.scoreEl.textContent = p.score; }
   sfx.hop(p.id);
@@ -815,17 +838,20 @@ function updatePlayer(p, dt) {
     } else m.position.y = 0;
   }
 
-  if (!lane) return;
-  if (lane.kind === 'road') {
-    for (const o of lane.objs) if (Math.abs(o.x - p.x) < o.len / 2 + HIT_PAD) { kill(p, 'squash'); return; }
-  } else if (lane.kind === 'rail' && lane.train.active) {
-    if (Math.abs(lane.train.x - p.x) < lane.train.len / 2 + HIT_PAD) { p.trainDir = lane.dir; kill(p, 'train'); return; }
+  // until mid-hop the player is still over the row they left
+  const hz = p.hop && p.hop.t < 0.5 ? lanes.get(p.hop.fromRow) : lane;
+  if (!hz) return;
+  if (hz.kind === 'road') {
+    for (const o of hz.objs) if (Math.abs(o.x - p.x) < o.len / 2 + HIT_PAD) { kill(p, 'squash'); return; }
+  } else if (hz.kind === 'rail' && hz.train.active) {
+    if (Math.abs(hz.train.x - p.x) < hz.train.len / 2 + HIT_PAD) { p.trainDir = hz.dir; kill(p, 'train'); return; }
   }
   if (p.row < camRow - BEHIND_LIMIT) kill(p, 'slow');
 }
 
 // ---------- screens ----------
-const banner = $('banner'), bannerH = banner.querySelector('h1'), bannerP = banner.querySelector('p');
+const banner = $('banner'), bannerH = banner.querySelector('h2'), bannerP = banner.querySelector('p');
+const resultsEl = $('results');
 function setBanner(h, sub = '') {
   const key = h + '|' + sub;
   if (key === bannerKey) return;      // only touch the DOM when the text changes
@@ -834,13 +860,13 @@ function setBanner(h, sub = '') {
   bannerH.textContent = h; bannerP.textContent = sub;
 }
 const pads = document.querySelectorAll('.pad');
-const JOIN_TEXT = lowPower ? 'TAP THIS<br>SIDE TO JOIN' : 'PRESS TAP<br>TO JOIN';
+const joinText = () => touchQuery.matches ? 'TAP THIS<br>SIDE TO JOIN' : 'PRESS TAP<br>TO JOIN';
 function setCard(i) {
   const c = $('card' + (i + 1)), p = players[i];
   pads[i].classList.toggle('idle', (state === 'play' || state === 'over') && !p.joined);
   c.classList.toggle('ready', p.joined && state === 'countdown');
   c.style.visibility = state === 'play' || state === 'over' ? 'hidden' : 'visible';
-  c.firstElementChild.innerHTML = p.joined ? 'READY!' : JOIN_TEXT;
+  c.firstElementChild.innerHTML = p.joined ? 'READY!' : joinText();
   c.lastElementChild.textContent = p.joined ? 'PLAYER ' + (i + 1) : 'FREE PLAY';
 }
 const setCards = () => { setCard(0); setCard(1); };
@@ -850,7 +876,7 @@ function toAttract() {
   players.forEach(p => { p.joined = false; despawn(p); });
   resetWorld();
   refreshBests();
-  $('results').hidden = true; $('logo').hidden = false;
+  resultsEl.hidden = true; $('logo').hidden = false;
   $('score1').hidden = $('score2').hidden = true;
   setBanner('');
   setCards();
@@ -912,7 +938,9 @@ const KEYS = {
   ArrowUp: [1, 0, 1], ArrowDown: [1, 0, -1], ArrowLeft: [1, -1, 0], ArrowRight: [1, 1, 0]
 };
 window.addEventListener('keydown', e => {
-  if (e.repeat) return;
+  if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;   // leave browser shortcuts alone
+  // a focused on-screen button handles its own Enter/Space (as a click)
+  if ((e.code === 'Enter' || e.code === 'Space') && e.target.closest && e.target.closest('button')) return;
   const k = KEYS[e.code];
   if (k) { e.preventDefault(); press(...k); }
   else if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); pressStart(); }
@@ -920,17 +948,19 @@ window.addEventListener('keydown', e => {
 document.querySelectorAll('.tap').forEach(btn => {
   const i = +btn.dataset.p;
   btn.addEventListener('pointerdown', e => { e.preventDefault(); btn.classList.add('down'); press(i, 0, 1); });
+  btn.addEventListener('click', e => { if (e.detail === 0) press(i, 0, 1); });   // keyboard activation only
   ['pointerup', 'pointerleave', 'pointercancel'].forEach(t => btn.addEventListener(t, () => btn.classList.remove('down')));
 });
 document.querySelectorAll('.side').forEach(btn => {
   btn.addEventListener('pointerdown', e => { e.preventDefault(); press(+btn.dataset.p, +btn.dataset.dx, 0); });
+  btn.addEventListener('click', e => { if (e.detail === 0) press(+btn.dataset.p, +btn.dataset.dx, 0); });
 });
 $('start').addEventListener('click', pressStart);
 
 // touch (or click) on the field itself: tap = hop forward, swipe = move that way.
 // With one player in the game the whole field is theirs; otherwise left half = P1, right half = P2.
 const SWIPE_MIN = 24;   // px of travel before a touch counts as a swipe
-const touches = new Map();
+const pointers = new Map();
 function fieldPlayer(clientX) {
   if (state === 'play') {
     const solo = players.filter(p => p.joined);
@@ -941,10 +971,10 @@ function fieldPlayer(clientX) {
 }
 stage.addEventListener('pointerdown', e => {
   if (e.button > 0) return;
-  touches.set(e.pointerId, { x: e.clientX, y: e.clientY, i: fieldPlayer(e.clientX), done: false });
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, i: fieldPlayer(e.clientX), done: false });
 });
 stage.addEventListener('pointermove', e => {
-  const t = touches.get(e.pointerId);
+  const t = pointers.get(e.pointerId);
   if (!t || t.done) return;
   const dx = e.clientX - t.x, dy = e.clientY - t.y;
   if (Math.hypot(dx, dy) < SWIPE_MIN) return;
@@ -953,13 +983,13 @@ stage.addEventListener('pointermove', e => {
   else press(t.i, 0, dy < 0 ? 1 : -1);
 });
 function endTouch(e) {
-  const t = touches.get(e.pointerId);
-  touches.delete(e.pointerId);
+  const t = pointers.get(e.pointerId);
+  pointers.delete(e.pointerId);
   if (t && !t.done && e.type === 'pointerup') press(t.i, 0, 1);
 }
 stage.addEventListener('pointerup', endTouch);
 stage.addEventListener('pointercancel', endTouch);
-document.addEventListener('contextmenu', e => e.preventDefault());
+$('app').addEventListener('contextmenu', e => e.preventDefault());
 
 // ---------- loop ----------
 let last = performance.now();
@@ -974,7 +1004,7 @@ function frame(now) {
     if (n !== before && n > 0) sfx.tick();
     if (countdown <= 0) startPlay();
     else setBanner(String(n), (players.every(p => p.joined) ? 'FROG VS FOX' : 'OTHER PLAYER: TAP TO JOIN')
-      + (lowPower ? '\nTAP TO HOP \u00b7 SWIPE TO TURN' : ''));
+      + (touchQuery.matches ? '\nTAP TO HOP \u00b7 SWIPE TO TURN' : ''));
   } else if (state === 'play') {
     playT += dt;
     if (goT > 0 && (goT -= dt) <= 0) setBanner('');
@@ -984,7 +1014,7 @@ function frame(now) {
     camRow += Math.min(1.1, 0.3 + playT * 0.006) * dt;
     if (lead - 2 > camRow) camRow += (lead - 2 - camRow) * Math.min(1, dt * 3);
   } else if (state === 'over' && stateT > RESULTS_DELAY) {
-    $('results').hidden = false;
+    resultsEl.hidden = false;
   }
 
   ensureLanes();
