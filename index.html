@@ -236,6 +236,13 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
 <script>
 (() => {
 'use strict';
+if (!window.THREE) {
+  const b = document.getElementById('banner');
+  b.hidden = false;
+  b.querySelector('h1').textContent = 'CAN NOT LOAD';
+  b.querySelector('p').textContent = 'The 3D library did not load. Connect to the internet, or open hop-lanes-standalone.html.';
+  return;
+}
 
 // ---------- tuning ----------
 const PLAY_HALF = 4;          // playable columns: -4..4
