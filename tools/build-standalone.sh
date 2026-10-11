@@ -37,6 +37,7 @@ fonts = '\n'.join([
 link = re.compile(r'<link rel="stylesheet" href="https://fonts\.googleapis\.com[^"]*">\n')
 cdn = re.compile(r'<script src="https://cdnjs\.cloudflare\.com/ajax/libs/three\.js/r128/three\.min\.js"[^>]*></script>')
 assert link.search(html) and cdn.search(html)
+html = re.sub(r'<link rel="preconnect"[^>]*>\n', '', html)
 html = link.sub(lambda m: '<style>\n/* Press Start 2P and Rubik: SIL Open Font License 1.1 */\n' + fonts + '\n</style>\n', html, count=1)
 html = cdn.sub(lambda m: '<script>\n' + three + '\n</script>', html, count=1)
 out = root / 'hop-lanes-standalone.html'

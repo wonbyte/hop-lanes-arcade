@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src https://cdnjs.cloudflare.com 'unsafe-inline'; style-src https://fonts.googleapis.com 'unsafe-inline'; font-src https://fonts.gstatic.com data:; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Hop Lanes Arcade</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Rubik:wght@500;800&display=swap">
 <style>
 /* Layout: full-bleed 3D playfield, marquee bar on top, two-player control deck at the bottom. Single arcade look. */
@@ -263,7 +266,7 @@ const HOP_TIME = 0.12;
 const HIT_PAD = 0.28;         // extra hit width around cars and trains
 const TRAIN_SPEED = 26;
 const TRAIN_WARN = 1.3;       // seconds the signal flashes before a train
-const LANES_AHEAD = 26, LANES_BEHIND = 12;
+const LANES_AHEAD = 22, LANES_BEHIND = 12;
 let camLead = 4.2;            // camera looks this many rows past the scroll line (less on wide screens)
 const BEHIND_LIMIT = 4.5;     // fall this far behind the scroll line and you are out
 const COUNTDOWN = 3;
@@ -274,6 +277,8 @@ const $ = id => document.getElementById(id);
 
 // ---------- game state ----------
 let state = 'attract', stateT = 0, camRow = 0, playT = 0, countdown = 0, goT = 0;
+let visRows = 14;      // lanes further than this from the camera focus are not drawn
+let frameN = 0;
 let bannerKey = '';
 
 // ---------- storage (best effort) ----------
@@ -360,6 +365,9 @@ function beep(freq, dur, type = 'square', vol = 0.06, slide = 0) {
   g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
   o.connect(g).connect(actx.destination); o.start(t); o.stop(t + dur);
 }
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && actx && actx.state === 'running') actx.suspend().catch(() => {});
+});
 const sfx = {
   hop: id => beep(id ? 520 : 440, 0.07, 'square', 0.04, 200),
   squash: () => beep(160, 0.25, 'sawtooth', 0.08, -120),
@@ -417,7 +425,7 @@ scene.add(new THREE.HemisphereLight(0xffffff, 0x8899aa, 0.65));
 const sun = new THREE.DirectionalLight(0xffffff, 0.6);
 sun.castShadow = true;
 sun.shadow.mapSize.setScalar(lowGpu ? 1024 : 2048);
-Object.assign(sun.shadow.camera, { left: -11, right: 11, top: 15, bottom: -15, near: 1, far: 50 });
+Object.assign(sun.shadow.camera, { top: 15, bottom: -15, near: 1, far: 50 });   // left/right set in resize()
 scene.add(sun, sun.target);
 
 function resize() {
@@ -432,6 +440,11 @@ function resize() {
   camLead = wide ? 2.5 : 4.2;
   Object.assign(camera, { left: -halfW, right: halfW, top: halfW / aspect, bottom: -halfW / aspect });
   camera.updateProjectionMatrix();
+  // rows on screen (the ground is seen at an angle, so one screen unit covers ~1.35 rows) + a margin for shadows
+  visRows = camera.top * 1.35 + 2;
+  const sc = sun.shadow.camera;
+  sc.left = -(halfW + 2); sc.right = halfW + 2;
+  sc.updateProjectionMatrix();
 }
 if ('ResizeObserver' in window) new ResizeObserver(resize).observe(stage);   // also catches font loads and deck height changes
 else window.addEventListener('resize', resize);
@@ -640,7 +653,7 @@ function addLane(r) {
     lane.speed = rand(1.0, 1.9) + diff * 1.0;
     fillTraffic(lane, Math.max(3, Math.floor(rand(4, 6) - diff * 2)), z, () => {
       const len = pick([2, 3, 3, 4]) - (diff > 0.6 && Math.random() < 0.5 ? 1 : 0);
-      return { mesh: voxelMesh(cachedGeo('log' + len, () => logBoxes(len))), len };
+      return { mesh: voxelMesh(cachedGeo('log' + len, () => logBoxes(len)), false), len };   // flat on the water
     });
   } else if (kind === 'rail') {
     ground.push([40, 0.3, 1, 0x7b6f6a, 0, -0.3, z]);
@@ -657,7 +670,10 @@ function addLane(r) {
     lane.train.mesh.visible = false;
     lane.group.add(lane.train.mesh);
   }
-  lane.ground = voxelMesh(mergeBoxes(ground));   // unique per lane, disposed with the lane
+  // unique per lane, disposed with the lane; flat ground does not cast shadows, trees and the rail pole do
+  lane.ground = voxelMesh(mergeBoxes(ground), kind === 'grass' ? lane.trees.size > 0 : kind === 'rail');
+  lane.ground.matrixAutoUpdate = false;
+  lane.ground.updateMatrix();
   lane.group.add(lane.ground);
   worldGroup.add(lane.group);
   lanes.set(r, lane);
@@ -1019,6 +1035,8 @@ function frame(now) {
 
   ensureLanes();
   updateLanes(dt, now);
+  const focusRow = camRow + camLead;
+  for (const lane of lanes.values()) lane.group.visible = Math.abs(lane.r - focusRow) < visRows;
   for (const p of players) updatePlayer(p, dt);
   updateParts(dt);
 
@@ -1029,7 +1047,10 @@ function frame(now) {
   sun.position.set(focus.x - 6, 14, focus.z + 6);
   sun.target.position.copy(focus);
 
-  renderer.render(scene, camera);
+  // menus need no 60fps: draw every other frame there to save battery
+  const idle = state === 'attract' || (state === 'over' && stateT > RESULTS_DELAY);
+  if (!idle || (frameN++ & 1) === 0) renderer.render(scene, camera);
+  if (state === 'attract' && stateT > 5 && actx && actx.state === 'running') actx.suspend().catch(() => {});
   requestAnimationFrame(frame);
 }
 
