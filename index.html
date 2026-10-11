@@ -203,23 +203,51 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
 (() => {
 'use strict';
 
-// ---------- constants ----------
+// ---------- tuning ----------
 const PLAY_HALF = 4;          // playable columns: -4..4
 const EDGE_DEATH = 5.4;       // carried this far on a log = swept away
 const WRAP = 15;              // traffic wraps at +-WRAP
 const HOP_TIME = 0.12;
+const HIT_PAD = 0.28;         // extra hit width around cars and trains
+const TRAIN_SPEED = 26;
+const TRAIN_WARN = 1.3;       // seconds the signal flashes before a train
+const LANES_AHEAD = 26, LANES_BEHIND = 12;
+const CAM_LEAD = 4.2;         // camera looks this many rows past the scroll line
+const BEHIND_LIMIT = 4.5;     // fall this far behind the scroll line and you are out
+const COUNTDOWN = 3;
+const RESULTS_DELAY = 1.1;    // seconds from last death to the results panel (and restart)
+const GO_TIME = 0.6;
+const TAU = Math.PI * 2;
 const $ = id => document.getElementById(id);
 
+// ---------- game state ----------
+let state = 'attract', stateT = 0, camRow = 0, playT = 0, countdown = 0, goT = 0;
+let bannerKey = '';
+
 // ---------- storage (best effort) ----------
-const today = new Date().toISOString().slice(0, 10);
+const BEST_KEY = 'hoplanes.best', DAY_PREFIX = 'hoplanes.day.';
+const dayKey = () => DAY_PREFIX + new Date().toLocaleDateString('en-CA');   // local YYYY-MM-DD
 function load(k) { try { return +localStorage.getItem(k) || 0; } catch (e) { return 0; } }
 function save(k, v) { try { localStorage.setItem(k, String(v)); } catch (e) {} }
-let bestAll = load('hoplanes.best');
-let bestDay = load('hoplanes.day.' + today);
-function showBests() { $('best').textContent = bestAll; $('daily').textContent = bestDay; }
-showBests();
+function dropOldDays() {
+  try {
+    const keep = dayKey();
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(DAY_PREFIX) && k !== keep) localStorage.removeItem(k);
+    }
+  } catch (e) {}
+}
+let bestAll = load(BEST_KEY);
+let bestDay = 0;
+function refreshBests() {
+  bestDay = load(dayKey());
+  $('best').textContent = bestAll;
+  $('daily').textContent = bestDay;
+}
+dropOldDays();
 
-// ---------- pixel portraits for the join cards (original characters) ----------
+// ---------- pixel portraits for the join cards ----------
 const PIX = {
   frog: { rows: [
     '............',
@@ -275,9 +303,9 @@ function beep(freq, dur, type = 'square', vol = 0.06, slide = 0) {
   o.connect(g).connect(actx.destination); o.start(t); o.stop(t + dur);
 }
 const sfx = {
-  hop: p => beep(p ? 520 : 440, 0.07, 'square', 0.04, 200),
-  squash: () => { beep(160, 0.25, 'sawtooth', 0.08, -120); },
-  splash: () => { beep(900, 0.3, 'triangle', 0.06, -800); },
+  hop: id => beep(id ? 520 : 440, 0.07, 'square', 0.04, 200),
+  squash: () => beep(160, 0.25, 'sawtooth', 0.08, -120),
+  splash: () => beep(900, 0.3, 'triangle', 0.06, -800),
   bell: () => beep(1250, 0.08, 'square', 0.025),
   horn: () => { beep(220, 0.5, 'sawtooth', 0.05); beep(277, 0.5, 'sawtooth', 0.04); },
   join: () => { beep(660, 0.08); setTimeout(() => beep(990, 0.12), 80); },
@@ -286,128 +314,162 @@ const sfx = {
 };
 
 // ---------- three.js setup ----------
+const lowPower = matchMedia('(pointer: coarse)').matches;
 const stage = $('stage');
 const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+renderer.setPixelRatio(Math.min(lowPower ? 1.5 : 2, window.devicePixelRatio || 1));
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = lowPower ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
 stage.prepend(renderer.domElement);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x74d3f2);
 const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100);
 const CAM_OFF = new THREE.Vector3(3.2, 12, 7.5);
+const focus = new THREE.Vector3();
+const ONE = new THREE.Vector3(1, 1, 1);
 
 scene.add(new THREE.HemisphereLight(0xffffff, 0x8899aa, 0.65));
 const sun = new THREE.DirectionalLight(0xffffff, 0.6);
 sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
-Object.assign(sun.shadow.camera, { left: -14, right: 14, top: 18, bottom: -18, near: 1, far: 50 });
+sun.shadow.mapSize.setScalar(lowPower ? 1024 : 2048);
+Object.assign(sun.shadow.camera, { left: -11, right: 11, top: 15, bottom: -15, near: 1, far: 50 });
 scene.add(sun, sun.target);
 
-let viewHalfW = 6.5;
 function resize() {
   const w = stage.clientWidth, h = stage.clientHeight;
+  if (!w || !h) return;
   renderer.setSize(w, h, false);
   const aspect = w / h;
-  viewHalfW = aspect < 0.8 ? 6.2 : 7.2;
-  const halfH = viewHalfW / aspect;
-  Object.assign(camera, { left: -viewHalfW, right: viewHalfW, top: halfH, bottom: -halfH });
+  const halfW = aspect < 0.8 ? 6.2 : 7.2;
+  Object.assign(camera, { left: -halfW, right: halfW, top: halfW / aspect, bottom: -halfW / aspect });
   camera.updateProjectionMatrix();
 }
-window.addEventListener('resize', resize);
+new ResizeObserver(resize).observe(stage);   // also catches font loads and deck height changes
 resize();
 
-const matCache = {};
-function mat(color) {
-  return matCache[color] || (matCache[color] = new THREE.MeshLambertMaterial({ color }));
+// ---------- merged voxel meshes ----------
+// Every model is a list of boxes [w, h, d, color, x, y, z] (y = bottom of the box).
+// Each list becomes ONE mesh with vertex colors, so a lane or a car is a single draw call.
+const voxelMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+const UNIT = new THREE.BoxGeometry(1, 1, 1);
+const UP = UNIT.attributes.position.array, UN = UNIT.attributes.normal.array, UI = UNIT.index.array;
+const UV = UP.length / 3;
+const tmpColor = new THREE.Color();
+
+function mergeBoxes(boxes) {
+  const n = boxes.length;
+  const pos = new Float32Array(n * UV * 3), nor = new Float32Array(n * UV * 3), col = new Float32Array(n * UV * 3);
+  const idx = new (n * UV > 65535 ? Uint32Array : Uint16Array)(n * UI.length);
+  boxes.forEach(([w, h, d, color, x, y, z], k) => {
+    tmpColor.setHex(color);
+    const o = k * UV * 3;
+    for (let i = 0; i < UV * 3; i += 3) {
+      pos[o + i] = UP[i] * w + x;
+      pos[o + i + 1] = UP[i + 1] * h + y + h / 2;
+      pos[o + i + 2] = UP[i + 2] * d + z;
+      col[o + i] = tmpColor.r; col[o + i + 1] = tmpColor.g; col[o + i + 2] = tmpColor.b;
+    }
+    nor.set(UN, o);
+    for (let i = 0; i < UI.length; i++) idx[k * UI.length + i] = UI[i] + k * UV;
+  });
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.setIndex(new THREE.BufferAttribute(idx, 1));
+  return g;
 }
-const boxGeo = new THREE.BoxGeometry(1, 1, 1);
-function box(w, h, d, color, x = 0, y = 0, z = 0, shadow = true) {
-  const m = new THREE.Mesh(boxGeo, mat(color));
-  m.scale.set(w, h, d); m.position.set(x, y + h / 2, z);
-  m.castShadow = shadow; m.receiveShadow = true;
+function voxelMesh(geo, cast = true) {
+  const m = new THREE.Mesh(geo, voxelMat);
+  m.castShadow = cast; m.receiveShadow = true;
   return m;
 }
+// shared geometries for models that repeat (never disposed)
+const geoCache = new Map();
+const cachedGeo = (key, build) => geoCache.get(key) || geoCache.set(key, mergeBoxes(build())).get(key);
 
 // ---------- random ----------
 const rand = (a, b) => a + Math.random() * (b - a);
 const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 
-// ---------- models ----------
-function makeFrog() {
-  const g = new THREE.Group(), b = new THREE.Group();
-  b.add(box(0.62, 0.36, 0.62, 0x4cbf3f, 0, 0.08, 0));
-  b.add(box(0.5, 0.06, 0.5, 0xa6e37a, 0, 0.02, 0));          // belly
-  b.add(box(0.5, 0.05, 0.04, 0xe0453a, 0, 0.22, -0.31));      // mouth
-  for (const s of [-1, 1]) {
-    b.add(box(0.2, 0.2, 0.2, 0xffffff, s * 0.17, 0.42, -0.16));
-    b.add(box(0.08, 0.1, 0.06, 0x111111, s * 0.17, 0.48, -0.27));
-    b.add(box(0.16, 0.12, 0.3, 0x2d7a25, s * 0.33, 0, 0.12));  // back legs
-    b.add(box(0.1, 0.1, 0.12, 0x2d7a25, s * 0.22, 0, -0.32));  // front feet
-  }
-  g.add(b); g.userData.body = b; return g;
+// ---------- models (all face -z, which is "forward") ----------
+function frogBoxes() {
+  const b = [
+    [0.62, 0.36, 0.62, 0x4cbf3f, 0, 0.08, 0],
+    [0.5, 0.06, 0.5, 0xa6e37a, 0, 0.02, 0],          // belly
+    [0.5, 0.05, 0.04, 0xe0453a, 0, 0.22, -0.31]       // mouth
+  ];
+  for (const s of [-1, 1]) b.push(
+    [0.2, 0.2, 0.2, 0xffffff, s * 0.17, 0.42, -0.16],  // eyes
+    [0.08, 0.1, 0.06, 0x111111, s * 0.17, 0.48, -0.27],
+    [0.16, 0.12, 0.3, 0x2d7a25, s * 0.33, 0, 0.12],    // back legs
+    [0.1, 0.1, 0.12, 0x2d7a25, s * 0.22, 0, -0.32]);   // front feet
+  return b;
 }
-function makeFox() {
-  const g = new THREE.Group(), b = new THREE.Group();
-  b.add(box(0.5, 0.5, 0.56, 0xf07a2a, 0, 0.1, 0));
-  b.add(box(0.36, 0.3, 0.06, 0xfff4e6, 0, 0.12, -0.29));      // chest
-  b.add(box(0.26, 0.16, 0.22, 0xfff4e6, 0, 0.3, -0.36));      // snout
-  b.add(box(0.08, 0.07, 0.06, 0x1a1a1a, 0, 0.42, -0.47));     // nose
-  for (const s of [-1, 1]) {
-    b.add(box(0.07, 0.09, 0.04, 0x1a1a1a, s * 0.15, 0.46, -0.28)); // eyes
-    b.add(box(0.14, 0.18, 0.1, 0xf07a2a, s * 0.16, 0.6, -0.05));   // ears
-    b.add(box(0.14, 0.06, 0.1, 0x1a1a1a, s * 0.16, 0.78, -0.05));
-    b.add(box(0.1, 0.12, 0.1, 0x1a1a1a, s * 0.14, 0, -0.12));      // legs
-  }
-  b.add(box(0.18, 0.18, 0.34, 0xf07a2a, 0, 0.25, 0.42));      // tail
-  b.add(box(0.16, 0.16, 0.12, 0xfff4e6, 0, 0.26, 0.64));
-  g.add(b); g.userData.body = b; return g;
+function foxBoxes() {
+  const b = [
+    [0.5, 0.5, 0.56, 0xf07a2a, 0, 0.1, 0],
+    [0.36, 0.3, 0.06, 0xfff4e6, 0, 0.12, -0.29],      // chest
+    [0.26, 0.16, 0.22, 0xfff4e6, 0, 0.3, -0.36],      // snout
+    [0.08, 0.07, 0.06, 0x1a1a1a, 0, 0.42, -0.47],     // nose
+    [0.18, 0.18, 0.34, 0xf07a2a, 0, 0.25, 0.42],      // tail
+    [0.16, 0.16, 0.12, 0xfff4e6, 0, 0.26, 0.64]
+  ];
+  for (const s of [-1, 1]) b.push(
+    [0.07, 0.09, 0.04, 0x1a1a1a, s * 0.15, 0.46, -0.28], // eyes
+    [0.14, 0.18, 0.1, 0xf07a2a, s * 0.16, 0.6, -0.05],   // ears
+    [0.14, 0.06, 0.1, 0x1a1a1a, s * 0.16, 0.78, -0.05],
+    [0.1, 0.12, 0.1, 0x1a1a1a, s * 0.14, 0, -0.12]);     // legs
+  return b;
 }
 const CAR_COLORS = [0xe8513a, 0x3a8ee8, 0xf2c33a, 0x8f5ae0, 0x3ac27a, 0xf27fb0];
-function makeVehicle(truck) {
-  const g = new THREE.Group(), c = pick(CAR_COLORS);
-  let len;
-  if (truck) {
-    len = 2.4;
-    g.add(box(1.7, 0.75, 0.8, 0xeeeeee, 0.3, 0.12, 0));
-    g.add(box(0.6, 0.6, 0.78, c, -0.85, 0.12, 0));
-    g.add(box(0.12, 0.3, 0.66, 0x223344, -1.12, 0.38, 0));
-  } else {
-    len = 1.4;
-    g.add(box(1.4, 0.42, 0.78, c, 0, 0.12, 0));
-    g.add(box(0.75, 0.3, 0.66, 0xffffff, 0.08, 0.54, 0));
-    g.add(box(0.06, 0.2, 0.6, 0x223344, -0.3, 0.58, 0));
-  }
+function vehicleBoxes(truck, c) {
+  const len = truck ? 2.4 : 1.4;
+  const b = truck ? [
+    [1.7, 0.75, 0.8, 0xeeeeee, 0.3, 0.12, 0],
+    [0.6, 0.6, 0.78, c, -0.85, 0.12, 0],
+    [0.12, 0.3, 0.66, 0x223344, -1.12, 0.38, 0]
+  ] : [
+    [1.4, 0.42, 0.78, c, 0, 0.12, 0],
+    [0.75, 0.3, 0.66, 0xffffff, 0.08, 0.54, 0],
+    [0.06, 0.2, 0.6, 0x223344, -0.3, 0.58, 0]
+  ];
   for (const wx of [-len / 2 + 0.3, len / 2 - 0.3]) for (const wz of [-0.38, 0.38])
-    g.add(box(0.3, 0.26, 0.1, 0x222222, wx, 0, wz));
-  return { mesh: g, len };
+    b.push([0.3, 0.26, 0.1, 0x222222, wx, 0, wz]);
+  return b;
 }
-function makeLog(len) {
-  const g = new THREE.Group();
-  g.add(box(len, 0.26, 0.78, 0x8a5130, 0, -0.16, 0));
-  g.add(box(0.12, 0.27, 0.7, 0xc08a5a, -len / 2 + 0.05, -0.16, 0, false));
-  g.add(box(0.12, 0.27, 0.7, 0xc08a5a, len / 2 - 0.05, -0.16, 0, false));
-  return g;
-}
-function makeTree(h) {
-  const g = new THREE.Group();
-  g.add(box(0.3, 0.3, 0.3, 0x7a4b2a, 0, 0, 0));
-  g.add(box(0.72, h, 0.72, 0xa9cf3a, 0, 0.3, 0));
-  return g;
-}
-function makeTrain(dir) {
-  const g = new THREE.Group(); const cars = 4, cl = 3.0, gap = 0.15;
-  const len = cars * cl + (cars - 1) * gap;
-  for (let i = 0; i < cars; i++) {
-    const x = -len / 2 + cl / 2 + i * (cl + gap);
-    const front = dir > 0 ? i === cars - 1 : i === 0;
-    g.add(box(cl, 0.9, 0.84, front ? 0xd83a3a : 0x3a6fd8, x, 0.12, 0));
-    g.add(box(cl - 0.3, 0.2, 0.86, 0xdde6ff, x, 0.62, 0, false));
+const logBoxes = len => [
+  [len, 0.26, 0.78, 0x8a5130, 0, -0.16, 0],
+  [0.12, 0.27, 0.7, 0xc08a5a, -len / 2 + 0.05, -0.16, 0],
+  [0.12, 0.27, 0.7, 0xc08a5a, len / 2 - 0.05, -0.16, 0]
+];
+const TRAIN_CARS = 4, TRAIN_CAR_LEN = 3, TRAIN_GAP = 0.15;
+const TRAIN_LEN = TRAIN_CARS * TRAIN_CAR_LEN + (TRAIN_CARS - 1) * TRAIN_GAP;
+function trainBoxes(dir) {
+  const b = [];
+  for (let i = 0; i < TRAIN_CARS; i++) {
+    const x = -TRAIN_LEN / 2 + TRAIN_CAR_LEN / 2 + i * (TRAIN_CAR_LEN + TRAIN_GAP);
+    const front = dir > 0 ? i === TRAIN_CARS - 1 : i === 0;
+    b.push([TRAIN_CAR_LEN, 0.9, 0.84, front ? 0xd83a3a : 0x3a6fd8, x, 0.12, 0],
+           [TRAIN_CAR_LEN - 0.3, 0.2, 0.86, 0xdde6ff, x, 0.62, 0]);
   }
-  for (let i = 0; i < cars * 2; i++) g.add(box(0.4, 0.15, 0.9, 0x222222, -len / 2 + 0.6 + i * (len - 1.2) / (cars * 2 - 1), 0, 0, false));
-  return { mesh: g, len };
+  const wheels = TRAIN_CARS * 2;
+  for (let i = 0; i < wheels; i++)
+    b.push([0.4, 0.15, 0.9, 0x222222, -TRAIN_LEN / 2 + 0.6 + i * (TRAIN_LEN - 1.2) / (wheels - 1), 0, 0]);
+  return b;
 }
+function makeCharacter(boxesFn, key) {
+  const g = new THREE.Group();
+  const body = voxelMesh(cachedGeo(key, boxesFn));
+  g.add(body); g.userData.body = body;
+  return g;
+}
+
+// rail signal light: two shared materials, swapped instead of edited
+const LIGHT_OFF = new THREE.MeshLambertMaterial({ color: 0x331111 });
+const LIGHT_ON = new THREE.MeshLambertMaterial({ color: 0x331111, emissive: 0xff2222 });
+const lightGeo = new THREE.BoxGeometry(0.38, 0.2, 0.14);
 
 // ---------- world ----------
 let lanes = new Map();
@@ -425,206 +487,232 @@ function laneKind(r) {
   else {
     const w = { grass: 0.32 - diff * 0.12, road: 0.36, river: 0.2 + diff * 0.06, rail: 0.12 + diff * 0.06 };
     let x = Math.random() * (w.grass + w.road + w.river + w.rail);
-    k = 'grass';
-    for (const key of ['grass', 'road', 'river', 'rail']) { if ((x -= w[key]) < 0) { k = key; break; } }
-    if (k === lastKind && k === 'grass') k = pick(['road', 'river', 'grass']);
+    k = 'rail';
+    for (const key of ['grass', 'road', 'river']) { if ((x -= w[key]) < 0) { k = key; break; } }
+    if (k === 'grass' && lastKind === 'grass') k = pick(['road', 'river']);
   }
   streak = k === lastKind ? streak + 1 : 1;
   lastKind = k;
   return k;
 }
 
+// moving things in a lane share one wrap span so their gaps never drift
+function fillTraffic(lane, count, z, makeObj) {
+  const spacing = lane.span / count;
+  const x0 = rand(-lane.span / 2, -lane.span / 2 + 3);
+  for (let i = 0; i < count; i++) {
+    const o = makeObj(spacing);
+    o.x = x0 + i * spacing + (o.jitter || 0);
+    o.mesh.position.set(o.x, 0, z);
+    lane.group.add(o.mesh); lane.objs.push(o);
+  }
+}
+
 function addLane(r) {
   const kind = laneKind(r);
   const prev = lanes.get(r - 1);
   const z = -r;
-  const g = new THREE.Group();
-  const lane = { r, kind, group: g, objs: [], trees: new Set(), dir: Math.random() < 0.5 ? 1 : -1, speed: 0 };
+  const lane = {
+    r, kind, group: new THREE.Group(), objs: [], trees: new Set(),
+    dir: Math.random() < 0.5 ? 1 : -1, speed: 0, span: WRAP * 2 + 4
+  };
   const diff = Math.min(1, r / 150);
+  const ground = [];   // static boxes, merged into one mesh at the end
 
   if (kind === 'grass') {
-    const shade = r % 2 ? 0xb7e05a : 0xaedb4f;
-    g.add(box(40, 0.3, 1, shade, 0, -0.3, z, false));
+    ground.push([40, 0.3, 1, r % 2 ? 0xb7e05a : 0xaedb4f, 0, -0.3, z]);
+    let inPlay = 0;
     for (let x = -12; x <= 12; x++) {
       const out = Math.abs(x) > PLAY_HALF;
-      if (out ? Math.random() < 0.85 : (r > 1 && Math.random() < 0.16 + diff * 0.08)) {
-        lane.trees.add(x);
-        const tree = makeTree(pick([0.6, 0.9, 1.2, 1.5]));
-        tree.position.set(x, 0, z);
-        g.add(tree);
-      }
-    }
-    // never wall off a whole row
-    if ([...lane.trees].filter(x => Math.abs(x) <= PLAY_HALF).length > 5) {
-      for (const x of [-1, 0, 1]) lane.trees.delete(x);
-      g.children.slice(1).forEach(t => { if (Math.abs(t.position.x) <= 1) g.remove(t); });
+      // column 0 never gets a tree, so there is always a way forward
+      const tree = out ? Math.random() < 0.85
+        : r > 1 && x !== 0 && inPlay < 4 && Math.random() < 0.16 + diff * 0.08;
+      if (!tree) continue;
+      if (!out) inPlay++;
+      lane.trees.add(x);
+      ground.push([0.3, 0.3, 0.3, 0x7a4b2a, x, 0, z], [0.72, pick([0.6, 0.9, 1.2, 1.5]), 0.72, 0xa9cf3a, x, 0.3, z]);
     }
   } else if (kind === 'road') {
-    g.add(box(40, 0.3, 1, 0x4a4f5c, 0, -0.3, z, false));
+    ground.push([40, 0.3, 1, 0x4a4f5c, 0, -0.3, z]);
     if (prev && prev.kind === 'road')
-      for (let x = -12; x <= 12; x += 2) g.add(box(0.8, 0.02, 0.08, 0xe8e8e8, x, 0, z + 0.5, false));
+      for (let x = -12; x <= 12; x += 2) ground.push([0.8, 0.02, 0.08, 0xe8e8e8, x, 0, z + 0.5]);
     lane.speed = rand(1.6, 2.8) + diff * 2.4;
-    const truckLane = Math.random() < 0.3;
-    let x = rand(-WRAP, -WRAP + 3);
-    const count = Math.floor(rand(2, 4) + diff * 1.5);
-    const spacing = (WRAP * 2) / count;
-    for (let i = 0; i < count; i++) {
-      const v = makeVehicle(truckLane);
-      v.x = x + i * spacing + rand(0, spacing * 0.35);
-      v.mesh.rotation.y = lane.dir > 0 ? 0 : Math.PI;
-      v.mesh.position.set(v.x, 0, z);
-      g.add(v.mesh); lane.objs.push(v);
-    }
+    const truck = Math.random() < 0.3, len = truck ? 2.4 : 1.4;
+    const rot = lane.dir > 0 ? 0 : Math.PI;
+    fillTraffic(lane, Math.floor(rand(2, 4) + diff * 1.5), z, spacing => {
+      const c = pick(CAR_COLORS);
+      const mesh = voxelMesh(cachedGeo(`car${truck}${c}`, () => vehicleBoxes(truck, c)));
+      mesh.rotation.y = rot;
+      return { mesh, len, jitter: rand(0, spacing * 0.35) };
+    });
   } else if (kind === 'river') {
-    const water = box(40, 0.3, 1, 0x5ec8f0, 0, -0.45, z, false);
-    g.add(water);
+    ground.push([40, 0.3, 1, 0x5ec8f0, 0, -0.45, z]);
     if (prev && prev.kind === 'river') lane.dir = -prev.dir;
     lane.speed = rand(1.0, 1.9) + diff * 1.0;
-    const count = Math.max(3, Math.floor(rand(4, 6) - diff * 2));
-    const spacing = (WRAP * 2) / count;
-    const x0 = rand(-WRAP, -WRAP + 2);
-    for (let i = 0; i < count; i++) {
+    fillTraffic(lane, Math.max(3, Math.floor(rand(4, 6) - diff * 2)), z, () => {
       const len = pick([2, 3, 3, 4]) - (diff > 0.6 && Math.random() < 0.5 ? 1 : 0);
-      const lg = { mesh: makeLog(len), len, x: x0 + i * spacing };
-      lg.mesh.position.set(lg.x, 0, z);
-      g.add(lg.mesh); lane.objs.push(lg);
-    }
+      return { mesh: voxelMesh(cachedGeo('log' + len, () => logBoxes(len))), len };
+    });
   } else if (kind === 'rail') {
-    g.add(box(40, 0.3, 1, 0x7b6f6a, 0, -0.3, z, false));
-    for (let x = -14; x <= 14; x += 0.7) g.add(box(0.18, 0.06, 0.9, 0x5a3d2a, x, 0, z, false));
-    g.add(box(40, 0.06, 0.08, 0x9aa3b5, 0, 0.05, z - 0.28, false));
-    g.add(box(40, 0.06, 0.08, 0x9aa3b5, 0, 0.05, z + 0.28, false));
+    ground.push([40, 0.3, 1, 0x7b6f6a, 0, -0.3, z]);
+    for (let x = -14; x <= 14; x += 0.7) ground.push([0.18, 0.06, 0.9, 0x5a3d2a, x, 0, z]);
     const poleX = PLAY_HALF + 0.6;
-    g.add(box(0.12, 1.3, 0.12, 0xeeeeee, poleX, 0, z + 0.45));
-    const light = box(0.38, 0.2, 0.14, 0x222222, poleX, 1.1, z + 0.45);
-    light.material = new THREE.MeshLambertMaterial({ color: 0x331111, emissive: 0x000000 });
-    g.add(light);
-    lane.light = light;
-    lane.timer = rand(2, 6);
-    const t = makeTrain(lane.dir);
-    lane.train = { mesh: t.mesh, len: t.len, x: 99, active: false };
-    t.mesh.position.set(99, 0, z); t.mesh.visible = false;
-    g.add(t.mesh);
+    ground.push([40, 0.06, 0.08, 0x9aa3b5, 0, 0.05, z - 0.28], [40, 0.06, 0.08, 0x9aa3b5, 0, 0.05, z + 0.28],
+                [0.12, 1.3, 0.12, 0xeeeeee, poleX, 0, z + 0.45]);
+    lane.light = new THREE.Mesh(lightGeo, LIGHT_OFF);
+    lane.light.position.set(poleX, 1.2, z + 0.45);
+    lane.group.add(lane.light);
+    Object.assign(lane, { timer: rand(2, 6), warned: false, lastBell: -1 });
+    lane.train = { mesh: voxelMesh(cachedGeo('train' + lane.dir, () => trainBoxes(lane.dir))), len: TRAIN_LEN, x: 99, active: false };
+    lane.train.mesh.position.set(99, 0, z);
+    lane.train.mesh.visible = false;
+    lane.group.add(lane.train.mesh);
   }
-  worldGroup.add(g);
+  lane.ground = voxelMesh(mergeBoxes(ground));   // unique per lane, disposed with the lane
+  lane.group.add(lane.ground);
+  worldGroup.add(lane.group);
   lanes.set(r, lane);
   maxRow = Math.max(maxRow, r);
 }
 
-function updateLanes(dt) {
+function dropLane(lane) {
+  worldGroup.remove(lane.group);
+  lane.ground.geometry.dispose();
+  lanes.delete(lane.r);
+}
+
+const near = r => state === 'play' && Math.abs(r - camRow) < 14;
+
+function updateLanes(dt, now) {
   for (const lane of lanes.values()) {
     if (lane.kind === 'road' || lane.kind === 'river') {
+      const half = lane.span / 2, step = lane.dir * lane.speed * dt, river = lane.kind === 'river';
       for (const o of lane.objs) {
-        o.x += lane.dir * lane.speed * dt;
-        if (o.x > WRAP + o.len / 2) o.x -= WRAP * 2 + o.len;
-        if (o.x < -WRAP - o.len / 2) o.x += WRAP * 2 + o.len;
+        o.x += step;
+        if (o.x > half) o.x -= lane.span;
+        else if (o.x < -half) o.x += lane.span;
         o.mesh.position.x = o.x;
-        if (lane.kind === 'river') o.mesh.position.y = Math.sin(performance.now() / 400 + o.x) * 0.02;
+        if (river) o.mesh.position.y = Math.sin(now / 400 + o.x) * 0.02;
       }
     } else if (lane.kind === 'rail') {
       const tr = lane.train;
+      let on;
       if (!tr.active) {
         lane.timer -= dt;
-        const warn = lane.timer < 1.3;
-        const on = warn && Math.floor(lane.timer * 8) % 2 === 0;
-        lane.light.material.emissive.setHex(on ? 0xff2222 : 0x000000);
-        if (warn && !lane.warned) { lane.warned = true; if (near(lane.r)) sfx.horn(); }
-        if (on && near(lane.r) && Math.floor(lane.timer * 8) !== lane.lastBell) { lane.lastBell = Math.floor(lane.timer * 8); sfx.bell(); }
+        const blink = Math.floor(lane.timer * 8);
+        on = lane.timer < TRAIN_WARN && blink % 2 === 0;
+        if (lane.timer < TRAIN_WARN && !lane.warned) { lane.warned = true; if (near(lane.r)) sfx.horn(); }
+        if (on && blink !== lane.lastBell && near(lane.r)) { lane.lastBell = blink; sfx.bell(); }
         if (lane.timer <= 0) {
-          tr.active = true; tr.x = -lane.dir * (WRAP + tr.len / 2 + 2);
-          tr.mesh.visible = true;
+          tr.active = true; tr.mesh.visible = true;
+          tr.x = -lane.dir * (WRAP + tr.len / 2 + 2);
         }
       } else {
-        tr.x += lane.dir * 26 * dt;
+        tr.x += lane.dir * TRAIN_SPEED * dt;
         tr.mesh.position.x = tr.x;
-        lane.light.material.emissive.setHex(Math.floor(performance.now() / 120) % 2 ? 0xff2222 : 0x000000);
+        on = Math.floor(now / 120) % 2 === 1;
         if (Math.abs(tr.x) > WRAP + tr.len / 2 + 3) {
           tr.active = false; tr.mesh.visible = false; lane.warned = false;
           lane.timer = rand(3.5, 8);
         }
       }
+      lane.light.material = on ? LIGHT_ON : LIGHT_OFF;
     }
   }
 }
-const near = r => Math.abs(r - camRow) < 14 && state === 'play';
 
 function resetWorld() {
-  scene.remove(worldGroup);
-  worldGroup = new THREE.Group();
-  scene.add(worldGroup);
-  lanes = new Map(); maxRow = -1; lastKind = 'grass'; streak = 0;
-  for (let r = -8; r < 26; r++) addLane(r);
+  for (const lane of [...lanes.values()]) dropLane(lane);
+  maxRow = -1; lastKind = 'grass'; streak = 0;
+  for (let r = -8; r < LANES_AHEAD; r++) addLane(r);
 }
 function ensureLanes() {
-  while (maxRow < camRow + 26) addLane(maxRow + 1);
-  for (const [r, lane] of lanes) if (r < camRow - 12) { worldGroup.remove(lane.group); lanes.delete(r); }
+  while (maxRow < camRow + LANES_AHEAD) addLane(maxRow + 1);
+  for (const lane of lanes.values()) if (lane.r < camRow - LANES_BEHIND) dropLane(lane);
 }
 
 // ---------- players ----------
 const players = [
-  { id: 0, name: 'FROG', make: makeFrog, startX: -2, joined: false },
-  { id: 1, name: 'FOX', make: makeFox, startX: 2, joined: false }
+  { id: 0, boxes: frogBoxes, key: 'frog', startX: -2, joined: false, scoreEl: $('score1').querySelector('b') },
+  { id: 1, boxes: foxBoxes, key: 'fox', startX: 2, joined: false, scoreEl: $('score2').querySelector('b') }
 ];
 function spawn(p) {
   if (p.mesh) scene.remove(p.mesh);
-  p.mesh = p.make();
-  p.mesh.traverse(m => { if (m.isMesh) m.castShadow = true; });
+  p.mesh = makeCharacter(p.boxes, p.key);
   scene.add(p.mesh);
-  Object.assign(p, { x: p.startX, row: 0, alive: true, hop: null, queue: null, score: 0, facing: 0, deadT: 0, cause: '' });
+  Object.assign(p, {
+    x: p.startX, row: 0, alive: true, hop: null, queue: null, score: 0,
+    facing: 0, cause: '', log: null, logOff: 0, trainDir: 0
+  });
   p.mesh.position.set(p.x, 0, 0);
+  p.scoreEl.textContent = '0';
 }
 function despawn(p) { if (p.mesh) { scene.remove(p.mesh); p.mesh = null; } p.alive = false; }
 
 function tryMove(p, dx, dr) {
   if (!p.alive) return;
   if (p.hop) { p.queue = [dx, dr]; return; }
-  const lane = lanes.get(p.row + dr);
+  // rotation.y: 0 = forward (-z), PI = back, +PI/2 = left, -PI/2 = right
   p.facing = dr > 0 ? 0 : dr < 0 ? Math.PI : (dx > 0 ? -Math.PI / 2 : Math.PI / 2);
+  const lane = lanes.get(p.row + dr);
   if (!lane) return;
   let tx = p.x + dx;
-  if (lane.kind !== 'river') tx = Math.round(tx);
-  if (Math.abs(Math.round(tx)) > PLAY_HALF && lane.kind !== 'river') return;
-  if (lane.kind === 'river' && Math.abs(tx) > PLAY_HALF + 0.5) return;
-  if (lane.kind === 'grass' && lane.trees.has(tx)) return;
-  if (p.row + dr < camRow - 5) return;
-  p.hop = { t: 0, fx: p.x, fz: -p.row, tx, tz: -(p.row + dr), fy: p.mesh.position.y };
-  p.row += dr;
-  if (p.row > p.score) {
-    p.score = p.row;
-    $('score' + (p.id + 1)).querySelector('b').textContent = p.score;
+  if (lane.kind === 'river') { if (Math.abs(tx) > PLAY_HALF + 0.5) return; }
+  else {
+    tx = Math.round(tx);
+    if (Math.abs(tx) > PLAY_HALF) return;
+    if (lane.kind === 'grass' && lane.trees.has(tx)) return;
   }
+  if (p.row + dr < camRow - BEHIND_LIMIT) return;
+  p.hop = { t: 0, fx: p.x, fz: -p.row, tx, tz: -(p.row + dr) };
+  p.row += dr;
+  if (p.row > p.score) { p.score = p.row; p.scoreEl.textContent = p.score; }
   sfx.hop(p.id);
 }
 
 function kill(p, cause) {
   if (!p.alive) return;
-  p.alive = false; p.cause = cause; p.deadT = 0; p.hop = null;
-  const b = p.mesh.userData.body;
-  if (cause === 'squash') { b.scale.set(1.35, 0.15, 1.35); sfx.squash(); }
-  else if (cause === 'splash') { sfx.splash(); splash(p.mesh.position.x, -p.row); }
+  p.alive = false; p.cause = cause; p.hop = null;
+  if (cause === 'squash') p.mesh.userData.body.scale.set(1.35, 0.15, 1.35);
+  if (cause === 'splash') { sfx.splash(); splash(p.mesh.position.x, -p.row); }
   else sfx.squash();
   checkOver();
 }
 
 const parts = [];
+const partGeo = new THREE.BoxGeometry(0.14, 0.14, 0.14), partMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
 function splash(x, z) {
   for (let i = 0; i < 12; i++) {
-    const m = box(0.14, 0.14, 0.14, 0xffffff, x, 0, z, false);
+    const m = new THREE.Mesh(partGeo, partMat);
+    m.position.set(x, 0, z);
     m.userData.v = new THREE.Vector3(rand(-2, 2), rand(3, 5), rand(-2, 2));
     scene.add(m); parts.push(m);
   }
+}
+function updateParts(dt) {
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const m = parts[i];
+    m.userData.v.y -= 14 * dt;
+    m.position.addScaledVector(m.userData.v, dt);
+    if (m.position.y < -1) { scene.remove(m); parts.splice(i, 1); }
+  }
+}
+
+function turnToward(m, target, dt) {
+  let d = (target - m.rotation.y) % TAU;
+  if (d > Math.PI) d -= TAU; else if (d < -Math.PI) d += TAU;
+  m.rotation.y += d * Math.min(1, dt * 25);
 }
 
 function updatePlayer(p, dt) {
   if (!p.mesh) return;
   const m = p.mesh, body = m.userData.body;
-  m.rotation.y += ((p.facing - m.rotation.y + Math.PI * 3) % (Math.PI * 2) - Math.PI) * Math.min(1, dt * 25);
+  turnToward(m, p.facing, dt);
 
   if (!p.alive) {
-    p.deadT += dt;
     if (p.cause === 'splash') m.position.y = Math.max(-1.2, m.position.y - dt * 2.5);
-    if (p.cause === 'swept') { m.position.y -= dt * 4; m.position.x += Math.sign(m.position.x) * dt * 2; }
-    if (p.cause === 'train') { m.position.x += p.trainDir * dt * 26; m.rotation.z += dt * 12; }
+    else if (p.cause === 'swept') { m.position.y -= dt * 4; m.position.x += Math.sign(m.position.x) * dt * 2; }
+    else if (p.cause === 'train') { m.position.x += p.trainDir * dt * TRAIN_SPEED; m.rotation.z += dt * 12; }
     return;
   }
 
@@ -635,127 +723,117 @@ function updatePlayer(p, dt) {
     const t = Math.min(1, h.t);
     p.x = h.fx + (h.tx - h.fx) * t;
     m.position.set(p.x, Math.sin(t * Math.PI) * 0.45, h.fz + (h.tz - h.fz) * t);
-    body.scale.set(1, 1, 1);
+    body.scale.copy(ONE);
     if (t >= 1) {
       p.hop = null;
+      p.log = null;
       if (lane && lane.kind === 'river') {
         const log = lane.objs.find(o => Math.abs(o.x - p.x) < o.len / 2 + 0.05);
         if (!log) { kill(p, 'splash'); return; }
-        // snap onto the nearest log segment so standing feels solid
-        const rel = p.x - log.x, half = log.len / 2 - 0.5;
-        p.logOff = Math.max(-half, Math.min(half, Math.round(rel - (log.len % 2 ? 0 : 0.5)) + (log.len % 2 ? 0 : 0.5)));
+        // snap to the centre of the nearest log segment so standing feels solid
+        const k = (log.len - 1) / 2;
+        p.logOff = THREE.MathUtils.clamp(Math.round(p.x - log.x + k) - k, -k, k);
         p.log = log;
-      } else { p.log = null; p.x = Math.round(p.x); }
+      } else p.x = Math.round(p.x);
       body.scale.set(1.15, 0.8, 1.15);
-      if (p.queue) { const q = p.queue; p.queue = null; tryMove(p, q[0], q[1]); }
+      if (p.queue) { const [qx, qr] = p.queue; p.queue = null; tryMove(p, qx, qr); }
     }
   } else {
-    body.scale.lerp(new THREE.Vector3(1, 1, 1), Math.min(1, dt * 14));
-    if (lane && lane.kind === 'river') {
-      if (p.log && lane.objs.includes(p.log)) p.x = p.log.x + p.logOff;
+    body.scale.lerp(ONE, Math.min(1, dt * 14));
+    if (p.log) {
+      p.x = p.log.x + p.logOff;
       m.position.x = p.x; m.position.y = 0.1;
       if (Math.abs(p.x) > EDGE_DEATH) { kill(p, 'swept'); return; }
-    } else { m.position.y = 0; }
+    } else m.position.y = 0;
   }
 
   if (!lane) return;
   if (lane.kind === 'road') {
-    for (const o of lane.objs) if (Math.abs(o.x - p.x) < o.len / 2 + 0.28) { kill(p, 'squash'); return; }
+    for (const o of lane.objs) if (Math.abs(o.x - p.x) < o.len / 2 + HIT_PAD) { kill(p, 'squash'); return; }
   } else if (lane.kind === 'rail' && lane.train.active) {
-    if (Math.abs(lane.train.x - p.x) < lane.train.len / 2 + 0.3) { p.trainDir = lane.dir; kill(p, 'train'); return; }
+    if (Math.abs(lane.train.x - p.x) < lane.train.len / 2 + HIT_PAD) { p.trainDir = lane.dir; kill(p, 'train'); return; }
   }
-  if (p.row < camRow - 4.5) kill(p, 'slow');
+  if (p.row < camRow - BEHIND_LIMIT) kill(p, 'slow');
 }
 
-// ---------- game state ----------
-let state = 'attract', stateT = 0, camRow = 0, camX = 0, playT = 0, countdown = 0;
-
-function setBanner(h, p) {
-  const b = $('banner');
-  if (!h) { b.hidden = true; return; }
-  b.hidden = false; b.querySelector('h1').textContent = h; b.querySelector('p').innerHTML = p || '';
+// ---------- screens ----------
+const banner = $('banner'), bannerH = banner.querySelector('h1'), bannerP = banner.querySelector('p');
+function setBanner(h, sub = '') {
+  const key = h + '|' + sub;
+  if (key === bannerKey) return;      // only touch the DOM when the text changes
+  bannerKey = key;
+  banner.hidden = !h;
+  bannerH.textContent = h; bannerP.textContent = sub;
 }
 function setCard(i) {
   const c = $('card' + (i + 1)), p = players[i];
-  const head = c.firstElementChild, st = c.lastElementChild;
-  c.classList.toggle('ready', p.joined && state !== 'play');
-  if (state === 'play' || state === 'over') {
-    c.style.visibility = 'hidden';
-  } else {
-    c.style.visibility = 'visible';
-    head.innerHTML = p.joined ? 'READY!' : 'PRESS TAP<br>TO JOIN';
-    st.textContent = p.joined ? 'PLAYER ' + (i + 1) : 'FREE PLAY';
-  }
+  c.classList.toggle('ready', p.joined && state === 'countdown');
+  c.style.visibility = state === 'play' || state === 'over' ? 'hidden' : 'visible';
+  c.firstElementChild.innerHTML = p.joined ? 'READY!' : 'PRESS TAP<br>TO JOIN';
+  c.lastElementChild.textContent = p.joined ? 'PLAYER ' + (i + 1) : 'FREE PLAY';
 }
+const setCards = () => { setCard(0); setCard(1); };
 
 function toAttract() {
-  state = 'attract'; stateT = 0;
+  state = 'attract'; stateT = 0; camRow = 0;
   players.forEach(p => { p.joined = false; despawn(p); });
-  camRow = 0;
   resetWorld();
+  refreshBests();
   $('results').hidden = true; $('logo').hidden = false;
   $('score1').hidden = $('score2').hidden = true;
-  setBanner(null);
-  setCard(0); setCard(1);
+  setBanner('');
+  setCards();
 }
 function join(i) {
   const p = players[i];
   if (p.joined) return;
   p.joined = true; sfx.join();
   spawn(p);
-  if (state === 'attract') { state = 'countdown'; countdown = 3.99; }
+  if (state === 'attract') { state = 'countdown'; countdown = COUNTDOWN; }
   else countdown = Math.max(countdown, 2.5);
   $('logo').hidden = true;
-  setCard(0); setCard(1);
+  setCards();
 }
 function startPlay() {
-  state = 'play'; playT = 0; sfx.go();
-  setBanner(null);
-  players.forEach((p, i) => {
-    const s = $('score' + (i + 1));
-    s.hidden = !p.joined; s.querySelector('b').textContent = '0';
-  });
-  setCard(0); setCard(1);
+  state = 'play'; playT = 0; goT = GO_TIME; sfx.go();
+  setBanner('GO!');
+  players.forEach((p, i) => { $('score' + (i + 1)).hidden = !p.joined; });
+  setCards();
 }
 function checkOver() {
-  if (state !== 'play') return;
-  if (players.some(p => p.joined && p.alive)) return;
+  if (state !== 'play' || players.some(p => p.joined && p.alive)) return;
   state = 'over'; stateT = 0;
-  const joined = players.filter(p => p.joined);
-  const top = Math.max(...joined.map(p => p.score));
+  setBanner('');
+  const [p1, p2] = players;
+  const top = Math.max(p1.joined ? p1.score : 0, p2.joined ? p2.score : 0);
   let note = '';
-  if (top > bestAll) { bestAll = top; save('hoplanes.best', top); note = 'NEW ALL TIME BEST!'; }
-  if (top > bestDay) { bestDay = top; save('hoplanes.day.' + today, top); note = note || "NEW BEST TODAY!"; }
-  showBests();
-  setTimeout(() => {
-    if (state !== 'over') return;
-    const both = joined.length === 2;
-    $('resTitle').textContent = !both ? 'GAME OVER'
-      : players[0].score === players[1].score ? 'TIE GAME!'
-      : (players[0].score > players[1].score ? 'FROG WINS!' : 'FOX WINS!');
-    $('res1').hidden = !players[0].joined; $('res2').hidden = !players[1].joined;
-    $('res1').querySelector('b').textContent = players[0].score;
-    $('res2').querySelector('b').textContent = players[1].score;
-    $('resNote').textContent = (note ? note + ' ' : '') + 'PRESS TAP TO PLAY AGAIN';
-    $('results').hidden = false;
-  }, 1100);
-}
-
-function press(i, dx, dr) {
-  audio();
-  if (state === 'attract' || state === 'countdown') { join(i); return; }
-  if (state === 'over') { if (stateT > 2) toAttract(), join(i); return; }
-  const p = players[i];
-  if (p.joined) tryMove(p, dx, dr);
-}
-function pressStart() {
-  audio();
-  if (state === 'attract') { join(0); }
-  else if (state === 'countdown') countdown = Math.min(countdown, 0.01);
-  else if (state === 'over' && stateT > 1) toAttract();
+  if (top > bestAll) { bestAll = top; save(BEST_KEY, top); note = 'NEW ALL TIME BEST!'; }
+  if (top > load(dayKey())) { save(dayKey(), top); note = note || 'NEW BEST TODAY!'; }
+  refreshBests();
+  $('resTitle').textContent = !(p1.joined && p2.joined) ? 'GAME OVER'
+    : p1.score === p2.score ? 'TIE GAME!'
+    : p1.score > p2.score ? 'FROG WINS!' : 'FOX WINS!';
+  $('res1').hidden = !p1.joined; $('res2').hidden = !p2.joined;
+  $('res1').querySelector('b').textContent = p1.score;
+  $('res2').querySelector('b').textContent = p2.score;
+  $('resNote').textContent = (note ? note + ' ' : '') + 'PRESS TAP TO PLAY AGAIN';
 }
 
 // ---------- input ----------
+const canRestart = () => state === 'over' && stateT > RESULTS_DELAY;
+function press(i, dx, dr) {
+  audio();
+  if (state === 'attract' || state === 'countdown') join(i);
+  else if (state === 'play') { if (players[i].joined) tryMove(players[i], dx, dr); }
+  else if (canRestart()) { toAttract(); join(i); }
+}
+function pressStart() {
+  audio();
+  if (state === 'attract') join(0);
+  else if (state === 'countdown') countdown = Math.min(countdown, 0.01);
+  else if (canRestart()) toAttract();
+}
+
 const KEYS = {
   KeyW: [0, 0, 1], KeyS: [0, 0, -1], KeyA: [0, -1, 0], KeyD: [0, 1, 0],
   ArrowUp: [1, 0, 1], ArrowDown: [1, 0, -1], ArrowLeft: [1, -1, 0], ArrowRight: [1, 1, 0]
@@ -763,7 +841,7 @@ const KEYS = {
 window.addEventListener('keydown', e => {
   if (e.repeat) return;
   const k = KEYS[e.code];
-  if (k) { e.preventDefault(); press(k[0], k[1], k[2]); }
+  if (k) { e.preventDefault(); press(...k); }
   else if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); pressStart(); }
 });
 document.querySelectorAll('.tap').forEach(btn => {
@@ -780,7 +858,7 @@ document.addEventListener('contextmenu', e => e.preventDefault());
 // ---------- loop ----------
 let last = performance.now();
 function frame(now) {
-  const dt = Math.min(0.05, (now - last) / 1000);
+  const dt = Math.max(0, Math.min(0.05, (now - last) / 1000));
   last = now; stateT += dt;
 
   if (state === 'countdown') {
@@ -788,34 +866,27 @@ function frame(now) {
     countdown -= dt;
     const n = Math.ceil(countdown);
     if (n !== before && n > 0) sfx.tick();
-    setBanner(n > 0 ? String(n) : 'GO!', players.every(p => p.joined) ? 'FROG VS FOX' : 'OTHER PLAYER: PRESS TAP TO JOIN');
     if (countdown <= 0) startPlay();
-  }
-
-  if (state === 'play') {
+    else setBanner(String(n), players.every(p => p.joined) ? 'FROG VS FOX' : 'OTHER PLAYER: PRESS TAP TO JOIN');
+  } else if (state === 'play') {
     playT += dt;
-    const alive = players.filter(p => p.joined && p.alive);
-    const lead = alive.length ? Math.max(...alive.map(p => p.row)) : camRow;
+    if (goT > 0 && (goT -= dt) <= 0) setBanner('');
+    let lead = -Infinity;
+    for (const p of players) if (p.joined && p.alive) lead = Math.max(lead, p.row);
     // the camera creeps forward on its own, and catches up fast to a player who runs ahead
-    const creep = Math.min(1.1, 0.3 + playT * 0.006);
-    camRow += creep * dt;
-    const want = lead - 2;
-    if (want > camRow) camRow += (want - camRow) * Math.min(1, dt * 3);
-  } else if (state === 'attract') {
-    camRow += (0 - camRow) * Math.min(1, dt * 2);
+    camRow += Math.min(1.1, 0.3 + playT * 0.006) * dt;
+    if (lead - 2 > camRow) camRow += (lead - 2 - camRow) * Math.min(1, dt * 3);
+  } else if (state === 'over' && stateT > RESULTS_DELAY) {
+    $('results').hidden = false;
   }
 
   ensureLanes();
-  updateLanes(dt);
-  players.forEach(p => updatePlayer(p, dt));
-  for (let i = parts.length - 1; i >= 0; i--) {
-    const m = parts[i]; m.userData.v.y -= 14 * dt;
-    m.position.addScaledVector(m.userData.v, dt);
-    if (m.position.y < -1) { scene.remove(m); parts.splice(i, 1); }
-  }
+  updateLanes(dt, now);
+  for (const p of players) updatePlayer(p, dt);
+  updateParts(dt);
 
   // camera: look a few rows ahead of the scroll line
-  const focus = new THREE.Vector3(camX, 0, -(camRow + 4.2));
+  focus.set(0, 0, -(camRow + CAM_LEAD));
   camera.position.copy(focus).add(CAM_OFF);
   camera.lookAt(focus);
   sun.position.set(focus.x - 6, 14, focus.z + 6);
@@ -825,7 +896,9 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
-window.hopLanes = { players, get state() { return state; }, get camRow() { return camRow; } };
+if (location.hash === '#debug') {
+  window.hopLanes = { players, renderer, get state() { return state; }, get camRow() { return camRow; } };
+}
 toAttract();
 requestAnimationFrame(frame);
 })();
