@@ -32,14 +32,15 @@ body {
   -webkit-user-select: none; user-select: none; touch-action: manipulation;
 }
 #app { position: relative; height: 100%; display: flex; flex-direction: column; }
-#stage { position: relative; flex: 1; min-height: 0; }
+#stage { position: relative; flex: 1; min-height: 0; touch-action: none; }
+#app { overscroll-behavior: none; -webkit-touch-callout: none; }
 #stage canvas { display: block; width: 100%; height: 100%; }
 
 /* marquee */
 #marquee {
   position: absolute; inset: 0 0 auto 0; z-index: 3;
   display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
-  padding: 10px 16px;
+  padding: 10px max(16px, env(safe-area-inset-right, 0px)) 10px max(16px, env(safe-area-inset-left, 0px));
   background: var(--sky); color: #1d3b6b;
   box-shadow: 0 4px 0 rgba(0,0,0,.25);
 }
@@ -59,8 +60,8 @@ body {
   font-variant-numeric: tabular-nums;
 }
 .score span { display: block; font-size: .35em; margin-bottom: 6px; letter-spacing: .1em; text-shadow: 1px 1px 0 rgba(0,0,0,.55); }
-#score1 { left: 16px; } #score1 span { color: var(--p1-glow); }
-#score2 { right: 16px; text-align: right; } #score2 span { color: var(--p2-glow); }
+#score1 { left: max(16px, env(safe-area-inset-left, 0px)); } #score1 span { color: var(--p1-glow); }
+#score2 { right: max(16px, env(safe-area-inset-right, 0px)); text-align: right; } #score2 span { color: var(--p2-glow); }
 
 /* join cards */
 #cards {
@@ -69,14 +70,14 @@ body {
   pointer-events: none;
 }
 .card {
-  width: min(40vw, 190px); padding: 12px 10px 10px; border-radius: 14px;
+  width: min(36vw, 170px); padding: 10px 8px 8px; border-radius: 14px;
   display: flex; flex-direction: column; align-items: center; gap: 8px;
   font-family: var(--font-pixel); font-size: clamp(7px, 2.1vw, 11px); text-align: center; line-height: 1.5;
   box-shadow: 0 6px 0 rgba(0,0,0,.35); transition: transform .2s;
 }
 .card.p1 { background: var(--p1); }
 .card.p2 { background: var(--p2); }
-.card svg { width: 64%; height: auto; image-rendering: pixelated; }
+.card svg { width: 52%; height: auto; image-rendering: pixelated; }
 .card.ready { animation: bob .6s ease-in-out infinite alternate; }
 .card .state { color: var(--gold); }
 @keyframes bob { to { transform: translateY(-6px); } }
@@ -90,7 +91,7 @@ body {
   margin: 0; font-size: clamp(22px, 8vw, 54px); color: var(--gold); line-height: 1.2;
   text-shadow: 4px 4px 0 #1d3b6b; text-wrap: balance;
 }
-#banner p { margin: 14px 0 0; font-size: clamp(8px, 2.4vw, 13px); line-height: 1.8; text-shadow: 2px 2px 0 #000; }
+#banner p { white-space: pre-line; margin: 14px 0 0; font-size: clamp(8px, 2.4vw, 13px); line-height: 1.8; text-shadow: 2px 2px 0 #000; }
 #logo { position: absolute; z-index: 4; left: 16px; right: 16px; top: 92px; text-align: center; pointer-events: none; }
 #logo div {
   display: inline-block; font-family: var(--font-pixel); font-size: clamp(22px, 7.5vw, 50px); line-height: 1.15;
@@ -117,15 +118,16 @@ body {
   position: relative; z-index: 7; background: var(--deck);
   border-top: 4px solid #5ee05a; box-shadow: 0 -6px 22px rgba(94,224,90,.35);
   display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px;
-  padding: 12px 16px;
+  padding: 10px max(16px, env(safe-area-inset-right, 0px)) 10px max(16px, env(safe-area-inset-left, 0px));
 }
-.pad { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.pad { display: flex; align-items: center; justify-content: center; gap: 8px; transition: opacity .2s; }
+.pad.idle { opacity: .3; }
 .pad .lbl { font-family: var(--font-pixel); font-size: 8px; letter-spacing: .1em; white-space: nowrap; }
 .pad.p1 .lbl { color: var(--p1-glow); } .pad.p2 .lbl { color: var(--p2-glow); }
 button { font: inherit; color: inherit; border: 0; cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
 button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
 .tap {
-  width: clamp(64px, 18vw, 96px); aspect-ratio: 1; max-width: 100%; border-radius: 50%;
+  width: clamp(72px, 20vw, 96px); aspect-ratio: 1; max-width: 100%; border-radius: 50%;
   font-family: var(--font-pixel); font-size: clamp(10px, 3vw, 15px); color: #10131c;
   border: 5px solid #0b0d14; transition: transform .06s, box-shadow .06s;
 }
@@ -133,7 +135,7 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
 .p2 .tap { background: radial-gradient(circle at 40% 35%, #ffd0c6, var(--p2-glow) 55%, #b4261a); box-shadow: 0 6px 0 #6e140b, 0 0 20px var(--p2-glow); }
 .tap.down { transform: translateY(5px); box-shadow: 0 1px 0 #000 !important; }
 .side {
-  width: clamp(30px, 8vw, 42px); aspect-ratio: 1; border-radius: 10px; background: #2c3348; color: #c9d2ea;
+  width: clamp(44px, 11vw, 52px); aspect-ratio: 1; border-radius: 10px; background: #2c3348; color: #c9d2ea;
   font-size: clamp(12px, 3.4vw, 18px); box-shadow: 0 4px 0 #0b0d14;
 }
 .side:active { transform: translateY(3px); box-shadow: 0 1px 0 #0b0d14; }
@@ -144,7 +146,39 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
 #start:active { transform: translateY(3px); box-shadow: 0 1px 0 #6b7080; }
 .pad-col { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 #keys { font-family: var(--font-pixel); font-size: 7px; color: #7d86a3; text-align: center; line-height: 1.8; }
-@media (max-width: 520px) { #keys { display: none; } }
+@media (max-width: 520px), (pointer: coarse) { #keys { display: none; } }
+/* phones: the deck is tighter so the field gets the height */
+/* START is not needed there: tapping the field joins and plays */
+@media (max-width: 520px) {
+  #deck { grid-template-columns: 1fr 1fr; gap: 6px; }
+  #deck > .pad-col { display: none; }
+  .pad { gap: 4px; }
+  .side { width: 42px; }
+  .tap { width: 72px; }
+}
+/* phone held sideways: controls float over the field, nothing else covers it */
+@media (orientation: landscape) and (max-height: 520px) {
+  #marquee { inset: 0 auto auto 50%; transform: translateX(-50%); width: min(70vw, 460px); padding: 6px 12px; border-radius: 0 0 12px 12px; }
+  .hs { gap: 2px; }
+  .hs small { font-size: 7px; }
+  .hs b { font-size: 16px; }
+  .score { top: 10px; font-size: 20px; }
+  #logo { top: 60px; }
+  #logo div { font-size: 24px; }
+  #cards { bottom: auto; top: 50%; transform: translateY(-50%); justify-content: space-between; padding-inline: max(4px, env(safe-area-inset-left, 0px)) max(4px, env(safe-area-inset-right, 0px)); }
+  .card { width: 128px; padding: 8px 6px; gap: 4px; font-size: 7px; }
+  .card svg { width: 40%; }
+  #banner { top: 30%; }
+  #deck {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 7;
+    background: none; border: 0; box-shadow: none; pointer-events: none; padding-block: 8px;
+  }
+  #deck button { pointer-events: auto; }
+  .pad.p1 { justify-content: flex-start; } .pad.p2 { justify-content: flex-end; }
+  .pad .lbl { display: none; }
+  .tap { width: 72px; }
+  #start { opacity: .85; }
+}
 @media (prefers-reduced-motion: reduce) { .card.ready { animation: none; } }
 </style>
 </head>
@@ -212,7 +246,7 @@ const HIT_PAD = 0.28;         // extra hit width around cars and trains
 const TRAIN_SPEED = 26;
 const TRAIN_WARN = 1.3;       // seconds the signal flashes before a train
 const LANES_AHEAD = 26, LANES_BEHIND = 12;
-const CAM_LEAD = 4.2;         // camera looks this many rows past the scroll line
+let camLead = 4.2;            // camera looks this many rows past the scroll line (less on wide screens)
 const BEHIND_LIMIT = 4.5;     // fall this far behind the scroll line and you are out
 const COUNTDOWN = 3;
 const RESULTS_DELAY = 1.1;    // seconds from last death to the results panel (and restart)
@@ -313,6 +347,18 @@ const sfx = {
   tick: () => beep(440, 0.1, 'square', 0.05)
 };
 
+// ---------- phone extras: buzz and keep the screen on (both optional) ----------
+function buzz(ms) { try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) {} }
+let wakeLock = null;
+async function keepAwake(on) {
+  try {
+    if (on && !wakeLock && navigator.wakeLock) {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+    } else if (!on && wakeLock) await wakeLock.release();
+  } catch (e) { wakeLock = null; }
+}
+
 // ---------- three.js setup ----------
 const lowPower = matchMedia('(pointer: coarse)').matches;
 const stage = $('stage');
@@ -341,7 +387,11 @@ function resize() {
   if (!w || !h) return;
   renderer.setSize(w, h, false);
   const aspect = w / h;
-  const halfW = aspect < 0.8 ? 6.2 : 7.2;
+  // wide screens (a phone held sideways) zoom out so enough rows stay visible,
+  // and aim lower so the players sit above the floating buttons
+  const wide = aspect > 1.3;
+  const halfW = wide ? Math.max(7.2, 6.5 * aspect) : aspect < 0.8 ? 6.2 : 7.2;
+  camLead = wide ? 2.5 : 4.2;
   Object.assign(camera, { left: -halfW, right: halfW, top: halfW / aspect, bottom: -halfW / aspect });
   camera.updateProjectionMatrix();
 }
@@ -668,11 +718,13 @@ function tryMove(p, dx, dr) {
   p.row += dr;
   if (p.row > p.score) { p.score = p.row; p.scoreEl.textContent = p.score; }
   sfx.hop(p.id);
+  buzz(8);
 }
 
 function kill(p, cause) {
   if (!p.alive) return;
   p.alive = false; p.cause = cause; p.hop = null;
+  buzz(70);
   if (cause === 'squash') p.mesh.userData.body.scale.set(1.35, 0.15, 1.35);
   if (cause === 'splash') { sfx.splash(); splash(p.mesh.position.x, -p.row); }
   else sfx.squash();
@@ -765,11 +817,14 @@ function setBanner(h, sub = '') {
   banner.hidden = !h;
   bannerH.textContent = h; bannerP.textContent = sub;
 }
+const pads = document.querySelectorAll('.pad');
+const JOIN_TEXT = lowPower ? 'TAP THIS<br>SIDE TO JOIN' : 'PRESS TAP<br>TO JOIN';
 function setCard(i) {
   const c = $('card' + (i + 1)), p = players[i];
+  pads[i].classList.toggle('idle', (state === 'play' || state === 'over') && !p.joined);
   c.classList.toggle('ready', p.joined && state === 'countdown');
   c.style.visibility = state === 'play' || state === 'over' ? 'hidden' : 'visible';
-  c.firstElementChild.innerHTML = p.joined ? 'READY!' : 'PRESS TAP<br>TO JOIN';
+  c.firstElementChild.innerHTML = p.joined ? 'READY!' : JOIN_TEXT;
   c.lastElementChild.textContent = p.joined ? 'PLAYER ' + (i + 1) : 'FREE PLAY';
 }
 const setCards = () => { setCard(0); setCard(1); };
@@ -796,6 +851,7 @@ function join(i) {
 }
 function startPlay() {
   state = 'play'; playT = 0; goT = GO_TIME; sfx.go();
+  keepAwake(true);
   setBanner('GO!');
   players.forEach((p, i) => { $('score' + (i + 1)).hidden = !p.joined; });
   setCards();
@@ -803,6 +859,7 @@ function startPlay() {
 function checkOver() {
   if (state !== 'play' || players.some(p => p.joined && p.alive)) return;
   state = 'over'; stateT = 0;
+  keepAwake(false);
   setBanner('');
   const [p1, p2] = players;
   const top = Math.max(p1.joined ? p1.score : 0, p2.joined ? p2.score : 0);
@@ -853,6 +910,39 @@ document.querySelectorAll('.side').forEach(btn => {
   btn.addEventListener('pointerdown', e => { e.preventDefault(); press(+btn.dataset.p, +btn.dataset.dx, 0); });
 });
 $('start').addEventListener('click', pressStart);
+
+// touch (or click) on the field itself: tap = hop forward, swipe = move that way.
+// With one player in the game the whole field is theirs; otherwise left half = P1, right half = P2.
+const SWIPE_MIN = 24;   // px of travel before a touch counts as a swipe
+const touches = new Map();
+function fieldPlayer(clientX) {
+  if (state === 'play') {
+    const solo = players.filter(p => p.joined);
+    if (solo.length === 1) return solo[0].id;
+  }
+  const r = stage.getBoundingClientRect();
+  return clientX < r.left + r.width / 2 ? 0 : 1;
+}
+stage.addEventListener('pointerdown', e => {
+  if (e.button > 0) return;
+  touches.set(e.pointerId, { x: e.clientX, y: e.clientY, i: fieldPlayer(e.clientX), done: false });
+});
+stage.addEventListener('pointermove', e => {
+  const t = touches.get(e.pointerId);
+  if (!t || t.done) return;
+  const dx = e.clientX - t.x, dy = e.clientY - t.y;
+  if (Math.hypot(dx, dy) < SWIPE_MIN) return;
+  t.done = true;   // fire the swipe now, not on release, so it feels instant
+  if (Math.abs(dx) > Math.abs(dy)) press(t.i, Math.sign(dx), 0);
+  else press(t.i, 0, dy < 0 ? 1 : -1);
+});
+function endTouch(e) {
+  const t = touches.get(e.pointerId);
+  touches.delete(e.pointerId);
+  if (t && !t.done && e.type === 'pointerup') press(t.i, 0, 1);
+}
+stage.addEventListener('pointerup', endTouch);
+stage.addEventListener('pointercancel', endTouch);
 document.addEventListener('contextmenu', e => e.preventDefault());
 
 // ---------- loop ----------
@@ -867,7 +957,8 @@ function frame(now) {
     const n = Math.ceil(countdown);
     if (n !== before && n > 0) sfx.tick();
     if (countdown <= 0) startPlay();
-    else setBanner(String(n), players.every(p => p.joined) ? 'FROG VS FOX' : 'OTHER PLAYER: PRESS TAP TO JOIN');
+    else setBanner(String(n), (players.every(p => p.joined) ? 'FROG VS FOX' : 'OTHER PLAYER: TAP TO JOIN')
+      + (lowPower ? '\nTAP TO HOP \u00b7 SWIPE TO TURN' : ''));
   } else if (state === 'play') {
     playT += dt;
     if (goT > 0 && (goT -= dt) <= 0) setBanner('');
@@ -886,7 +977,7 @@ function frame(now) {
   updateParts(dt);
 
   // camera: look a few rows ahead of the scroll line
-  focus.set(0, 0, -(camRow + CAM_LEAD));
+  focus.set(0, 0, -(camRow + camLead));
   camera.position.copy(focus).add(CAM_OFF);
   camera.lookAt(focus);
   sun.position.set(focus.x - 6, 14, focus.z + 6);
