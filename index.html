@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src https://cdnjs.cloudflare.com 'unsafe-inline'; style-src https://fonts.googleapis.com 'unsafe-inline'; font-src https://fonts.gstatic.com data:; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Hop Lanes Arcade</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Rubik:wght@500;800&display=swap">
 <style>
@@ -232,7 +233,9 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
   </div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"
+  integrity="sha512-dLxUelApnYxpLt6K2iomGngnHO83iUvZytA3YjDUCjT0HDOHKXnVYdf3hU4JjM8uEhxf9nD1/ey98U3t2vZ0qQ=="
+  crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script>
 (() => {
 'use strict';
@@ -268,7 +271,13 @@ let bannerKey = '';
 // ---------- storage (best effort) ----------
 const BEST_KEY = 'hoplanes.best', DAY_PREFIX = 'hoplanes.day.';
 const dayKey = () => DAY_PREFIX + new Date().toLocaleDateString('en-CA');   // local YYYY-MM-DD
-function load(k) { try { return +localStorage.getItem(k) || 0; } catch (e) { return 0; } }
+// stored scores are only ever whole, non-negative numbers; anything else reads as 0
+function load(k) {
+  try {
+    const n = Math.floor(Number(localStorage.getItem(k)));
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  } catch (e) { return 0; }
+}
 function save(k, v) { try { localStorage.setItem(k, String(v)); } catch (e) {} }
 function dropOldDays() {
   try {

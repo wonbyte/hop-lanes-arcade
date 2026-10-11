@@ -9,11 +9,16 @@ cd "$WORK"
 npm pack --silent three@0.128.0 @fontsource/press-start-2p@5.0.20 @fontsource/rubik@5.0.20 >/dev/null
 for f in *.tgz; do mkdir -p "${f%.tgz}" && tar xzf "$f" -C "${f%.tgz}"; done
 python3 - "$ROOT" "$WORK" <<'PY'
-import base64, pathlib, re, sys
+import base64, hashlib, pathlib, re, sys
+# must match the integrity= hash on the CDN script tag in index.html
+THREE_SHA512 = 'dLxUelApnYxpLt6K2iomGngnHO83iUvZytA3YjDUCjT0HDOHKXnVYdf3hU4JjM8uEhxf9nD1/ey98U3t2vZ0qQ=='
 root, work = map(pathlib.Path, sys.argv[1:])
-html = (root / 'index.html').read_text()
-three = (work / 'three-0.128.0/package/build/three.min.js').read_text()
-assert '</script' not in three
+html = (root / 'index.html').read_text(encoding='utf-8')
+three_bytes = (work / 'three-0.128.0/package/build/three.min.js').read_bytes()
+assert base64.b64encode(hashlib.sha512(three_bytes).digest()).decode() == THREE_SHA512, 'three.min.js hash mismatch'
+three = three_bytes.decode('utf-8')
+# anything that could end or confuse the inline <script> block
+assert not re.search(r'</script|<!--|<script', three, re.I)
 
 def face(family, weight, pkg, file):
     data = base64.b64encode((work / pkg / 'package/files' / file).read_bytes()).decode()
@@ -26,11 +31,11 @@ fonts = '\n'.join([
     face('Rubik', 800, 'fontsource-rubik-5.0.20', 'rubik-latin-800-normal.woff2'),
 ])
 link = re.compile(r'<link rel="stylesheet" href="https://fonts\.googleapis\.com[^"]*">\n')
-cdn = re.compile(r'<script src="https://cdnjs\.cloudflare\.com/ajax/libs/three\.js/r128/three\.min\.js"></script>')
+cdn = re.compile(r'<script src="https://cdnjs\.cloudflare\.com/ajax/libs/three\.js/r128/three\.min\.js"[^>]*></script>')
 assert link.search(html) and cdn.search(html)
 html = link.sub(lambda m: '<style>\n/* Press Start 2P and Rubik: SIL Open Font License 1.1 */\n' + fonts + '\n</style>\n', html, count=1)
 html = cdn.sub(lambda m: '<script>\n' + three + '\n</script>', html, count=1)
 out = root / 'hop-lanes-standalone.html'
-out.write_text(html)
+out.write_text(html, encoding='utf-8')
 print(f'{out} {out.stat().st_size // 1024} KB')
 PY
