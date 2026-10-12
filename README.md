@@ -11,11 +11,12 @@ Go too slow and the screen leaves you behind.
 | `index.html` | The page: markup only |
 | `css/style.css` | All styles |
 | `js/game.js` | All game logic (needs Three.js r128 loaded first) |
+| `fonts/` | Press Start 2P and Rubik (Latin subset) with their licenses |
 | `hop-lanes-standalone.html` | Generated: everything above plus Three.js and fonts in one offline file |
 
 ## Play
 
-- `index.html` loads Three.js and two fonts from a CDN each time, so it needs internet.
+- `index.html` loads Three.js from a CDN, so it needs internet. The fonts come from `fonts/`.
 - `hop-lanes-standalone.html` has everything built in and plays offline (for example in a phone's file viewer).
 
 | Action | Player 1 | Player 2 |
@@ -34,7 +35,7 @@ of the screen is Player 1 and the right half is Player 2.
 
 ## Offline build
 
-`hop-lanes-standalone.html` is generated. Rebuild it after every change to `index.html`, `css/` or `js/`
+`hop-lanes-standalone.html` is generated. Rebuild it after every change to `index.html`, `css/`, `js/` or `fonts/`
 (needs `npm`, `python3` and access to the npm registry):
 
 ```sh

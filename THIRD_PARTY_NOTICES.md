@@ -1,6 +1,6 @@
 # Third-party notices
 
-`index.html` loads these from a CDN. `hop-lanes-standalone.html` contains copies of them.
+`index.html` loads Three.js from a CDN. The fonts are in `fonts/`. `hop-lanes-standalone.html` contains copies of all of them.
 
 ## Three.js r128 (three@0.128.0)
 
@@ -17,4 +17,5 @@ SIL Open Font License 1.1: https://openfontlicense.org
 Copyright 2015 The Rubik Project Authors.
 SIL Open Font License 1.1: https://openfontlicense.org
 
-The standalone build uses the Latin subset of each font, from the @fontsource packages.
+Both fonts are the Latin subset from the @fontsource 5.0.20 packages. The full license texts are in
+`fonts/OFL-PressStart2P.txt` and `fonts/OFL-Rubik.txt`.

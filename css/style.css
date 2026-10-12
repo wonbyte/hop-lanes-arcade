@@ -1,3 +1,8 @@
+/* fonts are served from fonts/ (SIL Open Font License 1.1, see fonts/OFL-*.txt); no third-party requests */
+@font-face { font-family: "Press Start 2P"; font-weight: 400; font-display: swap; src: url("../fonts/press-start-2p-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: "Rubik"; font-weight: 500; font-display: swap; src: url("../fonts/rubik-latin-500-normal.woff2") format("woff2"); }
+@font-face { font-family: "Rubik"; font-weight: 800; font-display: swap; src: url("../fonts/rubik-latin-800-normal.woff2") format("woff2"); }
+
 /* Layout: full-bleed 3D playfield, marquee bar on top, two-player control deck at the bottom. Single arcade look. */
 :root {
   --bg: #10131c;
