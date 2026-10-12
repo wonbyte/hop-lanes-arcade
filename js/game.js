@@ -183,7 +183,8 @@ const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const BLINK_STEPS = reduceMotion ? 2.5 : 8;                          // rail light on/off changes per second
 const stage = $('stage'), marquee = $('marquee');
 let renderer;
-try { renderer = new THREE.WebGLRenderer({ antialias: true }); }
+// on high-density phone screens edges are already fine, and multisampling costs a lot of fill
+try { renderer = new THREE.WebGLRenderer({ antialias: !(lowGpu && (window.devicePixelRatio || 1) >= 2) }); }
 catch (e) { fail('This browser can not show 3D graphics. Turn on WebGL or try another browser.'); return; }
 let pixelRatio = Math.min(lowGpu ? 1.5 : 2, window.devicePixelRatio || 1);
 renderer.setPixelRatio(pixelRatio);
@@ -234,22 +235,41 @@ if ('ResizeObserver' in window) {
 } else window.addEventListener('resize', resize);
 resize();
 
-// slow device? lower the resolution, then the shadow detail, a step at a time
-const perf = { ema: 1 / 60, t: 0 };
+// Slow device? Lower the resolution, then the shadow detail, then the shadow filter, one step at a time.
+// A step that does not help (a phone capped at 30 fps in power-saving mode) is undone, and the ladder stops.
+const perf = { ema: 1 / 60, t: 0, undo: null, before: 0, done: false };
+function resetFrameWatch() { perf.ema = 1 / 60; perf.t = 0; perf.undo = null; }
+function setRatio(r) { pixelRatio = r; renderer.setPixelRatio(r); resize(); }
+function setShadowMapSize(n) {
+  sun.shadow.mapSize.setScalar(n);
+  if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }   // rebuilt at the new size
+}
+function setShadowType(type) {
+  renderer.shadowMap.type = type;
+  for (const m of [voxelMat, LIGHT_ON, LIGHT_OFF, splashMat, dustMat]) m.needsUpdate = true;
+}
+// takes one step down and returns how to undo it, or null when nothing is left to lower
+function lowerQuality() {
+  if (pixelRatio > 1) { const r = pixelRatio; setRatio(Math.max(1, r - 0.25)); return () => setRatio(r); }
+  if (sun.shadow.mapSize.x > 512) { const n = sun.shadow.mapSize.x; setShadowMapSize(n / 2); return () => setShadowMapSize(n); }
+  if (renderer.shadowMap.type !== THREE.BasicShadowMap) {
+    const t = renderer.shadowMap.type; setShadowType(THREE.BasicShadowMap); return () => setShadowType(t);
+  }
+  return null;
+}
 function watchFrameTime(rawDt) {
-  if (state !== 'play' || rawDt > 0.1) return;          // ignore menus and tab switches
+  if (perf.done || state !== 'play' || rawDt > 0.1) return;   // ignore menus and tab switches
   perf.ema += (rawDt - perf.ema) * 0.05;
   if ((perf.t += rawDt) < 2) return;
   perf.t = 0;
-  if (perf.ema < 0.022) return;                          // ~45 fps or better: keep quality
-  if (pixelRatio > 1) {
-    pixelRatio = Math.max(1, pixelRatio - 0.25);
-    renderer.setPixelRatio(pixelRatio);
-    resize();
-  } else if (sun.shadow.mapSize.x > 512) {
-    sun.shadow.mapSize.setScalar(sun.shadow.mapSize.x / 2);
-    if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
+  if (perf.undo) {                                       // judge the last step
+    if (perf.ema > perf.before * 0.9) { perf.undo(); perf.done = true; return; }
+    perf.undo = null;
   }
+  if (perf.ema < 0.022) return;                          // ~45 fps or better: keep quality
+  perf.before = perf.ema;
+  perf.undo = lowerQuality();
+  if (!perf.undo) perf.done = true;
 }
 
 // ---------- merged voxel meshes ----------
@@ -564,7 +584,8 @@ function resetWorld() {
 }
 function ensureLanes() {
   while (maxRow < lastNeededRow()) addLane(maxRow + 1);
-  if (maxRow < camRow + LANES_AHEAD) addLane(maxRow + 1);
+  // keep a few rows built ahead of the screen edge, so a lane is never built in the frame it appears
+  if (maxRow < Math.max(camRow + LANES_AHEAD, lastNeededRow() + 6)) addLane(maxRow + 1);
   const first = firstNeededRow();
   for (const lane of lanes.values()) if (lane.r < first) dropLane(lane);
 }
@@ -733,13 +754,13 @@ function setBanner(h, sub = '') {
   bannerH.textContent = h; bannerP.textContent = sub;
 }
 const pads = document.querySelectorAll('.pad');
-const joinText = () => touchQuery.matches ? 'TAP THIS<br>SIDE TO JOIN' : 'PRESS TAP<br>TO JOIN';
+const joinText = () => touchQuery.matches ? 'TAP THIS\nSIDE TO JOIN' : 'PRESS TAP\nTO JOIN';
 function setCard(i) {
   const c = $('card' + (i + 1)), p = players[i];
   pads[i].classList.toggle('idle', (state === 'play' || state === 'over') && !p.joined);
   c.classList.toggle('ready', p.joined && state === 'countdown');
   c.style.visibility = state === 'play' || state === 'over' ? 'hidden' : 'visible';
-  c.firstElementChild.innerHTML = p.joined ? 'READY!' : joinText();
+  c.firstElementChild.textContent = p.joined ? 'READY!' : joinText();
   c.lastElementChild.textContent = p.joined ? 'PLAYER ' + (i + 1) : 'FREE PLAY';
 }
 const setCards = () => { setCard(0); setCard(1); };
@@ -772,13 +793,14 @@ function join(i) {
   if (p.joined) return;
   p.joined = true; sfx.join();
   spawn(p);
-  if (state === 'attract') { state = 'countdown'; countdown = COUNTDOWN; }
+  if (state === 'attract') { state = 'countdown'; countdown = COUNTDOWN; countdownKey = ''; }
   else countdown = Math.max(countdown, 2.5);
   $('logo').hidden = true;
   setCards();
 }
 function startPlay() {
   state = 'play'; playT = 0; goT = GO_TIME; sfx.go();
+  resetFrameWatch();
   keepAwake(true);
   setBanner('GO!');
   players.forEach((p, i) => { $('score' + (i + 1)).hidden = !p.joined; });
@@ -881,13 +903,18 @@ stage.addEventListener('pointercancel', endTouch);
 $('app').addEventListener('contextmenu', e => e.preventDefault());
 
 // ---------- loop ----------
+let countdownKey = '';
 function updateCountdown(dt) {
   const before = Math.ceil(countdown);
   countdown -= dt;
   const n = Math.ceil(countdown);
   if (n !== before && n > 0) sfx.tick();
-  if (countdown <= 0) startPlay();
-  else setBanner(String(n), (players.every(p => p.joined) ? 'FROG VS FOX' : 'OTHER PLAYER: TAP TO JOIN')
+  if (countdown <= 0) { startPlay(); return; }
+  const both = players.every(p => p.joined);
+  const key = n + (both ? 'b' : 's');
+  if (key === countdownKey) return;                     // the text only changes each second or on a join
+  countdownKey = key;
+  setBanner(String(n), (both ? 'FROG VS FOX' : 'OTHER PLAYER: TAP TO JOIN')
     + (touchQuery.matches ? '\nTAP TO HOP · SWIPE TO TURN' : ''));
 }
 function updateCamera(dt) {
@@ -909,7 +936,7 @@ function placeCamera() {
   for (const lane of lanes.values()) lane.group.visible = Math.abs(lane.r - focusRow) < visRows;
 }
 
-let last = performance.now();
+let last = performance.now(), lastDraw = 0;
 function frame(now) {
   const rawDt = (now - last) / 1000;
   const dt = Math.max(0, Math.min(0.05, rawDt));
@@ -917,7 +944,7 @@ function frame(now) {
 
   if (state === 'countdown') updateCountdown(dt);
   else if (state === 'play') updateCamera(dt);
-  else if (state === 'over' && stateT > RESULTS_DELAY) resultsEl.hidden = false;
+  else if (state === 'over' && stateT > RESULTS_DELAY && resultsEl.hidden) resultsEl.hidden = false;
 
   ensureLanes();
   updateLanes(dt, now);
@@ -926,9 +953,9 @@ function frame(now) {
   placeCamera();
   watchFrameTime(rawDt);
 
-  // menus need no 60fps: draw every other frame there to save battery
+  // draw at most ~60 fps while playing (120 Hz phones), and every other frame on menus, to save battery
   const idle = state === 'attract' || (state === 'over' && stateT > RESULTS_DELAY);
-  if (!idle || (frameN++ & 1) === 0) renderer.render(scene, camera);
+  if (idle ? (frameN++ & 1) === 0 : now - lastDraw >= 14) { renderer.render(scene, camera); lastDraw = now; }
   if (state === 'attract' && stateT > 5 && actx && actx.state === 'running') actx.suspend().catch(() => {});
   requestAnimationFrame(frame);
 }
@@ -950,5 +977,10 @@ if (DEBUG) {
   };
 }
 toAttract();
+// build the plain shader (rail lights, particles) now; built mid-game, it stutters on the first train or death
+const warm = new THREE.Mesh(partGeo, splashMat);
+scene.add(warm);
+renderer.compile(scene, camera);
+scene.remove(warm);
 requestAnimationFrame(frame);
 })();

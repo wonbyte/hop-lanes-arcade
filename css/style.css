@@ -74,6 +74,7 @@ body {
 }
 .card.p1 { background: var(--p1); }
 .card.p2 { background: var(--p2); }
+.card > div:first-child { white-space: pre-line; }   /* join text uses a newline, not <br> */
 .card svg { width: 52%; height: auto; image-rendering: pixelated; }
 .card.ready { animation: bob .6s ease-in-out infinite alternate; }
 .card .state { color: var(--gold); }
