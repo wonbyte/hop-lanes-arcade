@@ -30,6 +30,9 @@ const COUNTDOWN = 3;
 const RESULTS_DELAY = 1.1;    // seconds from last death to the results panel (and restart)
 const GO_TIME = 0.6;
 const WIPE_MS = 130;          // restart fade; the new world is built while the screen is covered
+const EAGLE_IDLE = 6;         // seconds without a hop before the eagle comes for you
+const EAGLE_SWOOP = 0.9;      // seconds the eagle takes to reach the player
+const COIN_CHANCE = { grass: 0.28, road: 0.18 };   // chance of a coin on a lane
 const DIFF_ROWS = 140;        // rows until the game reaches full difficulty
 const difficulty = r => Math.min(1, Math.max(0, r) / DIFF_ROWS);
 const TAU = Math.PI * 2;
@@ -46,11 +49,17 @@ let bannerKey = '';
 const hashMatch = /^#(debug)?(?:-?seed-(\d+))?$/.exec(location.hash) || [];
 const DEBUG = hashMatch[1] === 'debug';
 const FIXED_SEED = hashMatch[2] !== undefined ? Number(hashMatch[2]) >>> 0 : null;
+// optional online score list: <meta name="hop-lanes-scores" content="https://.../scores"> (see server/README.md)
+const SCORES_URL = (document.querySelector('meta[name="hop-lanes-scores"]') || {}).content || '';
 
 // ---------- shared colors (3D models and the pixel portraits use the same ones) ----------
 const COLORS = {
   frog: { body: 0x4cbf3f, belly: 0xa6e37a, mouth: 0xe0453a, eye: 0xffffff, pupil: 0x111111, leg: 0x2d7a25 },
-  fox: { fur: 0xf07a2a, cream: 0xfff4e6, dark: 0x1a1a1a }
+  fox: { fur: 0xf07a2a, cream: 0xfff4e6, dark: 0x1a1a1a },
+  bunny: { fur: 0xf4f1ec, ear: 0xf7b9c4, eye: 0x222222, nose: 0xe06a7c },
+  cat: { fur: 0x6d6f7a, dark: 0x3a3b45, eye: 0xf2c33a, pupil: 0x111111, nose: 0xe88a9a },
+  robot: { body: 0xb8c0cc, dark: 0x5a6270, eye: 0x4fb8ff, light: 0xff6f5a },
+  coin: { face: 0xffd84a, rim: 0xc99a1e }
 };
 const css = hex => '#' + hex.toString(16).padStart(6, '0');
 
@@ -74,6 +83,12 @@ function dropOldDays() {
     }
   } catch (e) {}
 }
+const COINS_KEY = 'hoplanes.coins', OWNED_KEY = 'hoplanes.owned', PICK_KEY = 'hoplanes.pick';
+const HOWTO_KEY = 'hoplanes.howto', MUTE_KEY = 'hoplanes.mute';
+function loadText(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
+let bank = load(COINS_KEY);                                   // coins collected over all games
+const owned = new Set(loadText(OWNED_KEY).split(',').filter(Boolean));
+function setBank(n) { bank = Math.max(0, n); save(COINS_KEY, bank); $('bank').textContent = bank; }
 let bestAll = load(BEST_KEY);
 let bestDay = 0, shownDay = '';
 function refreshBests() {
@@ -83,6 +98,7 @@ function refreshBests() {
   $('daily').textContent = bestDay;
 }
 dropOldDays();
+setBank(bank);
 // a game left open past midnight starts a new "today"
 setInterval(() => { if (dayKey() !== shownDay) { dropOldDays(); refreshBests(); } }, 60000);
 
@@ -115,7 +131,49 @@ const PIX = {
     '.OOOOOOOOOO.',
     '..KK....KK..',
     '............'],
-    pal: { O: COLORS.fox.fur, W: COLORS.fox.cream, K: COLORS.fox.dark } }
+    pal: { O: COLORS.fox.fur, W: COLORS.fox.cream, K: COLORS.fox.dark } },
+  bunny: { rows: [
+    '...W....W...',
+    '...WP..WP...',
+    '...WP..WP...',
+    '...W....W...',
+    '..WWWWWWWW..',
+    '.WWWWWWWWWW.',
+    '.WWKWWWWKWW.',
+    '.WWWWWWWWWW.',
+    '.WWWWNNWWWW.',
+    '..WWWWWWWW..',
+    '...WW..WW...',
+    '............'],
+    pal: { W: COLORS.bunny.fur, P: COLORS.bunny.ear, K: COLORS.bunny.eye, N: COLORS.bunny.nose } },
+  cat: { rows: [
+    '.D........D.',
+    '.DD......DD.',
+    '.DFDFFFFDFD.',
+    '.FFFFFFFFFF.',
+    '.FFFFFFFFFF.',
+    '.FEEFFFFEEF.',
+    '.FEKFFFFKEF.',
+    '.FFFFFFFFFF.',
+    '.FFFFNNFFFF.',
+    '.FFFDFFDFFF.',
+    '..FFFFFFFF..',
+    '............'],
+    pal: { D: COLORS.cat.dark, F: COLORS.cat.fur, E: COLORS.cat.eye, K: COLORS.cat.pupil, N: COLORS.cat.nose } },
+  robot: { rows: [
+    '.....L......',
+    '....BBB.....',
+    '.BBBBBBBBBB.',
+    '.BDDDDDDDDB.',
+    '.BDEEDDEEDB.',
+    '.BDEEDDEEDB.',
+    '.BDDDDDDDDB.',
+    '.BDLLLLLLDB.',
+    '.BDDDDDDDDB.',
+    '.BBBBBBBBBB.',
+    '..BB....BB..',
+    '............'],
+    pal: { B: COLORS.robot.body, D: COLORS.robot.dark, E: COLORS.robot.eye, L: COLORS.robot.light } }
 };
 function drawPix(svg, art) {
   let s = '';
@@ -124,8 +182,6 @@ function drawPix(svg, art) {
   }));
   svg.innerHTML = s;
 }
-drawPix($('pic1'), PIX.frog);
-drawPix($('pic2'), PIX.fox);
 
 // ---------- audio ----------
 let actx = null;
@@ -133,8 +189,16 @@ function audio() {
   if (!actx) { try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
   if (actx && actx.state === 'suspended') actx.resume().catch(() => {});
 }
+let muted = loadText(MUTE_KEY) === '1';
+function setMuted(on) {
+  muted = on;
+  try { localStorage.setItem(MUTE_KEY, on ? '1' : '0'); } catch (e) {}
+  const b = $('mute');
+  b.setAttribute('aria-pressed', String(on));
+  b.textContent = on ? 'SOUND OFF' : 'SOUND ON';
+}
 function beep(freq, dur, type = 'square', vol = 0.06, slide = 0) {
-  if (!actx) return;
+  if (!actx || muted) return;
   const t = actx.currentTime, o = actx.createOscillator(), g = actx.createGain();
   o.type = type; o.frequency.setValueAtTime(freq, t);
   if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(30, freq + slide), t + dur);
@@ -153,7 +217,11 @@ const sfx = {
   horn: () => { beep(220, 0.5, 'sawtooth', 0.05); beep(277, 0.5, 'sawtooth', 0.04); },
   join: () => { beep(660, 0.08); setTimeout(() => beep(990, 0.12), 80); },
   go: () => beep(880, 0.25, 'square', 0.06),
-  tick: () => beep(440, 0.1, 'square', 0.05)
+  tick: () => beep(440, 0.1, 'square', 0.05),
+  coin: () => { beep(1320, 0.06, 'square', 0.04); setTimeout(() => beep(1760, 0.1, 'square', 0.04), 60); },
+  buy: () => { beep(660, 0.08); setTimeout(() => beep(880, 0.08), 80); setTimeout(() => beep(1320, 0.14), 160); },
+  nope: () => beep(140, 0.2, 'sawtooth', 0.06),
+  eagle: () => { beep(1500, 0.18, 'sawtooth', 0.05, -500); setTimeout(() => beep(1300, 0.25, 'sawtooth', 0.05, -600), 180); }
 };
 
 // ---------- phone extras: buzz and keep the screen on (both optional) ----------
@@ -372,6 +440,74 @@ function foxBoxes() {
     [0.1, 0.12, 0.1, c.dark, s * 0.14, 0, -0.12]);      // legs
   return b;
 }
+function bunnyBoxes() {
+  const c = COLORS.bunny;
+  const b = [
+    [0.5, 0.44, 0.56, c.fur, 0, 0.08, 0],
+    [0.08, 0.06, 0.04, c.nose, 0, 0.28, -0.29],
+    [0.16, 0.16, 0.14, c.fur, 0, 0.2, 0.33]           // tail
+  ];
+  for (const s of [-1, 1]) b.push(
+    [0.14, 0.5, 0.1, c.fur, s * 0.14, 0.5, -0.05],      // ears
+    [0.07, 0.36, 0.04, c.ear, s * 0.14, 0.56, -0.11],
+    [0.07, 0.08, 0.04, c.eye, s * 0.15, 0.36, -0.29],
+    [0.12, 0.1, 0.2, c.fur, s * 0.18, 0, -0.1]);        // feet
+  return b;
+}
+function catBoxes() {
+  const c = COLORS.cat;
+  const b = [
+    [0.5, 0.42, 0.6, c.fur, 0, 0.1, 0],
+    [0.07, 0.05, 0.04, c.nose, 0, 0.3, -0.31],
+    [0.52, 0.05, 0.08, c.dark, 0, 0.5, -0.05],        // stripes
+    [0.52, 0.05, 0.08, c.dark, 0, 0.5, 0.15],
+    [0.1, 0.1, 0.4, c.dark, 0.1, 0.3, 0.45],          // tail
+    [0.1, 0.3, 0.1, c.dark, 0.1, 0.35, 0.62]
+  ];
+  for (const s of [-1, 1]) b.push(
+    [0.12, 0.16, 0.1, c.dark, s * 0.17, 0.52, -0.1],    // ears
+    [0.09, 0.08, 0.04, c.eye, s * 0.14, 0.38, -0.31],
+    [0.03, 0.08, 0.05, c.pupil, s * 0.14, 0.38, -0.32],
+    [0.1, 0.12, 0.1, c.dark, s * 0.15, 0, -0.14],       // legs
+    [0.1, 0.12, 0.1, c.dark, s * 0.15, 0, 0.16]);
+  return b;
+}
+function robotBoxes() {
+  const c = COLORS.robot;
+  const b = [
+    [0.46, 0.5, 0.46, c.body, 0, 0.1, 0],
+    [0.36, 0.26, 0.04, c.dark, 0, 0.26, -0.24],       // face plate
+    [0.22, 0.04, 0.05, c.light, 0, 0.3, -0.26],       // mouth
+    [0.05, 0.2, 0.05, c.dark, 0, 0.6, 0],             // antenna
+    [0.1, 0.1, 0.1, c.light, 0, 0.78, 0],
+    [0.08, 0.08, 0.03, c.light, -0.1, 0.2, -0.24]     // chest light
+  ];
+  for (const s of [-1, 1]) b.push(
+    [0.1, 0.08, 0.05, c.eye, s * 0.1, 0.4, -0.26],
+    [0.08, 0.3, 0.12, c.dark, s * 0.3, 0.18, 0],        // arms
+    [0.14, 0.12, 0.2, c.dark, s * 0.13, 0, 0]);         // feet
+  return b;
+}
+const eagleBoxes = () => {
+  const b = [
+    [0.9, 0.32, 0.5, 0x4a3426, 0, 0, 0],
+    [0.3, 0.3, 0.3, 0xf4f1ec, 0, 0.1, -0.5],          // head
+    [0.12, 0.1, 0.2, 0xf2c33a, 0, 0.15, -0.72],       // beak
+    [0.4, 0.08, 0.3, 0xf4f1ec, 0, 0.1, 0.35]          // tail
+  ];
+  for (const s of [-1, 1]) b.push([1.5, 0.08, 0.45, 0x3a281d, s * 1.1, 0.2, 0], [0.05, 0.05, 0.05, 0x111111, s * 0.1, 0.28, -0.62]);
+  return b;
+};
+const coinBoxes = () => [[0.34, 0.34, 0.08, COLORS.coin.face, 0, 0.28, 0], [0.18, 0.18, 0.1, COLORS.coin.rim, 0, 0.36, 0]];
+// characters a player can pick; the first two are free, the rest are bought with coins
+const CHARACTERS = [
+  { key: 'frog', name: 'FROG', boxes: frogBoxes, price: 0 },
+  { key: 'fox', name: 'FOX', boxes: foxBoxes, price: 0 },
+  { key: 'bunny', name: 'BUNNY', boxes: bunnyBoxes, price: 30 },
+  { key: 'cat', name: 'CAT', boxes: catBoxes, price: 60 },
+  { key: 'robot', name: 'ROBOT', boxes: robotBoxes, price: 100 }
+];
+const isOwned = ch => ch.price === 0 || owned.has(ch.key);
 const CAR_COLORS = [0xe8513a, 0x3a8ee8, 0xf2c33a, 0x8f5ae0, 0x3ac27a, 0xf27fb0];
 function vehicleBoxes(truck, c) {
   const len = truck ? 2.4 : 1.4;
@@ -457,6 +593,19 @@ function fillTraffic(lane, count, z, makeObj) {
   }
 }
 
+// a coin on one free column of the lane; collected when a player lands on it
+const coinMeshes = new Set();
+function placeCoin(lane, z, cols) {
+  if (!cols.length) return;
+  const x = pick(cols);
+  const m = voxelMesh(cachedGeo('coin', coinBoxes), false);
+  m.position.set(x, 0, z);
+  lane.group.add(m);
+  lane.coins.set(x, m);
+  coinMeshes.add(m);
+}
+const playColumns = () => Array.from({ length: PLAY_HALF * 2 + 1 }, (_, i) => i - PLAY_HALF);
+
 // One builder per lane type. Each adds its static boxes to `ground` (merged into one mesh later)
 // and its moving parts to lane.group / lane.objs.
 const LANE_BUILDERS = {
@@ -473,6 +622,7 @@ const LANE_BUILDERS = {
       lane.trees.add(x);
       ground.push([0.3, 0.3, 0.3, 0x7a4b2a, x, 0, z], [0.72, pick([0.6, 0.9, 1.2, 1.5]), 0.72, 0xa9cf3a, x, 0.3, z]);
     }
+    if (r >= 1 && worldRng() < COIN_CHANCE.grass) placeCoin(lane, z, playColumns().filter(x => !lane.trees.has(x)));
   },
   road(lane, { z, diff, prev, ground }) {
     ground.push([40, 0.3, 1, 0x4a4f5c, 0, -0.3, z]);
@@ -487,6 +637,7 @@ const LANE_BUILDERS = {
       mesh.rotation.y = rot;
       return { mesh, len, jitter: rand(0, spacing * 0.35) };
     });
+    if (worldRng() < COIN_CHANCE.road) placeCoin(lane, z, playColumns());
   },
   river(lane, { z, diff, prev, ground }) {
     ground.push([40, 0.3, 1, 0x5ec8f0, 0, -0.45, z]);
@@ -517,7 +668,7 @@ const LANE_BUILDERS = {
 function addLane(r) {
   const kind = laneKind(r);
   const lane = {
-    r, kind, group: new THREE.Group(), objs: [], trees: new Set(),
+    r, kind, group: new THREE.Group(), objs: [], trees: new Set(), coins: new Map(),
     dir: worldRng() < 0.5 ? 1 : -1, speed: 0, span: WRAP * 2 + 4
   };
   const ground = [];
@@ -534,6 +685,7 @@ function addLane(r) {
 
 function dropLane(lane) {
   worldGroup.remove(lane.group);
+  for (const m of lane.coins.values()) coinMeshes.delete(m);
   lane.ground.geometry.dispose();
   lanes.delete(lane.r);
 }
@@ -601,25 +753,61 @@ function ensureLanes() {
 }
 
 // ---------- players ----------
+// the character each player picked last time (saved per player slot)
+function pickIndex(i, fallback) {
+  const k = CHARACTERS.findIndex(c => c.key === loadText(PICK_KEY + i));
+  return k >= 0 ? k : fallback;
+}
 const players = [
-  { id: 0, boxes: frogBoxes, key: 'frog', startX: -2, joined: false, scoreEl: $('score1').querySelector('b') },
-  { id: 1, boxes: foxBoxes, key: 'fox', startX: 2, joined: false, scoreEl: $('score2').querySelector('b') }
+  { id: 0, charIndex: pickIndex(0, 0), startX: -2, joined: false, scoreEl: $('score1').querySelector('b') },
+  { id: 1, charIndex: pickIndex(1, 1), startX: 2, joined: false, scoreEl: $('score2').querySelector('b') }
 ];
+const charOf = p => CHARACTERS[p.charIndex];
 function spawn(p) {
-  if (p.mesh) scene.remove(p.mesh);
-  p.mesh = makeCharacter(p.boxes, p.key);
+  despawn(p);
+  const ch = charOf(p);
+  p.mesh = makeCharacter(ch.boxes, ch.key);
   scene.add(p.mesh);
   Object.assign(p, {
-    x: p.startX, row: 0, alive: true, hop: null, queue: null, score: 0,
+    x: p.startX, row: 0, alive: true, hop: null, queue: null, score: 0, coins: 0, idleT: 0, eagle: null,
     facing: 0, cause: '', log: null, logOff: 0, trainDir: 0
   });
   p.mesh.position.set(p.x, 0, 0);
   p.scoreEl.textContent = '0';
+  $('score' + (p.id + 1)).querySelector('span').textContent = 'P' + (p.id + 1) + ' ' + ch.name;
 }
-function despawn(p) { if (p.mesh) { scene.remove(p.mesh); p.mesh = null; } p.alive = false; }
+function despawn(p) {
+  if (p.mesh) { scene.remove(p.mesh); p.mesh = null; }
+  if (p.eagle) { scene.remove(p.eagle.mesh); p.eagle = null; }
+  p.alive = false;
+}
+
+// ---------- the eagle: stand still too long and it carries you away ----------
+function sendEagle(p) {
+  const mesh = voxelMesh(cachedGeo('eagle', eagleBoxes));
+  const from = new THREE.Vector3(p.x, 6, -p.row - 5);
+  mesh.position.copy(from);
+  scene.add(mesh);
+  p.eagle = { mesh, from, t: 0 };
+  sfx.eagle();
+}
+function updateEagle(p, dt) {
+  const e = p.eagle, m = e.mesh, pm = p.mesh;
+  if (p.alive) {                                 // swoop down to the player
+    e.t = Math.min(1, e.t + dt / EAGLE_SWOOP);
+    const k = e.t * e.t;
+    m.position.set(e.from.x + (pm.position.x - e.from.x) * k, e.from.y + (0.55 - e.from.y) * k, e.from.z + (pm.position.z - e.from.z) * k);
+    m.rotation.x = -0.5 * (1 - e.t);
+    if (e.t >= 1) kill(p, 'eagle');
+  } else {                                       // fly off with the player in its claws
+    m.position.y += dt * 5; m.position.z -= dt * 7;
+    pm.position.set(m.position.x, m.position.y - 0.5, m.position.z);
+    pm.rotation.z += dt * 2;
+  }
+}
 
 function tryMove(p, dx, dr) {
-  if (!p.alive) return;
+  if (!p.alive || p.eagle) return;   // once the eagle is coming there is no escape
   if (p.hop) { p.queue = [dx, dr]; return; }
   // rotation.y: 0 = forward (-z), PI = back, +PI/2 = left, -PI/2 = right
   p.facing = dr > 0 ? 0 : dr < 0 ? Math.PI : (dx > 0 ? -Math.PI / 2 : Math.PI / 2);
@@ -638,12 +826,13 @@ function tryMove(p, dx, dr) {
     carry: p.log, carryX0: p.log ? p.log.x : 0, span: p.log ? lanes.get(p.row).span : 0
   };
   p.row += dr;
+  p.idleT = 0;
   if (p.row > p.score) { p.score = p.row; p.scoreEl.textContent = p.score; }
   sfx.hop(p.id);
   buzz(8);
 }
 
-const DEATH_SOUND = { splash: sfx.splash, slow: sfx.fall };
+const DEATH_SOUND = { splash: sfx.splash, slow: sfx.fall, eagle: sfx.fall };
 function kill(p, cause) {
   if (!p.alive) return;
   p.alive = false; p.cause = cause; p.hop = null;
@@ -661,6 +850,7 @@ const parts = [];
 const partGeo = new THREE.BoxGeometry(0.14, 0.14, 0.14);
 const splashMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
 const dustMat = new THREE.MeshLambertMaterial({ color: 0xd8d2c4 });
+const coinMat = new THREE.MeshLambertMaterial({ color: COLORS.coin.face });
 function burst(x, z, material, count) {
   for (let i = 0; i < count; i++) {
     const m = new THREE.Mesh(partGeo, material);
@@ -694,6 +884,16 @@ function animateDeath(p, dt) {
     m.position.y = Math.max(-0.6, m.position.y - dt * 0.8);
   }
 }
+function collectCoin(p, lane, coin) {
+  lane.group.remove(coin);
+  lane.coins.delete(p.x);
+  coinMeshes.delete(coin);
+  p.coins++;
+  setBank(bank + 1);
+  sfx.coin();
+  buzz(15);
+  burst(p.x, -p.row, coinMat, 6);
+}
 // returns false if the landing killed the player
 function land(p, lane) {
   p.hop = null;
@@ -705,7 +905,11 @@ function land(p, lane) {
     const k = (log.len - 1) / 2;
     p.logOff = THREE.MathUtils.clamp(Math.round(p.x - log.x + k) - k, -k, k);
     p.log = log;
-  } else p.x = Math.round(p.x);
+  } else {
+    p.x = Math.round(p.x);
+    const coin = lane && lane.coins.get(p.x);
+    if (coin) collectCoin(p, lane, coin);
+  }
   p.mesh.userData.body.scale.set(1.15, 0.8, 1.15);
   if (p.queue) { const [qx, qr] = p.queue; p.queue = null; tryMove(p, qx, qr); }
   return true;
@@ -747,10 +951,14 @@ function checkHazards(p, lane) {
 function updatePlayer(p, dt) {
   if (!p.mesh) return;
   turnToward(p.mesh, p.facing, dt);
-  if (!p.alive) { animateDeath(p, dt); return; }
+  if (!p.alive) { if (p.eagle) updateEagle(p, dt); else animateDeath(p, dt); return; }
   const lane = lanes.get(p.row);
   const ok = p.hop ? stepHop(p, lane, dt) : stand(p, dt);
   if (ok && p.alive) checkHazards(p, lanes.get(p.row));
+  if (!p.alive || state !== 'play') return;
+  if (!p.hop) p.idleT += dt;
+  if (!p.eagle && p.idleT > EAGLE_IDLE - EAGLE_SWOOP) sendEagle(p);
+  if (p.eagle) updateEagle(p, dt);
 }
 
 // ---------- screens ----------
@@ -766,12 +974,31 @@ function setBanner(h, sub = '') {
 const pads = document.querySelectorAll('.pad');
 const joinText = () => touchQuery.matches ? 'TAP THIS\nSIDE TO JOIN' : 'PRESS TAP\nTO JOIN';
 function setCard(i) {
-  const c = $('card' + (i + 1)), p = players[i];
+  const c = $('card' + (i + 1)), p = players[i], ch = charOf(p), locked = !isOwned(ch);
   pads[i].classList.toggle('idle', (state === 'play' || state === 'over') && !p.joined);
   c.classList.toggle('ready', p.joined && state === 'countdown');
+  c.classList.toggle('locked', locked && !p.joined);
   c.style.visibility = state === 'play' || state === 'over' ? 'hidden' : 'visible';
-  c.firstElementChild.textContent = p.joined ? 'READY!' : joinText();
-  c.lastElementChild.textContent = p.joined ? 'PLAYER ' + (i + 1) : 'FREE PLAY';
+  if (p.shownChar !== ch.key) { drawPix($('pic' + (i + 1)), PIX[ch.key]); p.shownChar = ch.key; }
+  const head = c.querySelector('.head'), st = c.querySelector('.state');
+  if (p.joined) { head.textContent = 'READY!'; st.textContent = 'PLAYER ' + (i + 1); }
+  else if (locked) { head.textContent = bank >= ch.price ? 'TAP TO BUY' : 'NEED ' + ch.price + ' COINS'; st.textContent = ch.name + ' · ' + ch.price + ' COINS'; }
+  else { head.textContent = joinText(); st.textContent = ch.name; }
+  for (const b of c.querySelectorAll('.cyc')) b.disabled = p.joined;
+}
+function cycleChar(i, d) {
+  const p = players[i];
+  if (p.joined || state === 'play' || state === 'over') return;
+  p.charIndex = (p.charIndex + d + CHARACTERS.length) % CHARACTERS.length;
+  save(PICK_KEY + i, charOf(p).key);
+  sfx.tick();
+  setCard(i);
+}
+function shakeCard(i) {
+  const c = $('card' + (i + 1));
+  c.classList.remove('shake');
+  void c.offsetWidth;   // restart the animation
+  c.classList.add('shake');
 }
 const setCards = () => { setCard(0); setCard(1); };
 
@@ -801,6 +1028,13 @@ function restart(joinPlayer) {
 function join(i) {
   const p = players[i];
   if (p.joined) return;
+  const ch = charOf(p);
+  if (!isOwned(ch)) {                                   // a locked character: buy it with coins, or no join
+    if (bank < ch.price) { sfx.nope(); shakeCard(i); return; }
+    setBank(bank - ch.price);
+    owned.add(ch.key); save(OWNED_KEY, [...owned].join(','));
+    sfx.buy();
+  }
   p.joined = true; sfx.join();
   spawn(p);
   if (state === 'attract') { state = 'countdown'; countdown = COUNTDOWN; }
@@ -831,25 +1065,82 @@ function checkOver() {
   refreshBests();
   $('resTitle').textContent = !(p1.joined && p2.joined) ? 'GAME OVER'
     : p1.score === p2.score ? 'TIE GAME!'
-    : p1.score > p2.score ? 'FROG WINS!' : 'FOX WINS!';
+    : charOf(p1.score > p2.score ? p1 : p2).name + ' WINS!';
   $('res1').hidden = !p1.joined; $('res2').hidden = !p2.joined;
+  $('res1').querySelector('span').textContent = charOf(p1).name;
+  $('res2').querySelector('span').textContent = charOf(p2).name;
+  $('world').hidden = true;
+  postScore(charOf(p1.joined && (!p2.joined || p1.score >= p2.score) ? p1 : p2).name, top);
   $('res1').querySelector('b').textContent = p1.score;
   $('res2').querySelector('b').textContent = p2.score;
   $('resNote').textContent = (note ? note + ' ' : '') + 'PRESS TAP TO PLAY AGAIN';
 }
 
+// optional online score list: silent when no server is set or it can not be reached
+async function postScore(name, score) {
+  if (!SCORES_URL || !window.fetch) return;
+  try {
+    const ctrl = new AbortController();
+    setTimeout(() => ctrl.abort(), 4000);
+    const res = await fetch(SCORES_URL, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, score }), signal: ctrl.signal
+    });
+    if (!res.ok) return;
+    const top = (await res.json()).top;
+    if (Array.isArray(top) && top.length && state === 'over') {
+      $('world').textContent = 'WORLD BEST ' + top[0].score + ' \u00b7 ' + top[0].name;
+      $('world').hidden = false;
+    }
+  } catch (e) { /* offline, blocked by the page policy, or no server: nothing to show */ }
+}
+
+// ---------- pause (phone call, app switch, or the P key) ----------
+let pausedFrom = '';
+function pauseGame() {
+  if (state !== 'play' && state !== 'countdown') return;
+  pausedFrom = state; state = 'paused';
+  keepAwake(false);
+  setBanner('PAUSED', touchQuery.matches ? 'TAP TO CONTINUE' : 'PRESS ANY KEY');
+}
+function resumeGame() {
+  if (state !== 'paused') return;
+  state = pausedFrom; goT = 0;
+  setBanner('');
+  if (state === 'play') keepAwake(true);
+}
+document.addEventListener('visibilitychange', () => { if (document.hidden) pauseGame(); });
+
+// ---------- first-run help ----------
+const howto = $('howto');
+function showHowto() {
+  howto.querySelector('p').textContent = touchQuery.matches
+    ? 'Tap the game to hop forward.\nSwipe to move left, right or back.\nCollect coins to unlock animals.\nStand still too long and the eagle gets you!'
+    : 'Player 1: W A S D.  Player 2: arrow keys.\nCollect coins to unlock animals.\nStand still too long and the eagle gets you!';
+  howto.hidden = false;
+}
+function hideHowto() {
+  if (howto.hidden) return false;
+  howto.hidden = true;
+  try { localStorage.setItem(HOWTO_KEY, '1'); } catch (e) {}
+  return true;
+}
+$('gotit').addEventListener('click', hideHowto);
+
 // ---------- input ----------
 const canRestart = () => state === 'over' && stateT > RESULTS_DELAY && !restarting;
 function press(i, dx, dr) {
   audio();
-  if (restarting) return;
+  if (restarting || hideHowto()) return;
+  if (state === 'paused') { resumeGame(); return; }
   if (state === 'attract' || state === 'countdown') join(i);
   else if (state === 'play') { if (players[i].joined) tryMove(players[i], dx, dr); }
   else if (canRestart()) restart(i);
 }
 function pressStart() {
   audio();
-  if (restarting) return;
+  if (restarting || hideHowto()) return;
+  if (state === 'paused') { resumeGame(); return; }
   if (state === 'attract') join(0);
   else if (state === 'countdown') countdown = Math.min(countdown, 0.01);
   else if (canRestart()) restart();
@@ -863,9 +1154,20 @@ window.addEventListener('keydown', e => {
   if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;   // leave browser shortcuts alone
   // a focused on-screen button handles its own Enter/Space (as a click)
   if ((e.code === 'Enter' || e.code === 'Space') && e.target.closest && e.target.closest('button')) return;
+  if (hideHowto()) return;
   const k = KEYS[e.code];
   if (k) { e.preventDefault(); press(...k); }
   else if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); pressStart(); }
+  else if (e.code === 'KeyP' || e.code === 'Escape') { if (state === 'paused') resumeGame(); else pauseGame(); }
+  else if (e.code === 'KeyM') setMuted(!muted);
+});
+$('mute').addEventListener('click', () => { audio(); setMuted(!muted); });
+setMuted(muted);
+// character picker arrows on the join cards (they sit on the field, so the field must not also get the touch)
+document.querySelectorAll('.cyc').forEach(btn => {
+  const go = () => { audio(); cycleChar(+btn.dataset.p, +btn.dataset.d); };
+  btn.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); go(); });
+  btn.addEventListener('click', e => { if (e.detail === 0) go(); });
 });
 document.querySelectorAll('.tap').forEach(btn => {
   const i = +btn.dataset.p;
@@ -902,7 +1204,7 @@ function touchRing(clientX, clientY, i, r) {
   setTimeout(gone, 500);   // also without animations (reduced motion)
 }
 stage.addEventListener('pointerdown', e => {
-  if (e.button > 0) return;
+  if (e.button > 0 || e.target.closest('#cards, #howto')) return;
   const r = stage.getBoundingClientRect();   // one layout read per touch
   const i = fieldPlayer(e.clientX, r);
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, i, done: false });
@@ -964,6 +1266,11 @@ function frame(now) {
   const dt = Math.max(0, Math.min(0.05, rawDt));
   last = now; stateT += dt;
 
+  if (state === 'paused') {                       // nothing moves; draw now and then so the screen stays fresh
+    if ((frameN++ & 3) === 0) renderer.render(scene, camera);
+    requestAnimationFrame(frame);
+    return;
+  }
   if (state === 'countdown') updateCountdown(dt);
   else if (state === 'play') updateCamera(dt);
   else if (state === 'over' && stateT > RESULTS_DELAY && resultsEl.hidden) resultsEl.hidden = false;
@@ -972,6 +1279,7 @@ function frame(now) {
   updateLanes(dt, now);
   for (const p of players) updatePlayer(p, dt);
   updateParts(dt);
+  for (const m of coinMeshes) m.rotation.y = now / 300;
   placeCamera();
 
   // draw at most ~60 fps while playing (90-144 Hz screens), and every other frame on menus, to save battery
@@ -999,6 +1307,9 @@ if (DEBUG) {
     get camRow() { return camRow; },
     get seed() { return worldSeed; },
     get pixelRatio() { return pixelRatio; },
+    get bank() { return bank; },
+    get muted() { return muted; },
+    laneCoins(r) { const l = lanes.get(r); return l ? [...l.coins.keys()] : []; },
     // lane types for rows 0..30 (builds missing rows ahead first)
     laneKinds() {
       while (maxRow < 30) addLane(maxRow + 1);
@@ -1009,6 +1320,7 @@ if (DEBUG) {
   };
 }
 toAttract();
+if (loadText(HOWTO_KEY) !== '1') showHowto();
 // build the plain shader (rail lights, particles) now; built mid-game, it stutters on the first train or death
 const warm = new THREE.Mesh(partGeo, splashMat);
 scene.add(warm);

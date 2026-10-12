@@ -37,8 +37,10 @@ async function launch() {
 }
 
 // New page with CDN three.js served locally and fonts blocked; collects errors.
-async function open(ctxOpts, url, { network = 'cdn' } = {}) {
+async function open(ctxOpts, url, { network = 'cdn', fresh = false } = {}) {
   const context = await browser.newContext(ctxOpts);
+  // the first-run help overlay would swallow the first tap; tests that want it pass fresh: true
+  if (!fresh) await context.addInitScript(() => { try { localStorage.setItem('hoplanes.howto', '1'); } catch (e) {} });
   const page = await context.newPage();
   const errors = [];
   const requests = [];
@@ -113,6 +115,7 @@ test('4. game over when idle', async () => {
     await waitState(page, 'play');
     await page.waitForFunction(() => window.hopLanes.state === 'over', null, { timeout: 90000 });
     assert.equal(await state(page), 'over');
+    assert.equal(await page.evaluate(() => window.hopLanes.players[0].cause), 'eagle', 'an idle player is taken by the eagle');
     assert.deepEqual(errors, []);
   } finally { await context.close(); }
 });
@@ -129,6 +132,65 @@ test('4b. restart after game over covers the screen, then counts down', async ()
     await waitState(page, 'countdown');
     await page.waitForFunction(() => !document.getElementById('wipe').classList.contains('on'), null, { timeout: T });
     assert.equal(await page.evaluate(() => window.hopLanes.players[0].joined), true);
+    assert.deepEqual(errors, []);
+  } finally { await context.close(); }
+});
+
+test('4c. first-run help shows once, then never again', async () => {
+  const { context, page, errors } = await open({}, INDEX + '#debug', { fresh: true });
+  try {
+    await waitState(page, 'attract');
+    assert.equal(await page.evaluate(() => document.getElementById('howto').hidden), false, 'help is shown on first run');
+    await page.click('#gotit');
+    assert.equal(await page.evaluate(() => document.getElementById('howto').hidden), true);
+    await page.reload();
+    await waitState(page, 'attract');
+    assert.equal(await page.evaluate(() => document.getElementById('howto').hidden), true, 'help stays hidden after reload');
+    assert.deepEqual(errors, []);
+  } finally { await context.close(); }
+});
+
+test('4d. coins: landing on a coin adds one to the bank', async () => {
+  // find a seed whose row 1 (never has trees) holds a coin, then walk onto it
+  for (let seed = 1; seed <= 40; seed++) {
+    const { context, page, errors } = await open({}, `${INDEX}#debug-seed-${seed}`);
+    try {
+      await waitState(page, 'attract');
+      const cols = await page.evaluate(() => window.hopLanes.laneCoins(1));
+      if (!cols.length) continue;
+      const col = cols[0];
+      await page.keyboard.press('KeyW');
+      await waitState(page, 'play');
+      const bank0 = await page.evaluate(() => window.hopLanes.bank);
+      await page.keyboard.press('KeyW');   // row 0 -> 1 (start column is -2)
+      await page.waitForFunction(() => window.hopLanes.players[0].row === 1, null, { timeout: T });
+      for (let x = -2; x !== col; x += Math.sign(col - x)) {
+        await page.keyboard.press(col > x ? 'KeyD' : 'KeyA');
+        await page.waitForFunction(v => window.hopLanes.players[0].x === v && !window.hopLanes.players[0].hop, x + Math.sign(col - x), { timeout: T });
+      }
+      assert.equal(await page.evaluate(() => window.hopLanes.bank), bank0 + 1, 'bank grew by one coin');
+      assert.equal(await page.evaluate(() => window.hopLanes.laneCoins(1).length), cols.length - 1, 'the coin is gone');
+      assert.deepEqual(errors, []);
+      return;
+    } finally { await context.close(); }
+  }
+  assert.fail('no seed in 1..40 put a coin on row 1');
+});
+
+test('4e. pause with P, mute with M', async () => {
+  const { context, page, errors } = await open({}, INDEX + '#debug');
+  try {
+    await waitState(page, 'attract');
+    await page.keyboard.press('KeyW');
+    await waitState(page, 'play');
+    await page.keyboard.press('KeyP');
+    assert.equal(await state(page), 'paused');
+    await page.keyboard.press('KeyP');
+    assert.equal(await state(page), 'play');
+    assert.equal(await page.evaluate(() => window.hopLanes.muted), false);
+    await page.keyboard.press('KeyM');
+    assert.equal(await page.evaluate(() => window.hopLanes.muted), true);
+    assert.equal(await page.evaluate(() => document.getElementById('mute').getAttribute('aria-pressed')), 'true');
     assert.deepEqual(errors, []);
   } finally { await context.close(); }
 });

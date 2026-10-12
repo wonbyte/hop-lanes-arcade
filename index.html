@@ -3,11 +3,19 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js; style-src 'self'; font-src 'self'; img-src data:; connect-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js; style-src 'self'; font-src 'self'; img-src 'self' data:; manifest-src 'self'; connect-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Hop Lanes Arcade</title>
 <meta name="description" content="Two-player voxel arcade game: Frog vs Fox hop across roads, rivers and train tracks.">
 <meta name="theme-color" content="#10131c">
-<link rel="icon" href="data:,">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Hop Lanes">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<!-- optional online scores: put your server URL in content, and add its origin to connect-src above (see server/README.md) -->
+<meta name="hop-lanes-scores" content="">
 <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
 <link rel="stylesheet" href="css/style.css">
 </head>
@@ -17,13 +25,22 @@
   <p class="sr-only">Two-player road crossing game. Player 1 moves with W, A, S and D. Player 2 moves with the arrow keys. Space starts. On a touch screen, tap the game to hop and swipe to move.</p>
   <div id="stage">
     <div id="marquee">
-      <div class="hs"><small>ALL TIME BEST</small><b id="best">0</b></div>
-      <div class="hs"><small>TODAY'S BEST</small><b id="daily">0</b></div>
+      <div class="hs"><small>BEST</small><b id="best">0</b></div>
+      <div class="hs"><small>TODAY</small><b id="daily">0</b></div>
+      <div class="hs"><small>COINS</small><b id="bank">0</b></div>
+      <button type="button" id="mute" aria-pressed="false">SOUND ON</button>
     </div>
     <div id="score1" class="score" hidden><span>P1 FROG</span><b>0</b></div>
     <div id="score2" class="score" hidden><span>P2 FOX</span><b>0</b></div>
     <div id="logo"><h1><small>ARCADE</small>HOP<br>LANES</h1></div>
     <div id="banner" hidden aria-live="polite"><h2></h2><p></p></div>
+    <div id="howto" hidden>
+      <div class="box">
+        <h2>HOW TO PLAY</h2>
+        <p></p>
+        <button type="button" id="gotit">GOT IT</button>
+      </div>
+    </div>
     <div id="wipe" aria-hidden="true"></div>
     <div id="results" hidden aria-live="polite">
       <h2 id="resTitle">GAME OVER</h2>
@@ -31,18 +48,27 @@
         <div class="r1" id="res1"><span>FROG</span><b>0</b></div>
         <div class="r2" id="res2"><span>FOX</span><b>0</b></div>
       </div>
+      <p id="world" hidden></p>
       <p id="resNote"></p>
     </div>
     <div id="cards">
       <div class="card p1" id="card1">
-        <div>PRESS TAP<br>TO JOIN</div>
-        <svg id="pic1" viewBox="0 0 12 12" shape-rendering="crispEdges" aria-hidden="true"></svg>
-        <div class="state">FREE PLAY</div>
+        <div class="head">PRESS TAP<br>TO JOIN</div>
+        <div class="pickrow">
+          <button type="button" class="cyc" data-p="0" data-d="-1" aria-label="Player 1: previous character">&#9664;</button>
+          <svg id="pic1" viewBox="0 0 12 12" shape-rendering="crispEdges" aria-hidden="true"></svg>
+          <button type="button" class="cyc" data-p="0" data-d="1" aria-label="Player 1: next character">&#9654;</button>
+        </div>
+        <div class="state">FROG</div>
       </div>
       <div class="card p2" id="card2">
-        <div>PRESS TAP<br>TO JOIN</div>
-        <svg id="pic2" viewBox="0 0 12 12" shape-rendering="crispEdges" aria-hidden="true"></svg>
-        <div class="state">FREE PLAY</div>
+        <div class="head">PRESS TAP<br>TO JOIN</div>
+        <div class="pickrow">
+          <button type="button" class="cyc" data-p="1" data-d="-1" aria-label="Player 2: previous character">&#9664;</button>
+          <svg id="pic2" viewBox="0 0 12 12" shape-rendering="crispEdges" aria-hidden="true"></svg>
+          <button type="button" class="cyc" data-p="1" data-d="1" aria-label="Player 2: next character">&#9654;</button>
+        </div>
+        <div class="state">FOX</div>
       </div>
     </div>
   </div>

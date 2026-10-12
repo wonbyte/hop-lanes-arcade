@@ -4,9 +4,11 @@
   "version": "1.0.0",
   "description": "Hop Lanes arcade game",
   "scripts": {
-    "check": "node --check js/game.js && node --check tests/smoke.test.mjs",
-    "test": "npm run check && node tests/smoke.test.mjs",
-    "build": "./tools/build-standalone.sh"
+    "check": "node --check js/game.js && node --check server/scores.mjs && for f in tests/*.mjs; do node --check \"$f\" || exit 1; done",
+    "test": "npm run check && node tests/smoke.test.mjs && node tests/layout.test.mjs && node tests/scores-server.test.mjs",
+    "build": "./tools/build-standalone.sh",
+    "scores": "node server/scores.mjs",
+    "icons": "python3 tools/make-icons.py"
   },
   "devDependencies": {
     "playwright": "1.56.1",

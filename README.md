@@ -33,6 +33,26 @@ of the screen is Player 1 and the right half is Player 2.
 - Game over: press TAP (or tap the screen) to play again.
 - Score = rows advanced. All-time and daily best scores are saved in the browser.
 
+## Coins, animals and the eagle
+
+- Coins lie on the grass and the roads. Land on one to collect it. Coins are kept between games.
+- Each join card has ◀ ▶ arrows to pick an animal. Frog and Fox are free; Bunny (30), Cat (60) and Robot (100)
+  are bought with coins: pick one and press TAP.
+- Stand still for 6 seconds and the eagle carries you away.
+- `P` or `Escape` pauses; the game also pauses by itself when you switch apps. `M` or the SOUND button mutes.
+- The first visit shows a short how-to-play card.
+
+## Install as an app
+
+Served from a web server (not opened as a file), the page can be added to a phone's home screen
+(`manifest.webmanifest`, icons in `icons/`). Regenerate the icons with `npm run icons`.
+
+## Online best scores (optional)
+
+`server/scores.mjs` is a small dependency-free score server (`npm run scores`). To use it, put its URL in
+`<meta name="hop-lanes-scores" content="https://your-server/scores">` in `index.html` and add the server origin
+to `connect-src` in the Content-Security-Policy meta. See `server/README.md`. The offline build never sends scores.
+
 ## Offline build
 
 `hop-lanes-standalone.html` is generated. Rebuild it after every change to `index.html`, `css/`, `js/` or `fonts/`
@@ -46,7 +66,7 @@ of the screen is Player 1 and the right half is Player 2.
 
 ```sh
 npm install
-npm test        # Playwright smoke tests (about 3 minutes; Three.js is served from node_modules)
+npm test        # syntax check, Playwright smoke + layout tests, score-server tests (about 5 minutes)
 ```
 
 GitHub Actions runs the tests on every push and checks that `hop-lanes-standalone.html` is up to date.
