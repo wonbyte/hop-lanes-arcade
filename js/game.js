@@ -236,41 +236,50 @@ if ('ResizeObserver' in window) {
 } else window.addEventListener('resize', resize);
 resize();
 
-// Slow device? Lower the resolution, then the shadow detail, then the shadow filter, one step at a time.
-// A step that does not help (a phone capped at 30 fps in power-saving mode) is undone, and the ladder stops.
-const perf = { ema: 1 / 60, t: 0, undo: null, before: 0, done: false };
-function resetFrameWatch() { perf.ema = 1 / 60; perf.t = 0; perf.undo = null; }
+// Slow device? Lower the resolution, then the shadow detail, one step at a time.
+// Only steps that need no shader rebuild are used (a rebuild mid-game is a hitch of its own).
+// Each step is judged after 2 s of play: a step that does not help is undone and the next one is tried;
+// once every step has been tried, the ladder stops (a phone capped at 30 fps keeps its quality).
+const perf = { ema: 1 / 60, t: 0, undo: null, before: 0, tried: 0 };
+function resetFrameWatch() {
+  perf.undo = null;    // a step taken just before game over stays: it was never judged, and it is cheap
+  perf.ema = 1 / 60; perf.t = 0;
+}
 function setRatio(r) { pixelRatio = r; renderer.setPixelRatio(r); resize(); }
 function setShadowMapSize(n) {
   sun.shadow.mapSize.setScalar(n);
   if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }   // rebuilt at the new size
 }
-function setShadowType(type) {
-  renderer.shadowMap.type = type;
-  for (const m of [voxelMat, LIGHT_ON, LIGHT_OFF, splashMat, dustMat]) m.needsUpdate = true;
-}
-// takes one step down and returns how to undo it, or null when nothing is left to lower
-function lowerQuality() {
-  if (pixelRatio > 1) { const r = pixelRatio; setRatio(Math.max(1, r - 0.25)); return () => setRatio(r); }
-  if (sun.shadow.mapSize.x > 512) { const n = sun.shadow.mapSize.x; setShadowMapSize(n / 2); return () => setShadowMapSize(n); }
-  if (renderer.shadowMap.type !== THREE.BasicShadowMap) {
-    const t = renderer.shadowMap.type; setShadowType(THREE.BasicShadowMap); return () => setShadowType(t);
+// the ladder: each rung lowers one thing and returns how to undo it, or null if it has nothing left to lower
+const LADDER = [
+  () => {
+    if (pixelRatio <= 1) return null;
+    const was = pixelRatio;
+    setRatio(Math.max(1, was - 0.25));
+    return () => setRatio(was);
+  },
+  () => {
+    if (sun.shadow.mapSize.x <= 512) return null;
+    const was = sun.shadow.mapSize.x;
+    setShadowMapSize(was / 2);
+    return () => setShadowMapSize(was);
   }
-  return null;
-}
-function watchFrameTime(rawDt) {
-  if (perf.done || state !== 'play' || rawDt > 0.1) return;   // ignore menus and tab switches
-  perf.ema += (rawDt - perf.ema) * 0.05;
-  if ((perf.t += rawDt) < 2) return;
+];
+const BAD_FRAME = 0.022;   // slower than ~45 fps: lower quality
+// frameT: seconds since the previous drawn frame (only drawn frames count, so a skipped frame on a 120 Hz screen is not "fast")
+function watchFrameTime(frameT) {
+  if (perf.tried >= LADDER.length && !perf.undo) return;
+  if (state !== 'play' || frameT > 0.1) return;         // ignore menus and tab switches
+  perf.ema += (frameT - perf.ema) * 0.05;
+  if ((perf.t += frameT) < 2) return;
   perf.t = 0;
   if (perf.undo) {                                       // judge the last step
-    if (perf.ema > perf.before * 0.9) { perf.undo(); perf.done = true; return; }
+    if (perf.ema > perf.before * 0.9) perf.undo();       // no real gain: put it back, try the next rung
     perf.undo = null;
   }
-  if (perf.ema < 0.022) return;                          // ~45 fps or better: keep quality
+  if (perf.ema < BAD_FRAME) return;
+  while (perf.tried < LADDER.length && !perf.undo) perf.undo = LADDER[perf.tried++]();
   perf.before = perf.ema;
-  perf.undo = lowerQuality();
-  if (!perf.undo) perf.done = true;
 }
 
 // ---------- merged voxel meshes ----------
@@ -764,7 +773,7 @@ function setCard(i) {
   c.firstElementChild.textContent = p.joined ? 'READY!' : joinText();
   c.lastElementChild.textContent = p.joined ? 'PLAYER ' + (i + 1) : 'FREE PLAY';
 }
-const setCards = () => { setCard(0); setCard(1); $('app').classList.toggle('playing', state === 'play'); };
+const setCards = () => { setCard(0); setCard(1); };
 
 function toAttract() {
   state = 'attract'; stateT = 0; camRow = 0;
@@ -794,13 +803,14 @@ function join(i) {
   if (p.joined) return;
   p.joined = true; sfx.join();
   spawn(p);
-  if (state === 'attract') { state = 'countdown'; countdown = COUNTDOWN; countdownKey = ''; }
+  if (state === 'attract') { state = 'countdown'; countdown = COUNTDOWN; }
   else countdown = Math.max(countdown, 2.5);
   $('logo').hidden = true;
   setCards();
 }
 function startPlay() {
   state = 'play'; playT = 0; goT = GO_TIME; sfx.go();
+  $('app').classList.add('playing');
   resetFrameWatch();
   keepAwake(true);
   setBanner('GO!');
@@ -810,6 +820,7 @@ function startPlay() {
 function checkOver() {
   if (state !== 'play' || players.some(p => p.joined && p.alive)) return;
   state = 'over'; stateT = 0;
+  $('app').classList.remove('playing');
   keepAwake(false);
   setBanner('');
   const [p1, p2] = players;
@@ -872,17 +883,15 @@ $('start').addEventListener('click', pressStart);
 // With one player in the game the whole field is theirs; otherwise left half = P1, right half = P2.
 const SWIPE_MIN = 24;   // px of travel before a touch counts as a swipe
 const pointers = new Map();
-function fieldPlayer(clientX) {
+function fieldPlayer(clientX, r) {
   if (state === 'play' || state === 'over') {   // a solo player owns the whole field, also for "play again"
     const solo = players.filter(p => p.joined);
     if (solo.length === 1) return solo[0].id;
   }
-  const r = stage.getBoundingClientRect();
   return clientX < r.left + r.width / 2 ? 0 : 1;
 }
 // a short ring where the field was touched, in the player's color, so the field reads as a control
-function touchRing(clientX, clientY, i) {
-  const r = stage.getBoundingClientRect();
+function touchRing(clientX, clientY, i, r) {
   const el = document.createElement('div');
   el.className = 'ring p' + (i + 1);
   el.style.left = (clientX - r.left) + 'px';
@@ -894,9 +903,10 @@ function touchRing(clientX, clientY, i) {
 }
 stage.addEventListener('pointerdown', e => {
   if (e.button > 0) return;
-  const i = fieldPlayer(e.clientX);
+  const r = stage.getBoundingClientRect();   // one layout read per touch
+  const i = fieldPlayer(e.clientX, r);
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, i, done: false });
-  touchRing(e.clientX, e.clientY, i);
+  touchRing(e.clientX, e.clientY, i, r);
   try { stage.setPointerCapture(e.pointerId); } catch (err) {}   // release lands here even off the field
 });
 stage.addEventListener('pointermove', e => {
@@ -918,18 +928,14 @@ stage.addEventListener('pointercancel', endTouch);
 $('app').addEventListener('contextmenu', e => e.preventDefault());
 
 // ---------- loop ----------
-let countdownKey = '';
 function updateCountdown(dt) {
   const before = Math.ceil(countdown);
   countdown -= dt;
   const n = Math.ceil(countdown);
   if (n !== before && n > 0) sfx.tick();
   if (countdown <= 0) { startPlay(); return; }
-  const both = players.every(p => p.joined);
-  const key = n + (both ? 'b' : 's');
-  if (key === countdownKey) return;                     // the text only changes each second or on a join
-  countdownKey = key;
-  setBanner(String(n), (both ? 'FROG VS FOX' : 'OTHER PLAYER: TAP TO JOIN')
+  // setBanner only touches the DOM when the text changes
+  setBanner(String(n), (players.every(p => p.joined) ? 'FROG VS FOX' : 'OTHER PLAYER: TAP TO JOIN')
     + (touchQuery.matches ? '\nTAP TO HOP · SWIPE TO TURN' : ''));
 }
 function updateCamera(dt) {
@@ -951,7 +957,8 @@ function placeCamera() {
   for (const lane of lanes.values()) lane.group.visible = Math.abs(lane.r - focusRow) < visRows;
 }
 
-let last = performance.now(), lastDraw = 0;
+const DRAW_INTERVAL = 1000 / 60;
+let last = performance.now(), nextDraw = 0, lastDraw = 0;
 function frame(now) {
   const rawDt = (now - last) / 1000;
   const dt = Math.max(0, Math.min(0.05, rawDt));
@@ -966,11 +973,21 @@ function frame(now) {
   for (const p of players) updatePlayer(p, dt);
   updateParts(dt);
   placeCamera();
-  watchFrameTime(rawDt);
 
-  // draw at most ~60 fps while playing (120 Hz phones), and every other frame on menus, to save battery
+  // draw at most ~60 fps while playing (90-144 Hz screens), and every other frame on menus, to save battery
   const idle = state === 'attract' || (state === 'over' && stateT > RESULTS_DELAY);
-  if (idle ? (frameN++ & 1) === 0 : now - lastDraw >= 14) { renderer.render(scene, camera); lastDraw = now; }
+  let draw;
+  if (idle) draw = (frameN++ & 1) === 0;
+  else {
+    draw = now >= nextDraw - 2;   // 2 ms tolerance: timestamps land a hair early or late
+    // keep a steady schedule: 60 draws/s on any refresh rate; after a stall, start the schedule again
+    if (draw) nextDraw = now - nextDraw > DRAW_INTERVAL * 2 ? now + DRAW_INTERVAL : nextDraw + DRAW_INTERVAL;
+  }
+  if (draw) {
+    renderer.render(scene, camera);
+    if (lastDraw) watchFrameTime((now - lastDraw) / 1000);   // judge drawn frames only
+    lastDraw = now;
+  }
   if (state === 'attract' && stateT > 5 && actx && actx.state === 'running') actx.suspend().catch(() => {});
   requestAnimationFrame(frame);
 }
