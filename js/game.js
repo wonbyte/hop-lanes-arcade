@@ -217,9 +217,10 @@ function resize() {
   const aspect = w / h;
   // wide screens (a phone held sideways) zoom out so enough rows stay visible,
   // and aim lower so the players sit above the floating buttons
+  // sideways: fix the visible height (about 11 rows) and let the width follow, so the animals stay big
   const wide = aspect > 1.3;
-  const halfW = wide ? Math.max(7.2, 6.5 * aspect) : aspect < 0.8 ? 6.2 : 7.2;
-  camLead = wide ? 2.5 : 4.2;
+  const halfW = wide ? Math.max(8, 4.3 * aspect) : aspect < 0.8 ? 6.2 : 7.2;
+  camLead = wide ? 2.2 : 4.2;
   Object.assign(camera, { left: -halfW, right: halfW, top: halfW / aspect, bottom: -halfW / aspect });
   camera.updateProjectionMatrix();
   // rows on screen (the ground is seen at an angle, so one screen unit covers ~1.35 rows) + a margin for shadows
@@ -763,7 +764,7 @@ function setCard(i) {
   c.firstElementChild.textContent = p.joined ? 'READY!' : joinText();
   c.lastElementChild.textContent = p.joined ? 'PLAYER ' + (i + 1) : 'FREE PLAY';
 }
-const setCards = () => { setCard(0); setCard(1); };
+const setCards = () => { setCard(0); setCard(1); $('app').classList.toggle('playing', state === 'play'); };
 
 function toAttract() {
   state = 'attract'; stateT = 0; camRow = 0;

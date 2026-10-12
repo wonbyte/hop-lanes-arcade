@@ -169,13 +169,18 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
   #deck { padding-inline: 6px; gap: 2px; }
 }
 /* phone held sideways: controls float over the field, nothing else covers it */
+/* phone held sideways: a slim score strip, controls float over the field, nothing else covers it */
 @media (orientation: landscape) and (max-height: 520px) {
-  #marquee { inset: 0 auto auto 50%; transform: translateX(-50%); width: min(70vw, 460px); padding: 6px 12px; border-radius: 0 0 12px 12px; }
-  .hs { gap: 2px; }
+  #marquee {
+    inset: 0 auto auto 50%; transform: translateX(-50%); width: auto; gap: 18px;
+    padding: 4px 14px; border-radius: 0 0 12px 12px; box-shadow: 0 2px 0 rgba(0,0,0,.25);
+  }
+  .hs { flex-direction: row; align-items: baseline; gap: 6px; }
   .hs small { font-size: 8px; }
-  .hs b { font-size: 16px; }
-  .score { top: 10px; font-size: 20px; }
-  #logo { top: calc(var(--marquee-h, 50px) + 10px); }
+  .hs b { font-size: 14px; }
+  .score { top: 8px; font-size: 20px; }
+  .score span { font-size: .4em; margin-bottom: 4px; }
+  #logo { top: calc(var(--marquee-h, 30px) + 12px); }
   #logo h1 { font-size: 24px; }
   #cards { bottom: auto; top: 50%; transform: translateY(-50%); justify-content: space-between; padding-inline: max(4px, env(safe-area-inset-left, 0px)) max(4px, env(safe-area-inset-right, 0px)); }
   .card { width: 136px; padding: 8px 6px; gap: 4px; font-size: 8px; }
@@ -190,6 +195,19 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
   .pad .lbl { display: none; }
   .tap { width: 72px; }
   #start { opacity: .85; }
+  #app.playing #start { visibility: hidden; }   /* it does nothing during play, so it must not cover the field */
+}
+/* very short sideways view (a browser with its own top bar): smaller controls, more game */
+@media (orientation: landscape) and (max-height: 360px) {
+  .tap { width: 58px; font-size: 11px; border-width: 4px; }
+  .side { width: 38px; font-size: 13px; }
+  .pad { gap: 4px; }
+  #deck { padding-block: 4px; }
+  #start { padding: 7px 8px; font-size: 8px; }
+  .card { width: 118px; padding: 6px 4px; gap: 3px; }
+  .card svg { width: 32%; }
+  #logo h1 { font-size: 20px; }
+  .score { font-size: 16px; }
 }
 @media (prefers-reduced-motion: reduce) { .card.ready { animation: none; } .tap, .card, .pad, #wipe { transition: none; } }
 
