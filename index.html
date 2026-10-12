@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Hop Lanes Arcade</title>
+<meta name="description" content="Two-player voxel arcade game: Frog vs Fox hop across roads, rivers and train tracks.">
+<meta name="theme-color" content="#10131c">
+<link rel="icon" href="data:,">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
@@ -12,6 +15,7 @@
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
+<noscript><p class="nojs">Hop Lanes needs JavaScript. Turn it on and reload the page.</p></noscript>
 <div id="app">
   <p class="sr-only">Two-player road crossing game. Player 1 moves with W, A, S and D. Player 2 moves with the arrow keys. Space starts. On a touch screen, tap the game to hop and swipe to move.</p>
   <div id="stage">
@@ -47,18 +51,18 @@
   </div>
   <div id="deck">
     <div class="pad p1">
-      <button class="side" data-p="0" data-dx="-1" aria-label="Player 1 left">&#9664;</button>
-      <div class="pad-col"><button class="tap" id="tap1" data-p="0" aria-label="Player 1 hop forward">TAP</button><span class="lbl">PLAYER 1</span></div>
-      <button class="side" data-p="0" data-dx="1" aria-label="Player 1 right">&#9654;</button>
+      <button type="button" class="side" data-p="0" data-dx="-1" aria-label="Player 1 left">&#9664;</button>
+      <div class="pad-col"><button type="button" class="tap" id="tap1" data-p="0" aria-label="Player 1 hop forward">TAP</button><span class="lbl">PLAYER 1</span></div>
+      <button type="button" class="side" data-p="0" data-dx="1" aria-label="Player 1 right">&#9654;</button>
     </div>
     <div class="pad-col">
-      <button id="start">START</button>
+      <button type="button" id="start">START</button>
       <div id="keys">P1 W A S D<br>P2 ARROWS<br>SPACE START</div>
     </div>
     <div class="pad p2">
-      <button class="side" data-p="1" data-dx="-1" aria-label="Player 2 left">&#9664;</button>
-      <div class="pad-col"><button class="tap" id="tap2" data-p="1" aria-label="Player 2 hop forward">TAP</button><span class="lbl">PLAYER 2</span></div>
-      <button class="side" data-p="1" data-dx="1" aria-label="Player 2 right">&#9654;</button>
+      <button type="button" class="side" data-p="1" data-dx="-1" aria-label="Player 2 left">&#9664;</button>
+      <div class="pad-col"><button type="button" class="tap" id="tap2" data-p="1" aria-label="Player 2 hop forward">TAP</button><span class="lbl">PLAYER 2</span></div>
+      <button type="button" class="side" data-p="1" data-dx="1" aria-label="Player 2 right">&#9654;</button>
     </div>
   </div>
 </div>

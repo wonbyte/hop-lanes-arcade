@@ -186,3 +186,6 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
   #start { opacity: .85; }
 }
 @media (prefers-reduced-motion: reduce) { .card.ready { animation: none; } .tap, .card, .pad, #wipe { transition: none; } }
+
+/* shown only when JavaScript is off */
+.nojs { margin: 0; padding: 16px; font: 16px var(--font-ui); color: var(--ink); background: var(--bg); }
