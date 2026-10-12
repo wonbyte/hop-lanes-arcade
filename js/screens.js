@@ -94,12 +94,23 @@ updatePrize();
 
 // ---------- share and confetti ----------
 let shareText = '';
-async function shareScore() {
+// Share sheet where it works, clipboard where it does not, and as a last resort the text itself, selected.
+// Both the share call and the clipboard write must happen in the tap itself (Safari refuses them a moment later),
+// so the clipboard write starts at once and its result is used only if the share sheet is refused.
+function shareScore() {
   const b = $('share');
-  try {
-    if (navigator.share) { await navigator.share({ text: shareText }); b.textContent = 'SHARED!'; }
-    else { await navigator.clipboard.writeText(shareText); b.textContent = 'COPIED!'; }
-  } catch (e) { b.textContent = 'COPY FAILED'; }
+  let copied;
+  try { copied = navigator.clipboard.writeText(shareText).then(() => true, () => false); }
+  catch (e) { copied = Promise.resolve(false); }
+  const finish = async shared => {
+    if (shared) { b.textContent = 'SHARED!'; return; }
+    if (await copied) { b.textContent = 'COPIED!'; return; }
+    const t = $('shareText');                       // nothing automatic works here: let the player copy by hand
+    t.value = shareText; t.hidden = false; t.focus(); t.select();
+    b.textContent = 'SELECT AND COPY';
+  };
+  if (navigator.share) navigator.share({ text: shareText }).then(() => finish(true), e => { if (!e || e.name !== 'AbortError') finish(false); });
+  else finish(false);
 }
 $('share').addEventListener('click', shareScore);
 const confettiBox = $('confetti');
@@ -126,6 +137,7 @@ function toAttract() {
   resultsEl.hidden = true; $('logo').hidden = false;
   $('score1').hidden = $('score2').hidden = true;
   $('share').textContent = 'SHARE';
+  $('shareText').hidden = true;
   setBanner('');
   setCards();
 }

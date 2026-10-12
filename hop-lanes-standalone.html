@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-uAdKlBBVl7U2cxr8HKVJsFJyNjspv1BZX3jQuls35wY=' 'sha256-qUemYZUdscNq48d3rqqKKNEoPMRYlygMh4NgCfGxSWg='; style-src 'sha256-gd066kRnk2xGYIUahNs5jxAB7OvPmi65guhTxC0Dt+E='; font-src data:; img-src data:; connect-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-uAdKlBBVl7U2cxr8HKVJsFJyNjspv1BZX3jQuls35wY=' 'sha256-bsRLvX4SAf1GEj+IYy3eUwPdJGqulbybxDsBftJ2Xu4='; style-src 'sha256-DWFxz7EVEY7Pd1X9zIUKUzmmskJdBemgg0aYBQcq5Mw='; font-src data:; img-src data:; connect-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Hop Lanes Arcade</title>
 <meta name="description" content="Two-player voxel arcade game: Frog vs Fox hop across roads, rivers and train tracks.">
 <meta name="theme-color" content="#10131c">
@@ -128,6 +128,10 @@ body {
 }
 #menu button:disabled { opacity: .45; }
 #share { margin-top: 4px; }
+#shareText {
+  width: 100%; box-sizing: border-box; margin-top: 8px; padding: 8px; border: 0; border-radius: 8px; resize: none;
+  font-family: var(--font-pixel); font-size: 8px; line-height: 1.8; color: var(--ink); background: rgba(0,0,0,.45);
+}
 
 /* confetti for a new best */
 #confetti { position: absolute; inset: 0; z-index: 6; pointer-events: none; overflow: hidden; }
@@ -332,6 +336,7 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
       <p id="world" hidden></p>
       <p id="resNote"></p>
       <button type="button" id="share">SHARE</button>
+      <textarea id="shareText" hidden readonly rows="2" aria-label="Score text to copy"></textarea>
     </div>
     <div id="cards">
       <div class="card p1" id="card1">
@@ -4438,12 +4443,23 @@ updatePrize();
 
 // ---------- share and confetti ----------
 let shareText = '';
-async function shareScore() {
+// Share sheet where it works, clipboard where it does not, and as a last resort the text itself, selected.
+// Both the share call and the clipboard write must happen in the tap itself (Safari refuses them a moment later),
+// so the clipboard write starts at once and its result is used only if the share sheet is refused.
+function shareScore() {
   const b = $('share');
-  try {
-    if (navigator.share) { await navigator.share({ text: shareText }); b.textContent = 'SHARED!'; }
-    else { await navigator.clipboard.writeText(shareText); b.textContent = 'COPIED!'; }
-  } catch (e) { b.textContent = 'COPY FAILED'; }
+  let copied;
+  try { copied = navigator.clipboard.writeText(shareText).then(() => true, () => false); }
+  catch (e) { copied = Promise.resolve(false); }
+  const finish = async shared => {
+    if (shared) { b.textContent = 'SHARED!'; return; }
+    if (await copied) { b.textContent = 'COPIED!'; return; }
+    const t = $('shareText');                       // nothing automatic works here: let the player copy by hand
+    t.value = shareText; t.hidden = false; t.focus(); t.select();
+    b.textContent = 'SELECT AND COPY';
+  };
+  if (navigator.share) navigator.share({ text: shareText }).then(() => finish(true), e => { if (!e || e.name !== 'AbortError') finish(false); });
+  else finish(false);
 }
 $('share').addEventListener('click', shareScore);
 const confettiBox = $('confetti');
@@ -4470,6 +4486,7 @@ function toAttract() {
   resultsEl.hidden = true; $('logo').hidden = false;
   $('score1').hidden = $('score2').hidden = true;
   $('share').textContent = 'SHARE';
+  $('shareText').hidden = true;
   setBanner('');
   setCards();
 }

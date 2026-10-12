@@ -117,6 +117,10 @@ body {
 }
 #menu button:disabled { opacity: .45; }
 #share { margin-top: 4px; }
+#shareText {
+  width: 100%; box-sizing: border-box; margin-top: 8px; padding: 8px; border: 0; border-radius: 8px; resize: none;
+  font-family: var(--font-pixel); font-size: 8px; line-height: 1.8; color: var(--ink); background: rgba(0,0,0,.45);
+}
 
 /* confetti for a new best */
 #confetti { position: absolute; inset: 0; z-index: 6; pointer-events: none; overflow: hidden; }
