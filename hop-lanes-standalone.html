@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src https://cdnjs.cloudflare.com 'unsafe-inline'; style-src https://fonts.googleapis.com 'unsafe-inline'; font-src https://fonts.gstatic.com data:; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; font-src data:; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Hop Lanes Arcade</title>
 <style>
 /* Press Start 2P and Rubik: SIL Open Font License 1.1 */
@@ -264,6 +264,7 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
 
 </script>
 <script>
+// Hop Lanes game logic. Needs Three.js r128 (window.THREE) loaded first.
 (() => {
 'use strict';
 // show one clear message and hide the controls that would do nothing

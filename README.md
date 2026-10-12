@@ -1,8 +1,17 @@
 # Hop Lanes Arcade
 
-A two-player, arcade-style lane-crossing game in one HTML file (Three.js voxel graphics).
+A two-player, arcade-style lane-crossing game (Three.js voxel graphics).
 Frog (Player 1, blue) vs Fox (Player 2, red). Hop across roads, rivers and train tracks.
 Go too slow and the screen leaves you behind.
+
+## Files
+
+| File | What it is |
+|---|---|
+| `index.html` | The page: markup only |
+| `css/style.css` | All styles |
+| `js/game.js` | All game logic (needs Three.js r128 loaded first) |
+| `hop-lanes-standalone.html` | Generated: everything above plus Three.js and fonts in one offline file |
 
 ## Play
 
@@ -25,7 +34,7 @@ of the screen is Player 1 and the right half is Player 2.
 
 ## Offline build
 
-`hop-lanes-standalone.html` is generated. Rebuild it after every change to `index.html`
+`hop-lanes-standalone.html` is generated. Rebuild it after every change to `index.html`, `css/` or `js/`
 (needs `npm`, `python3` and access to the npm registry):
 
 ```sh

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds hop-lanes-standalone.html: index.html with Three.js and the fonts inlined,
+# Builds hop-lanes-standalone.html: index.html with css/style.css, js/game.js, Three.js and the fonts inlined,
 # so it plays with no internet (file viewers, offline phones).
 set -euo pipefail
 for tool in npm python3 tar; do
@@ -37,6 +37,22 @@ fonts = '\n'.join([
 link = re.compile(r'<link rel="stylesheet" href="https://fonts\.googleapis\.com[^"]*">\n')
 cdn = re.compile(r'<script src="https://cdnjs\.cloudflare\.com/ajax/libs/three\.js/r128/three\.min\.js"[^>]*></script>')
 assert link.search(html) and cdn.search(html)
+css = (root / 'css/style.css').read_text(encoding='utf-8')
+game = (root / 'js/game.js').read_text(encoding='utf-8')
+# anything that could end the inline <style>/<script> blocks early
+assert not re.search(r'</style', css, re.I)
+assert not re.search(r'</script|<!--|<script', game, re.I)
+local_css = '<link rel="stylesheet" href="css/style.css">\n'
+local_js = '<script src="js/game.js"></script>'
+assert local_css in html and local_js in html
+html = html.replace(local_css, '<style>\n' + css + '</style>\n')
+html = html.replace(local_js, '<script>\n' + game + '</script>')
+# everything is inline and nothing loads from the network
+csp = re.compile(r'<meta http-equiv="Content-Security-Policy" content="[^"]*">')
+assert csp.search(html)
+html = csp.sub(lambda m: '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; '
+               'script-src \'unsafe-inline\'; style-src \'unsafe-inline\'; font-src data:; img-src data:; '
+               'connect-src \'none\'; base-uri \'none\'; form-action \'none\'">', html, count=1)
 html = re.sub(r'<link rel="preconnect"[^>]*>\n', '', html)
 html = link.sub(lambda m: '<style>\n/* Press Start 2P and Rubik: SIL Open Font License 1.1 */\n' + fonts + '\n</style>\n', html, count=1)
 html = cdn.sub(lambda m: '<script>\n' + three + '\n</script>', html, count=1)
