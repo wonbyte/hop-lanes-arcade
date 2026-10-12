@@ -1,9 +1,9 @@
-import { idleAudio, isMuted, muted, sfx } from './audio.js';
+import { idleAudio, isMuted, muted, sfx, startTune } from './audio.js';
 import { DEBUG, G, RESULTS_DELAY } from './core.js';
-import { CAM_OFF, camera, focus, getPixelRatio, pixelRatio, renderer, scene, sun, touchQuery, watchFrameTime } from './gfx.js';
+import { CAM_OFF, camera, focus, getPixelRatio, pixelRatio, renderer, scene, setNight, sun, touchQuery, watchFrameTime } from './gfx.js';
 import { partGeo, players, splashMat, updateParts, updatePlayer } from './players.js';
 import { resultsEl, setBanner, showHowto, startPlay, toAttract } from './screens.js';
-import { HOWTO_KEY, loadText } from './storage.js';
+import { HOWTO_KEY, dailySeed, loadText, owned } from './storage.js';
 import { coinMeshes, ensureLanes, getSeed, laneCoins, laneKinds, lanes, updateLanes } from './world.js';
 import './input.js';   // only adds event listeners, so nothing else imports it
 
@@ -34,6 +34,7 @@ function placeCamera() {
   camera.lookAt(focus);
   sun.position.set(focus.x - 6, 14, focus.z + 6);
   sun.target.position.copy(focus);
+  setNight(G.camRow);
   const focusRow = G.camRow + G.camLead;
   for (const lane of lanes.values()) lane.group.visible = Math.abs(lane.r - focusRow) < G.visRows;
 }
@@ -75,7 +76,7 @@ function frame(now) {
     if (lastDraw) watchFrameTime((now - lastDraw) / 1000);   // judge drawn frames only
     lastDraw = now;
   }
-  if (G.state === 'attract' && G.stateT > 5) idleAudio();
+  if (G.state === 'attract') { if (G.stateT < 0.5) startTune(); else if (G.stateT > 14) idleAudio(); }
   requestAnimationFrame(frame);
 }
 
@@ -87,7 +88,10 @@ if (DEBUG) {
     get seed() { return getSeed(); },
     get pixelRatio() { return getPixelRatio(); },
     get bank() { return G.bank; },
-    get muted() { return isMuted(); }
+    get muted() { return isMuted(); },
+    get owned() { return [...owned]; },
+    get mode() { return G.mode; },
+    get dailySeed() { return dailySeed(); }
   };
 }
 toAttract();

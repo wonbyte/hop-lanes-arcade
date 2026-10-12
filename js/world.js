@@ -1,7 +1,8 @@
 import { sfx } from './audio.js';
 import { COIN_CHANCE, FIRST_ROW, FIXED_SEED, G, LANES_AHEAD, LANES_BEHIND, PLAY_HALF, TRAIN_SPEED, TRAIN_WARN, WRAP, difficulty } from './core.js';
 import { BLINK_STEPS, scene } from './gfx.js';
-import { CAR_COLORS, LIGHT_OFF, LIGHT_ON, TRAIN_LEN, coinBoxes, lightGeo, logBoxes, trainBoxes, vehicleBoxes } from './models.js';
+import { CAR_COLORS, LIGHT_OFF, LIGHT_ON, POLICE_BLUE, POLICE_RED, TRAIN_LEN, coinBoxes, lightGeo, logBoxes, policeBoxes, trainBoxes, vehicleBoxes } from './models.js';
+import { dailySeed } from './storage.js';
 import { cachedGeo, mergeBoxes, voxelMesh } from './voxel.js';
 
 // Lanes: building, scrolling, traffic, trains and coins. Seeded, so a seed always gives the same world.
@@ -34,12 +35,12 @@ function laneKind(r) {
   const diff = difficulty(r);
   let k;
   // keep runs of the same type together, like real roads and rivers
-  if (lastKind !== 'grass' && streak < (lastKind === 'road' ? 4 : 3) && worldRng() < 0.55) k = lastKind;
+  if (lastKind !== 'grass' && streak < (lastKind === 'road' ? 4 : lastKind === 'lily' ? 2 : 3) && worldRng() < 0.55) k = lastKind;
   else {
-    const w = { grass: 0.32 - diff * 0.12, road: 0.36, river: 0.2 + diff * 0.06, rail: 0.12 + diff * 0.06 };
-    let x = worldRng() * (w.grass + w.road + w.river + w.rail);
+    const w = { grass: 0.32 - diff * 0.12, road: 0.36, river: 0.2 + diff * 0.06, lily: r > 8 ? 0.1 : 0, rail: 0.12 + diff * 0.06 };
+    let x = worldRng() * (w.grass + w.road + w.river + w.lily + w.rail);
     k = 'rail';
-    for (const key of ['grass', 'road', 'river']) { if ((x -= w[key]) < 0) { k = key; break; } }
+    for (const key of ['grass', 'road', 'river', 'lily']) { if ((x -= w[key]) < 0) { k = key; break; } }
     if (k === 'grass' && lastKind === 'grass') k = pick(['road', 'river']);
   }
   streak = k === lastKind ? streak + 1 : 1;
@@ -95,13 +96,18 @@ const LANE_BUILDERS = {
     if (prev && prev.kind === 'road')
       for (let x = -12; x <= 12; x += 2) ground.push([0.8, 0.02, 0.08, 0xe8e8e8, x, 0, z + 0.5]);
     lane.speed = rand(1.6, 2.8) + diff * 2.4;
-    const truck = worldRng() < 0.3, len = truck ? 2.4 : 1.4;
+    // further out, some roads are police chases: faster, with flashing lights
+    lane.police = diff > 0.3 && worldRng() < 0.22;
+    if (lane.police) lane.speed += 1.6;
+    const truck = !lane.police && worldRng() < 0.3, len = truck ? 2.4 : 1.4;
     const rot = lane.dir > 0 ? Math.PI : 0;   // vehicle models face -x; turn them to face where they drive
     fillTraffic(lane, Math.floor(rand(2, 4) + diff * 1.5), z, spacing => {
       const c = pick(CAR_COLORS);
-      const mesh = voxelMesh(cachedGeo(`car${truck}${c}`, () => vehicleBoxes(truck, c)));
+      const mesh = lane.police ? voxelMesh(cachedGeo('police', policeBoxes)) : voxelMesh(cachedGeo(`car${truck}${c}`, () => vehicleBoxes(truck, c)));
       mesh.rotation.y = rot;
-      return { mesh, len, jitter: rand(0, spacing * 0.35) };
+      const o = { mesh, len, jitter: rand(0, spacing * 0.35) };
+      if (lane.police) { o.light = new THREE.Mesh(lightGeo, POLICE_RED); o.light.position.set(0.08, 0.98, 0); mesh.add(o.light); }
+      return o;
     });
     if (worldRng() < COIN_CHANCE.road) placeCoin(lane, z, playColumns());
   },
@@ -113,6 +119,16 @@ const LANE_BUILDERS = {
       const len = pick([2, 3, 3, 4]) - (diff > 0.6 && worldRng() < 0.5 ? 1 : 0);
       return { mesh: voxelMesh(cachedGeo('log' + len, () => logBoxes(len)), false), len };   // flat on the water
     });
+  },
+  // lily pads: still water with pads at a few columns; land on water and you sink
+  lily(lane, { z, ground }) {
+    ground.push([40, 0.3, 1, 0x5ec8f0, 0, -0.45, z]);
+    lane.pads = new Set();
+    const cols = playColumns();
+    const count = Math.floor(rand(3, 6));
+    while (lane.pads.size < count) lane.pads.add(pick(cols));
+    for (const x of lane.pads) ground.push([0.78, 0.08, 0.78, 0x3f9f4a, x, -0.12, z], [0.2, 0.09, 0.2, 0xe66d8c, x + 0.2, -0.12, z - 0.2]);
+    if (worldRng() < COIN_CHANCE.lily) placeCoin(lane, z, [...lane.pads]);
   },
   rail(lane, { z, ground }) {
     ground.push([40, 0.3, 1, 0x7b6f6a, 0, -0.3, z]);
@@ -166,6 +182,7 @@ function moveTraffic(lane, dt, now) {
     else if (o.x < -half) o.x += lane.span;
     o.mesh.position.x = o.x;
     if (river) o.mesh.position.y = Math.sin(now / 400 + o.x) * 0.02;
+    if (o.light) o.light.material = Math.floor(now / 140) % 2 ? POLICE_RED : POLICE_BLUE;
   }
 }
 function updateRail(lane, dt, now) {
@@ -187,7 +204,8 @@ function updateRail(lane, dt, now) {
     on = Math.floor(now * BLINK_STEPS / 1000) % 2 === 1;
     if (Math.abs(tr.x) > WRAP + tr.len / 2 + 3) {
       tr.active = false; tr.mesh.visible = false; lane.warned = false;
-      lane.timer = fxRand(3.5, 8);
+      const diff = difficulty(lane.r);
+      lane.timer = fxRand(3.5 - diff * 2, 8 - diff * 4);   // far out, trains come twice as often
     }
   }
   lane.light.material = on ? LIGHT_ON : LIGHT_OFF;
@@ -205,7 +223,7 @@ const lastNeededRow = () => Math.ceil(G.camRow + G.camLead + G.visRows);
 const firstNeededRow = () => Math.min(G.camRow - LANES_BEHIND, Math.floor(G.camRow + G.camLead - G.visRows));
 function resetWorld() {
   for (const lane of [...lanes.values()]) dropLane(lane);
-  worldSeed = FIXED_SEED !== null ? FIXED_SEED : (Math.random() * 4294967296) >>> 0;
+  worldSeed = FIXED_SEED !== null ? FIXED_SEED : G.mode === 'daily' ? dailySeed() : (Math.random() * 4294967296) >>> 0;
   worldRng = mulberry32(worldSeed);
   maxRow = Math.min(FIRST_ROW, firstNeededRow()) - 1; lastKind = 'grass'; streak = 0;
   while (maxRow < lastNeededRow()) addLane(maxRow + 1);

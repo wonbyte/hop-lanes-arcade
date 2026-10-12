@@ -9,6 +9,9 @@ const COLORS = {
   bunny: { fur: 0xf4f1ec, ear: 0xf7b9c4, eye: 0x222222, nose: 0xe06a7c },
   cat: { fur: 0x6d6f7a, dark: 0x3a3b45, eye: 0xf2c33a, pupil: 0x111111, nose: 0xe88a9a },
   robot: { body: 0xb8c0cc, dark: 0x5a6270, eye: 0x4fb8ff, light: 0xff6f5a },
+  pig: { skin: 0xf4a6b8, dark: 0xd4748c, eye: 0x222222 },
+  penguin: { back: 0x22252e, belly: 0xf6f3ee, beak: 0xf2a33a, eye: 0xffffff },
+  turtle: { shell: 0x3f8f3a, skin: 0x9cd36a, dark: 0x2a5f27, eye: 0x111111 },
   coin: { face: 0xffd84a, rim: 0xc99a1e }
 };
 const css = hex => '#' + hex.toString(16).padStart(6, '0');
@@ -84,7 +87,49 @@ const PIX = {
     '.BBBBBBBBBB.',
     '..BB....BB..',
     '............'],
-    pal: { B: COLORS.robot.body, D: COLORS.robot.dark, E: COLORS.robot.eye, L: COLORS.robot.light } }
+    pal: { B: COLORS.robot.body, D: COLORS.robot.dark, E: COLORS.robot.eye, L: COLORS.robot.light } },
+  pig: { rows: [
+    '............',
+    '.PP......PP.',
+    '.PPPPPPPPPP.',
+    '.PPPPPPPPPP.',
+    '.PPKPPPPKPP.',
+    '.PPPPPPPPPP.',
+    '.PPPDDDDPPP.',
+    '.PPPDKDKPPP.',
+    '.PPPDDDDPPP.',
+    '.PPPPPPPPPP.',
+    '..PP....PP..',
+    '............'],
+    pal: { P: COLORS.pig.skin, D: COLORS.pig.dark, K: COLORS.pig.eye } },
+  penguin: { rows: [
+    '............',
+    '...BBBBBB...',
+    '..BBBBBBBB..',
+    '..BWBBBBWB..',
+    '..BBBOOBBB..',
+    '..BBWWWWBB..',
+    '.BBWWWWWWBB.',
+    '.BBWWWWWWBB.',
+    '.BBWWWWWWBB.',
+    '..BWWWWWWB..',
+    '...OO..OO...',
+    '............'],
+    pal: { B: COLORS.penguin.back, W: COLORS.penguin.belly, O: COLORS.penguin.beak } },
+  turtle: { rows: [
+    '............',
+    '....GGGG....',
+    '...GGGGGG...',
+    '..GGSSSSGG..',
+    '.GGSSSSSSGG.',
+    '.GGSSDDSSGG.',
+    '.GGSSSSSSGG.',
+    '..GGSSSSGG..',
+    '...LLLLLL...',
+    '...LKLLKL...',
+    '..LL....LL..',
+    '............'],
+    pal: { G: COLORS.turtle.shell, S: COLORS.turtle.shell, D: COLORS.turtle.dark, L: COLORS.turtle.skin, K: COLORS.turtle.eye } }
 };
 function drawPix(svg, art) {
   let s = '';
@@ -174,6 +219,52 @@ function robotBoxes() {
     [0.14, 0.12, 0.2, c.dark, s * 0.13, 0, 0]);         // feet
   return b;
 }
+function pigBoxes() {
+  const c = COLORS.pig;
+  const b = [
+    [0.56, 0.42, 0.6, c.skin, 0, 0.1, 0],
+    [0.26, 0.16, 0.08, c.dark, 0, 0.26, -0.33],       // snout
+    [0.1, 0.1, 0.16, c.skin, 0.05, 0.3, 0.34]          // curly tail
+  ];
+  for (const s of [-1, 1]) b.push(
+    [0.05, 0.06, 0.04, c.eye, s * 0.06, 0.3, -0.37],    // nostrils
+    [0.07, 0.08, 0.04, c.eye, s * 0.17, 0.42, -0.31],   // eyes
+    [0.12, 0.12, 0.08, c.dark, s * 0.2, 0.5, -0.1],     // ears
+    [0.12, 0.12, 0.12, c.dark, s * 0.17, 0, -0.14],     // legs
+    [0.12, 0.12, 0.12, c.dark, s * 0.17, 0, 0.16]);
+  return b;
+}
+function penguinBoxes() {
+  const c = COLORS.penguin;
+  const b = [
+    [0.46, 0.62, 0.42, c.back, 0, 0, 0],
+    [0.34, 0.42, 0.06, c.belly, 0, 0.04, -0.22],      // belly
+    [0.14, 0.08, 0.16, c.beak, 0, 0.46, -0.28],       // beak
+    [0.22, 0.06, 0.26, c.beak, 0, 0, -0.1]            // feet (one block)
+  ];
+  for (const s of [-1, 1]) b.push(
+    [0.07, 0.08, 0.04, c.eye, s * 0.11, 0.52, -0.22],   // eyes
+    [0.06, 0.3, 0.26, c.back, s * 0.26, 0.14, 0]);      // flippers
+  return b;
+}
+function turtleBoxes() {
+  const c = COLORS.turtle;
+  const b = [
+    [0.6, 0.3, 0.64, c.shell, 0, 0.12, 0],            // shell
+    [0.4, 0.1, 0.44, c.dark, 0, 0.42, 0],             // shell top
+    [0.26, 0.22, 0.26, c.skin, 0, 0.1, -0.4],         // head
+    [0.1, 0.08, 0.16, c.skin, 0, 0.1, 0.38]           // tail
+  ];
+  for (const s of [-1, 1]) b.push(
+    [0.05, 0.06, 0.04, c.eye, s * 0.08, 0.24, -0.53],   // eyes
+    [0.14, 0.1, 0.14, c.skin, s * 0.28, 0, -0.18],      // legs
+    [0.14, 0.1, 0.14, c.skin, s * 0.28, 0, 0.18]);
+  return b;
+}
+// a white police car: a plain car body with a light bar; the flashing light is a separate mesh
+const policeBoxes = () => vehicleBoxes(false, 0xf4f4f4).concat([[0.5, 0.08, 0.5, 0x222222, 0.08, 0.84, 0]]);
+const POLICE_RED = new THREE.MeshLambertMaterial({ color: 0x331111, emissive: 0xff2a2a });
+const POLICE_BLUE = new THREE.MeshLambertMaterial({ color: 0x111133, emissive: 0x3a7bff });
 const eagleBoxes = () => {
   const b = [
     [0.9, 0.32, 0.5, 0x4a3426, 0, 0, 0],
@@ -191,9 +282,14 @@ const CHARACTERS = [
   { key: 'fox', name: 'FOX', boxes: foxBoxes, price: 0 },
   { key: 'bunny', name: 'BUNNY', boxes: bunnyBoxes, price: 30 },
   { key: 'cat', name: 'CAT', boxes: catBoxes, price: 60 },
-  { key: 'robot', name: 'ROBOT', boxes: robotBoxes, price: 100 }
+  { key: 'robot', name: 'ROBOT', boxes: robotBoxes, price: 100 },
+  // prizes: only the prize machine hands these out
+  { key: 'pig', name: 'PIG', boxes: pigBoxes, price: 0, prize: true },
+  { key: 'penguin', name: 'PENGUIN', boxes: penguinBoxes, price: 0, prize: true },
+  { key: 'turtle', name: 'TURTLE', boxes: turtleBoxes, price: 0, prize: true }
 ];
-const isOwned = ch => ch.price === 0 || owned.has(ch.key);
+const PRIZES = CHARACTERS.filter(c => c.prize).map(c => c.key);
+const isOwned = ch => (ch.price === 0 && !ch.prize) || owned.has(ch.key);
 const CAR_COLORS = [0xe8513a, 0x3a8ee8, 0xf2c33a, 0x8f5ae0, 0x3ac27a, 0xf27fb0];
 function vehicleBoxes(truck, c) {
   const len = truck ? 2.4 : 1.4;
@@ -242,4 +338,4 @@ const LIGHT_OFF = new THREE.MeshLambertMaterial({ color: 0x331111 });
 const LIGHT_ON = new THREE.MeshLambertMaterial({ color: 0x331111, emissive: 0xff2222 });
 const lightGeo = new THREE.BoxGeometry(0.38, 0.2, 0.14);
 
-export { CAR_COLORS, CHARACTERS, COLORS, LIGHT_OFF, LIGHT_ON, PIX, TRAIN_CARS, TRAIN_CAR_LEN, TRAIN_GAP, TRAIN_LEN, bunnyBoxes, catBoxes, coinBoxes, css, drawPix, eagleBoxes, foxBoxes, frogBoxes, isOwned, lightGeo, logBoxes, makeCharacter, robotBoxes, trainBoxes, vehicleBoxes };
+export { CAR_COLORS, CHARACTERS, COLORS, LIGHT_OFF, LIGHT_ON, PIX, POLICE_BLUE, POLICE_RED, PRIZES, TRAIN_CARS, TRAIN_CAR_LEN, TRAIN_GAP, TRAIN_LEN, bunnyBoxes, catBoxes, coinBoxes, css, drawPix, eagleBoxes, foxBoxes, frogBoxes, isOwned, lightGeo, logBoxes, makeCharacter, penguinBoxes, pigBoxes, policeBoxes, robotBoxes, trainBoxes, turtleBoxes, vehicleBoxes };

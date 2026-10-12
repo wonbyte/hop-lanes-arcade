@@ -82,7 +82,7 @@ function touchRing(clientX, clientY, i, r) {
   setTimeout(gone, 500);   // also without animations (reduced motion)
 }
 stage.addEventListener('pointerdown', e => {
-  if (e.button > 0 || e.target.closest('#cards, #howto')) return;
+  if (e.button > 0 || e.target.closest('#cards, #howto, #menu, #results button, #mute')) return;
   const r = stage.getBoundingClientRect();   // one layout read per touch
   const i = fieldPlayer(e.clientX, r);
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, i, done: false });

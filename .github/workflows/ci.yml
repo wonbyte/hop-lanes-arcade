@@ -32,7 +32,8 @@ jobs:
       - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: 20
-      - name: Rebuild standalone
-        run: ./tools/build-standalone.sh
-      - name: Fail if committed standalone build is stale
-        run: git diff --exit-code hop-lanes-standalone.html
+      - run: npm ci
+      - name: Rebuild the Three.js bundle and the standalone file
+        run: npm run build:three && ./tools/build-standalone.sh
+      - name: Fail if a committed build is stale
+        run: git diff --exit-code vendor/three.min.js hop-lanes-standalone.html

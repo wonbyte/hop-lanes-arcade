@@ -10,7 +10,8 @@ except the small offline build script. Keep it that way.
 | `npm install` | Installs Playwright and Three.js (test and build only; the game itself has no dependencies) |
 | `npm test` | Syntax check, then `tests/smoke.test.mjs`, `tests/layout.test.mjs`, `tests/scores-server.test.mjs` (~5 min) |
 | `npm run check` | Syntax check only (fast) |
-| `npm run build` | Regenerates `hop-lanes-standalone.html`. Needs `python3` and npm registry access. CI fails if this file is stale |
+| `npm run build` | Regenerates `hop-lanes-standalone.html` (python3, no network). CI fails if this file is stale |
+| `npm run build:three` | Regenerates `vendor/three.min.js` with esbuild from `tools/three-entry.js` (the Three.js names the game uses). CI fails if stale |
 | `npm run icons` | Regenerates `icons/` from the frog pixel art (needs Pillow) |
 | `npm run scores` | Starts the optional score server (`server/`) |
 
@@ -20,7 +21,8 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
 
 | Path | Role |
 |---|---|
-| `index.html` | Markup only. The Content-Security-Policy meta is strict: no inline scripts or styles, Three.js only from its exact CDN URL |
+| `index.html` | Markup only. The Content-Security-Policy meta is strict: `script-src 'self'`, no inline scripts or styles |
+| `vendor/three.min.js` | Generated: a tree-shaken Three.js r128 (501 KB) exposing only the names the game uses as `window.THREE`. Add a name to `tools/three-entry.js` before using a new THREE class |
 | `css/style.css` | All styles. Media queries: `max-width: 520px` (phones), `max-width: 340px` (tiny phones), `orientation: landscape` (phone held sideways) |
 | `js/main.js` | Entry. Checks `window.THREE`, then `import('./app.js')` |
 | `js/core.js` | Tuning constants, the shared state object `G`, `fail()`, `#debug` / `#seed-N` hash parsing |
@@ -32,10 +34,11 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
 | `js/gfx.js` | Renderer, camera, light, `resize()`, the adaptive quality ladder (`watchFrameTime`) |
 | `js/world.js` | Lanes: `LANE_BUILDERS` per kind, traffic, trains, coins, seeded RNG. Lanes are a `Map` by row |
 | `js/players.js` | Spawn, `tryMove`, hop/land/stand, hazards, deaths, coin pickup, the eagle |
-| `js/screens.js` | Join cards and shop, countdown, results, restart, pause, first-run help, online score post |
+| `js/screens.js` | Join cards and shop, title menu (modes, prize machine), countdown, results (share, confetti), restart, pause, first-run help, online score post |
 | `js/input.js` | Keyboard, on-screen buttons, taps and swipes on the field. Side-effect only (imported by `app.js` for that) |
 | `js/app.js` | The frame loop, the `window.hopLanes` test hook, boot |
-| `tools/build-standalone.sh` | Inlines CSS, the modules (in `tools/bundle-order.json` order), Three.js and fonts into one offline HTML with a hash-based CSP |
+| `tools/build-standalone.sh` | Inlines CSS, the modules (in `tools/bundle-order.json` order), `vendor/three.min.js` and fonts into one offline HTML with a hash-based CSP |
+| `.github/workflows/deploy.yml` | Deploys `main` to GitHub Pages after the tests pass (Settings → Pages → Source: GitHub Actions, once) |
 | `tests/serve.mjs` | Tiny static server for the tests: browsers refuse ES modules from `file://` |
 | `server/` | Optional dependency-free score server; wired by `<meta name="hop-lanes-scores">` |
 
@@ -58,6 +61,8 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
 - Tests set `localStorage['hoplanes.howto'] = '1'` before load so the first-run help does not swallow the first tap.
 - Headless runs use SwiftShader; it is slow. Wait on state with `waitForFunction`, not fixed sleeps.
 - `KeyW` joins / moves Player 1, `ArrowUp` Player 2. Row 1 never has trees.
+- `tests/ui.test.mjs` drives the shop, prize machine, modes, share and confetti through the real DOM (ids: `#mode`, `#prize`, `#share`, `#card1 .cyc`, `#tap1`).
+- Lane kinds: grass, road (police variant past difficulty 0.3), river, lily (pads; water kills), rail. Night fades in from row 90.
 
 ## Gotchas
 

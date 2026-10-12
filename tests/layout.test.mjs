@@ -99,9 +99,6 @@ for (const vp of VIEWPORTS) {
       try { localStorage.setItem('hoplanes.howto', '1'); } catch {}
     });
     const page = await context.newPage();
-    await page.route('**/three.min.js', r => r.fulfill({
-      path: THREE, contentType: 'text/javascript', headers: { 'Access-Control-Allow-Origin': '*' },
-    }));
     await page.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
     try {
       await page.goto(INDEX + '#debug-seed-3');

@@ -11,6 +11,7 @@ function audio() {
 let muted = loadText(MUTE_KEY) === '1';
 function setMuted(on) {
   muted = on;
+  if (on) stopTune();
   try { localStorage.setItem(MUTE_KEY, on ? '1' : '0'); } catch (e) {}
   const b = $('mute');
   b.setAttribute('aria-pressed', String(on));
@@ -40,11 +41,31 @@ const sfx = {
   coin: () => { beep(1320, 0.06, 'square', 0.04); setTimeout(() => beep(1760, 0.1, 'square', 0.04), 60); },
   buy: () => { beep(660, 0.08); setTimeout(() => beep(880, 0.08), 80); setTimeout(() => beep(1320, 0.14), 160); },
   nope: () => beep(140, 0.2, 'sawtooth', 0.06),
-  eagle: () => { beep(1500, 0.18, 'sawtooth', 0.05, -500); setTimeout(() => beep(1300, 0.25, 'sawtooth', 0.05, -600), 180); }
+  eagle: () => { beep(1500, 0.18, 'sawtooth', 0.05, -500); setTimeout(() => beep(1300, 0.25, 'sawtooth', 0.05, -600), 180); },
+  best: () => [523, 659, 784, 1047, 784, 1047, 1319].forEach((f, i) => setTimeout(() => beep(f, i === 6 ? 0.4 : 0.12, 'square', 0.05), i * 90)),
+  prize: () => [392, 523, 659, 784, 1047].forEach((f, i) => setTimeout(() => beep(f, 0.14, 'triangle', 0.06), i * 70))
 };
+
+// ---------- the title tune: a short chip loop while the title screen shows ----------
+// (browsers allow sound only after a touch or key, so it starts after the first input)
+const TUNE = [523, 659, 784, 659, 523, 392, 440, 494, 523, 659, 784, 1047, 784, 659, 587, 523];
+const TUNE_STEP = 170, TUNE_LOOPS = 2;
+let tuneTimer = 0, tuneStep = 0;
+function startTune() {
+  if (tuneTimer || !actx || actx.state !== 'running' || muted) return;
+  tuneStep = 0;
+  const next = () => {
+    if (tuneStep >= TUNE.length * TUNE_LOOPS || muted) { tuneTimer = 0; return; }
+    beep(TUNE[tuneStep % TUNE.length], 0.13, tuneStep % 4 === 0 ? 'square' : 'triangle', 0.035);
+    tuneStep++;
+    tuneTimer = setTimeout(next, TUNE_STEP);
+  };
+  next();
+}
+function stopTune() { if (tuneTimer) { clearTimeout(tuneTimer); tuneTimer = 0; } }
 
 const isMuted = () => muted;
 // let the audio device sleep on long idle screens; audio() wakes it on the next input
 function idleAudio() { if (actx && actx.state === 'running') actx.suspend().catch(() => {}); }
 
-export { actx, audio, beep, idleAudio, isMuted, muted, setMuted, sfx };
+export { actx, audio, beep, idleAudio, isMuted, muted, setMuted, sfx, startTune, stopTune };

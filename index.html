@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js; style-src 'self'; font-src 'self'; img-src 'self' data:; manifest-src 'self'; connect-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; manifest-src 'self'; connect-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Hop Lanes Arcade</title>
 <meta name="description" content="Two-player voxel arcade game: Frog vs Fox hop across roads, rivers and train tracks.">
 <meta name="theme-color" content="#10131c">
@@ -16,7 +16,6 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <!-- optional online scores: put your server URL in content, and add its origin to connect-src above (see server/README.md) -->
 <meta name="hop-lanes-scores" content="">
-<link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -33,6 +32,11 @@
     <div id="score1" class="score" hidden><span>P1 FROG</span><b>0</b></div>
     <div id="score2" class="score" hidden><span>P2 FOX</span><b>0</b></div>
     <div id="logo"><h1><small>ARCADE</small>HOP<br>LANES</h1></div>
+    <div id="menu">
+      <button type="button" id="mode">MODE: CLASSIC</button>
+      <button type="button" id="prize">PRIZE &#183; 50 COINS</button>
+    </div>
+    <div id="confetti" aria-hidden="true"></div>
     <div id="banner" hidden aria-live="polite"><h2></h2><p></p></div>
     <div id="howto" hidden>
       <div class="box">
@@ -50,6 +54,7 @@
       </div>
       <p id="world" hidden></p>
       <p id="resNote"></p>
+      <button type="button" id="share">SHARE</button>
     </div>
     <div id="cards">
       <div class="card p1" id="card1">
@@ -90,9 +95,7 @@
   </div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"
-  integrity="sha512-dLxUelApnYxpLt6K2iomGngnHO83iUvZytA3YjDUCjT0HDOHKXnVYdf3hU4JjM8uEhxf9nD1/ey98U3t2vZ0qQ=="
-  crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="vendor/three.min.js"></script>
 <script type="module" src="js/main.js"></script>
 </body>
 </html>

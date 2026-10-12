@@ -105,6 +105,26 @@ body {
 #gotit { font-family: var(--font-pixel); font-size: 10px; padding: 12px 18px; border-radius: 10px; background: var(--gold); color: #10131c; box-shadow: 0 4px 0 #a88a1c; }
 #gotit:active { transform: translateY(3px); box-shadow: 0 1px 0 #a88a1c; }
 #world { color: var(--gold); }
+
+/* title menu: mode and prize machine, under the logo */
+#menu {
+  position: absolute; z-index: 4; left: 16px; right: 16px; top: calc(var(--marquee-h, 74px) + 150px);
+  display: flex; justify-content: center; gap: 8px; flex-wrap: wrap;
+}
+#menu button, #share {
+  font-family: var(--font-pixel); font-size: 8px; min-height: 36px; padding: 8px 12px; border-radius: 10px;
+  background: rgba(10,12,20,.6); color: var(--gold); box-shadow: 0 3px 0 rgba(0,0,0,.5); white-space: nowrap;
+}
+#menu button:disabled { opacity: .45; }
+#share { margin-top: 4px; }
+
+/* confetti for a new best */
+#confetti { position: absolute; inset: 0; z-index: 6; pointer-events: none; overflow: hidden; }
+.confetti {
+  position: absolute; top: -14px; width: 8px; height: 12px; border-radius: 2px;
+  animation: confetti 2.2s linear forwards;
+}
+@keyframes confetti { to { transform: translateY(110vh) rotate(720deg); opacity: .6; } }
 .card svg { width: 44%; height: auto; image-rendering: pixelated; }
 .card.ready { animation: bob .6s ease-in-out infinite alternate; }
 .card .state { color: var(--gold); }
@@ -226,6 +246,7 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
   .score span { font-size: .4em; margin-bottom: 4px; }
   #logo { top: calc(var(--marquee-h, 30px) + 12px); }
   #logo h1 { font-size: 24px; }
+  #menu { top: calc(var(--marquee-h, 30px) + 84px); }
   #cards { bottom: auto; top: 50%; transform: translateY(-50%); justify-content: space-between; padding-inline: max(4px, env(safe-area-inset-left, 0px)) max(4px, env(safe-area-inset-right, 0px)); }
   .card { width: 136px; padding: 8px 6px; gap: 4px; font-size: 8px; }
   .card svg { width: 34%; }
@@ -254,6 +275,7 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
   .card { width: 118px; padding: 6px 4px; gap: 3px; }
   .card svg { width: 28%; }
   #logo h1 { font-size: 20px; }
+  #menu { top: calc(var(--marquee-h, 30px) + 72px); }
   .score { font-size: 16px; }
 }
 @media (prefers-reduced-motion: reduce) { .card.ready, .card.shake { animation: none; } .tap, .card, .pad, #wipe { transition: none; } .ring { animation: none; opacity: .6; } }

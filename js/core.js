@@ -16,7 +16,10 @@ const GO_TIME = 0.6;
 const WIPE_MS = 130;          // restart fade; the new world is built while the screen is covered
 const EAGLE_IDLE = 6;         // seconds without a hop before the eagle comes for you
 const EAGLE_SWOOP = 0.9;      // seconds the eagle takes to reach the player
-const COIN_CHANCE = { grass: 0.28, road: 0.18 };   // chance of a coin on a lane
+const COIN_CHANCE = { grass: 0.28, road: 0.18, lily: 0.4 };   // chance of a coin on a lane
+const PRIZE_COST = 50;        // coins for one turn of the prize machine
+const NIGHT_START = 90, NIGHT_FULL = 150;   // rows over which day turns into night
+const MODES = ['classic', 'race', 'daily'];
 const DIFF_ROWS = 140;        // rows until the game reaches full difficulty
 const difficulty = r => Math.min(1, Math.max(0, r) / DIFF_ROWS);
 const TAU = Math.PI * 2;
@@ -29,6 +32,7 @@ const G = {
   visRows: 14,         // lanes further than this from the camera focus are not drawn
   frameN: 0,
   restarting: false,
+  mode: 'classic',     // classic | race (first to die loses) | daily (one shared seed per day)
   bank: 0,             // coins collected over all games (set by storage.js)
   bestAll: 0           // all-time best score (set by storage.js)
 };
@@ -50,4 +54,4 @@ function fail(why) {
   b.querySelector('p').textContent = why;
 }
 
-export { $, BEHIND_LIMIT, COIN_CHANCE, COUNTDOWN, DEBUG, DIFF_ROWS, EAGLE_IDLE, EAGLE_SWOOP, EDGE_DEATH, FIRST_ROW, FIXED_SEED, G, GO_TIME, HIT_PAD, HOP_TIME, LANES_AHEAD, LANES_BEHIND, PLAY_HALF, RESULTS_DELAY, SCORES_URL, TAU, TRAIN_SPEED, TRAIN_WARN, WIPE_MS, WRAP, difficulty, fail, hashMatch };
+export { $, BEHIND_LIMIT, COIN_CHANCE, COUNTDOWN, DEBUG, DIFF_ROWS, EAGLE_IDLE, EAGLE_SWOOP, EDGE_DEATH, FIRST_ROW, FIXED_SEED, G, GO_TIME, HIT_PAD, HOP_TIME, LANES_AHEAD, LANES_BEHIND, MODES, NIGHT_FULL, NIGHT_START, PLAY_HALF, PRIZE_COST, RESULTS_DELAY, SCORES_URL, TAU, TRAIN_SPEED, TRAIN_WARN, WIPE_MS, WRAP, difficulty, fail, hashMatch };

@@ -1,10 +1,10 @@
-import { sfx } from './audio.js';
-import { $, COUNTDOWN, G, GO_TIME, SCORES_URL, WIPE_MS } from './core.js';
+import { audio, sfx, startTune, stopTune } from './audio.js';
+import { $, COUNTDOWN, G, GO_TIME, MODES, PRIZE_COST, SCORES_URL, WIPE_MS } from './core.js';
 import { keepAwake } from './device.js';
 import { reduceMotion, resetFrameWatch, touchQuery } from './gfx.js';
-import { CHARACTERS, PIX, drawPix, isOwned } from './models.js';
+import { CHARACTERS, PIX, PRIZES, drawPix, isOwned } from './models.js';
 import { charOf, despawn, players, spawn } from './players.js';
-import { BEST_KEY, HOWTO_KEY, OWNED_KEY, PICK_KEY, dayKey, load, owned, refreshBests, save, setBank } from './storage.js';
+import { BEST_KEY, DAILY_KEY, HOWTO_KEY, MODE_KEY, OWNED_KEY, PICK_KEY, dayKey, load, owned, refreshBests, save, setBank } from './storage.js';
 import { resetWorld } from './world.js';
 
 // Screens and flow: join cards and the shop, countdown, results, restart, pause, first-run help, online scores.
@@ -48,7 +48,75 @@ function shakeCard(i) {
   void c.offsetWidth;   // restart the animation
   c.classList.add('shake');
 }
-const setCards = () => { setCard(0); setCard(1); };
+const menu = $('menu');
+const setCards = () => { setCard(0); setCard(1); menu.hidden = G.state !== 'attract'; };
+
+// ---------- title menu: game mode and the prize machine ----------
+const MODE_TEXT = { classic: 'MODE: CLASSIC', race: 'MODE: RACE', daily: 'MODE: DAILY' };
+function setMode(mode) {
+  G.mode = mode;
+  save(MODE_KEY, mode);
+  $('mode').textContent = MODE_TEXT[mode];
+  if (G.state === 'attract') resetWorld();   // daily mode uses today's seed
+}
+function cycleMode() { sfx.tick(); setMode(MODES[(MODES.indexOf(G.mode) + 1) % MODES.length]); }
+function updatePrize() {
+  const left = PRIZES.filter(k => !owned.has(k));
+  const b = $('prize');
+  b.disabled = !left.length;
+  b.textContent = left.length ? 'PRIZE \u00b7 ' + PRIZE_COST + ' COINS' : 'ALL PRIZES WON';
+}
+let menuNote = 0;
+function flashBanner(h, sub, ms) {
+  setBanner(h, sub);
+  clearTimeout(menuNote);
+  menuNote = setTimeout(() => { if (G.state === 'attract') setBanner(''); }, ms);
+}
+function prizeMachine() {
+  if (G.state !== 'attract') return;
+  const left = PRIZES.filter(k => !owned.has(k));
+  if (!left.length) return;
+  if (G.bank < PRIZE_COST) { sfx.nope(); flashBanner('NEED ' + PRIZE_COST + ' COINS', 'COLLECT THEM ON THE ROAD', 1400); return; }
+  setBank(G.bank - PRIZE_COST);
+  const key = left[Math.floor(Math.random() * left.length)];
+  owned.add(key); save(OWNED_KEY, [...owned].join(','));
+  const idx = CHARACTERS.findIndex(c => c.key === key);
+  players[0].charIndex = idx; save(PICK_KEY + 0, key);
+  sfx.prize();
+  flashBanner('YOU GOT ' + CHARACTERS[idx].name + '!', 'IT IS NOW PLAYER 1', 2200);
+  updatePrize();
+  setCards();
+}
+$('mode').addEventListener('click', () => { audio(); cycleMode(); });
+$('prize').addEventListener('click', () => { audio(); prizeMachine(); });
+setMode(G.mode);
+updatePrize();
+
+// ---------- share and confetti ----------
+let shareText = '';
+async function shareScore() {
+  const b = $('share');
+  try {
+    if (navigator.share) { await navigator.share({ text: shareText }); b.textContent = 'SHARED!'; }
+    else { await navigator.clipboard.writeText(shareText); b.textContent = 'COPIED!'; }
+  } catch (e) { b.textContent = 'COPY FAILED'; }
+}
+$('share').addEventListener('click', shareScore);
+const confettiBox = $('confetti');
+function confetti() {
+  if (reduceMotion) return;
+  const colors = ['#ffd84a', '#4fb8ff', '#ff6f5a', '#4cbf3f', '#f7b9c4', '#ffffff'];
+  for (let i = 0; i < 40; i++) {
+    const el = document.createElement('i');
+    el.className = 'confetti';
+    el.style.left = Math.random() * 100 + '%';
+    el.style.background = colors[i % colors.length];
+    el.style.animationDelay = Math.random() * 0.6 + 's';
+    el.style.animationDuration = 1.8 + Math.random() * 1.2 + 's';
+    confettiBox.appendChild(el);
+  }
+  setTimeout(() => { confettiBox.textContent = ''; }, 6000);
+}
 
 function toAttract() {
   G.state = 'attract'; G.stateT = 0; G.camRow = 0;
@@ -57,6 +125,7 @@ function toAttract() {
   refreshBests();
   resultsEl.hidden = true; $('logo').hidden = false;
   $('score1').hidden = $('score2').hidden = true;
+  $('share').textContent = 'SHARE';
   setBanner('');
   setCards();
 }
@@ -83,6 +152,7 @@ function join(i) {
     sfx.buy();
   }
   p.joined = true; sfx.join();
+  stopTune();
   spawn(p);
   if (G.state === 'attract') { G.state = 'countdown'; G.countdown = COUNTDOWN; }
   else G.countdown = Math.max(G.countdown, 2.5);
@@ -99,25 +169,39 @@ function startPlay() {
   setCards();
 }
 function checkOver() {
-  if (G.state !== 'play' || players.some(p => p.joined && p.alive)) return;
+  if (G.state !== 'play') return;
+  const [p1, p2] = players;
+  const both = p1.joined && p2.joined;
+  // race: the first to die loses, at once; otherwise the game ends when nobody is left
+  const race = G.mode === 'race' && both && players.some(p => p.joined && !p.alive);
+  if (!race && players.some(p => p.joined && p.alive)) return;
   G.state = 'over'; G.stateT = 0;
   $('app').classList.remove('playing');
   keepAwake(false);
   setBanner('');
-  const [p1, p2] = players;
   const top = Math.max(p1.joined ? p1.score : 0, p2.joined ? p2.score : 0);
   let note = '';
   if (top > G.bestAll) { G.bestAll = top; save(BEST_KEY, top); note = 'NEW ALL TIME BEST!'; }
   if (top > load(dayKey())) { save(dayKey(), top); note = note || 'NEW BEST TODAY!'; }
+  if (G.mode === 'daily') {
+    const k = DAILY_KEY + dayKey();
+    if (top > load(k)) { save(k, top); note = 'NEW DAILY CHALLENGE BEST!'; }
+    else note = 'DAILY CHALLENGE BEST ' + load(k) + '. ' + note;
+  }
   refreshBests();
-  $('resTitle').textContent = !(p1.joined && p2.joined) ? 'GAME OVER'
-    : p1.score === p2.score ? 'TIE GAME!'
-    : charOf(p1.score > p2.score ? p1 : p2).name + ' WINS!';
+  // who wins: in a race the one still standing (or the higher score), otherwise the higher score
+  let winner = null;
+  if (both) winner = race && (p1.alive !== p2.alive) ? (p1.alive ? p1 : p2) : p1.score === p2.score ? null : (p1.score > p2.score ? p1 : p2);
+  $('resTitle').textContent = !both ? 'GAME OVER' : !winner ? 'TIE GAME!' : charOf(winner).name + ' WINS!';
+  if (race && winner) note = 'BY ' + Math.abs(p1.score - p2.score) + ' ROWS. ' + note;
+  const hero = winner || (p1.joined ? p1 : p2);
+  shareText = 'I scored ' + top + ' in Hop Lanes as ' + charOf(hero).name + '! ' + location.origin + location.pathname;
+  if (note.includes('ALL TIME') && top >= 1) { confetti(); sfx.best(); }
   $('res1').hidden = !p1.joined; $('res2').hidden = !p2.joined;
   $('res1').querySelector('span').textContent = charOf(p1).name;
   $('res2').querySelector('span').textContent = charOf(p2).name;
   $('world').hidden = true;
-  postScore(charOf(p1.joined && (!p2.joined || p1.score >= p2.score) ? p1 : p2).name, top);
+  postScore(charOf(hero).name, top);
   $('res1').querySelector('b').textContent = p1.score;
   $('res2').querySelector('b').textContent = p2.score;
   $('resNote').textContent = (note ? note + ' ' : '') + 'PRESS TAP TO PLAY AGAIN';
@@ -174,4 +258,4 @@ function hideHowto() {
 }
 $('gotit').addEventListener('click', hideHowto);
 
-export { banner, bannerH, bannerKey, bannerP, checkOver, cycleChar, hideHowto, howto, join, joinText, pads, pauseGame, pausedFrom, postScore, restart, resultsEl, resumeGame, setBanner, setCard, setCards, shakeCard, showHowto, startPlay, toAttract, wipe };
+export { banner, bannerH, bannerKey, bannerP, checkOver, confetti, cycleChar, cycleMode, hideHowto, howto, join, joinText, menu, pads, pauseGame, pausedFrom, postScore, prizeMachine, restart, resultsEl, resumeGame, setBanner, setCard, setCards, setMode, shakeCard, shareScore, showHowto, startPlay, toAttract, updatePrize, wipe };

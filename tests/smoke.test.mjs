@@ -49,9 +49,6 @@ async function open(ctxOpts, url, { network = 'cdn', fresh = false } = {}) {
   // blocked fonts/CDN requests log "Failed to load resource"; that is expected
   page.on('console', m => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push('console: ' + m.text()); });
   if (network === 'cdn') {
-    await page.route('**/three.min.js', r => r.fulfill({
-      path: THREE, contentType: 'text/javascript', headers: { 'Access-Control-Allow-Origin': '*' },
-    }));
     await page.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
   } else {
     await page.route(/^https?:/, r => { requests.push(r.request().url()); return r.abort(); });

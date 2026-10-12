@@ -1,4 +1,4 @@
-import { $, G, fail } from './core.js';
+import { $, G, NIGHT_FULL, NIGHT_START, fail } from './core.js';
 
 // Three.js renderer, camera, light, resize handling and the adaptive quality ladder.
 // ---------- three.js setup ----------
@@ -26,12 +26,27 @@ const CAM_OFF = new THREE.Vector3(3.2, 12, 7.5);
 const focus = new THREE.Vector3();
 const ONE = new THREE.Vector3(1, 1, 1);
 
-scene.add(new THREE.HemisphereLight(0xffffff, 0x8899aa, 0.65));
+const hemi = new THREE.HemisphereLight(0xffffff, 0x8899aa, 0.65);
+scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xffffff, 0.6);
 sun.castShadow = true;
 sun.shadow.mapSize.setScalar(lowGpu ? 1024 : 2048);
 Object.assign(sun.shadow.camera, { top: 15, bottom: -15, near: 1, far: 50 });   // left/right set in resize()
 scene.add(sun, sun.target);
+
+// day turns into night as the players get far: sky, ambient and sun blend toward a blue dusk
+const DAY = { sky: new THREE.Color(0x74d3f2), sun: new THREE.Color(0xffffff), hemi: 0.65, sunI: 0.6 };
+const NIGHT = { sky: new THREE.Color(0x1b2242), sun: new THREE.Color(0x9fb3ff), hemi: 0.28, sunI: 0.42 };
+let nightT = -1;
+function setNight(row) {
+  const t = Math.min(1, Math.max(0, (row - NIGHT_START) / (NIGHT_FULL - NIGHT_START)));
+  if (t === nightT) return;
+  nightT = t;
+  scene.background.copy(DAY.sky).lerp(NIGHT.sky, t);
+  sun.color.copy(DAY.sun).lerp(NIGHT.sun, t);
+  hemi.intensity = DAY.hemi + (NIGHT.hemi - DAY.hemi) * t;
+  sun.intensity = DAY.sunI + (NIGHT.sunI - DAY.sunI) * t;
+}
 
 function resize() {
   const w = stage.clientWidth, h = stage.clientHeight;
@@ -109,4 +124,4 @@ function watchFrameTime(frameT) {
 
 const getPixelRatio = () => pixelRatio;
 
-export { BAD_FRAME, BLINK_STEPS, CAM_OFF, LADDER, ONE, camera, focus, getPixelRatio, lowGpu, marquee, perf, pixelRatio, reduceMotion, renderer, resetFrameWatch, resize, scene, setRatio, setShadowMapSize, stage, sun, touchQuery, watchFrameTime };
+export { BAD_FRAME, BLINK_STEPS, CAM_OFF, LADDER, ONE, camera, focus, getPixelRatio, hemi, lowGpu, marquee, perf, pixelRatio, reduceMotion, renderer, resetFrameWatch, resize, scene, setNight, setRatio, setShadowMapSize, stage, sun, touchQuery, watchFrameTime };

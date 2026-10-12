@@ -26,7 +26,7 @@ function spawn(p) {
   p.mesh = makeCharacter(ch.boxes, ch.key);
   scene.add(p.mesh);
   Object.assign(p, {
-    x: p.startX, row: 0, alive: true, hop: null, queue: null, score: 0, coins: 0, idleT: 0, eagle: null,
+    x: p.startX, row: 0, alive: true, hop: null, queue: null, score: 0, coins: 0, idleT: 0, eagle: null, breath: p.id * 1.7,
     facing: 0, cause: '', log: null, logOff: 0, trainDir: 0
   });
   p.mesh.position.set(p.x, 0, 0);
@@ -71,7 +71,7 @@ function tryMove(p, dx, dr) {
   const lane = lanes.get(p.row + dr);
   if (!lane) return;
   let tx = p.x + dx;
-  if (lane.kind === 'river') { if (Math.abs(tx) > PLAY_HALF + 0.5) return; }
+  if (lane.kind === 'river') { if (Math.abs(tx) > PLAY_HALF + 0.5) return; }   // lily pads: any column (water kills on landing)
   else {
     tx = Math.round(tx);
     if (Math.abs(tx) > PLAY_HALF) return;
@@ -164,6 +164,7 @@ function land(p, lane) {
     p.log = log;
   } else {
     p.x = Math.round(p.x);
+    if (lane && lane.kind === 'lily' && !lane.pads.has(p.x)) { kill(p, 'splash'); return false; }
     const coin = lane && lane.coins.get(p.x);
     if (coin) collectCoin(p, lane, coin);
   }
@@ -182,13 +183,16 @@ function stepHop(p, lane, dt) {
   }
   p.x = h.fx + (h.tx - h.fx) * t + drift;
   m.position.set(p.x, Math.sin(t * Math.PI) * 0.45, h.fz + (h.tz - h.fz) * t);
-  m.userData.body.scale.copy(ONE);
+  const stretch = Math.sin(t * Math.PI) * 0.16;   // taller in the air, a little thinner
+  m.userData.body.scale.set(1 - stretch * 0.5, 1 + stretch, 1 - stretch * 0.5);
   return t < 1 || land(p, lane);
 }
 // standing still (or riding a log); returns false if the log carried the player off the edge
 function stand(p, dt) {
   const m = p.mesh;
   m.userData.body.scale.lerp(ONE, Math.min(1, dt * 14));
+  p.breath += dt;
+  m.userData.body.scale.y += Math.sin(p.breath * 5) * 0.02;   // a slow breath while standing
   if (!p.log) { m.position.y = 0; return true; }
   p.x = p.log.x + p.logOff;
   m.position.x = p.x; m.position.y = 0.1;
