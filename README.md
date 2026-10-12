@@ -10,13 +10,15 @@ Go too slow and the screen leaves you behind.
 |---|---|
 | `index.html` | The page: markup only |
 | `css/style.css` | All styles |
-| `js/game.js` | All game logic (needs Three.js r128 loaded first) |
+| `js/main.js` | Entry point: checks for Three.js, then loads `js/app.js` |
+| `js/*.js` | ES modules: `core` (constants, shared state), `storage`, `audio`, `device`, `voxel`, `models`, `gfx`, `world`, `players`, `screens`, `input`, `app` (loop) |
 | `fonts/` | Press Start 2P and Rubik (Latin subset) with their licenses |
 | `hop-lanes-standalone.html` | Generated: everything above plus Three.js and fonts in one offline file |
 
 ## Play
 
-- `index.html` loads Three.js from a CDN, so it needs internet. The fonts come from `fonts/`.
+- `index.html` loads Three.js from a CDN, so it needs internet, and it must be served by a web server
+  (browsers do not load ES modules from a file opened directly). For a quick local server: `npx serve .` or `python3 -m http.server`.
 - `hop-lanes-standalone.html` has everything built in and plays offline (for example in a phone's file viewer).
 
 | Action | Player 1 | Player 2 |
@@ -55,7 +57,7 @@ to `connect-src` in the Content-Security-Policy meta. See `server/README.md`. Th
 
 ## Offline build
 
-`hop-lanes-standalone.html` is generated. Rebuild it after every change to `index.html`, `css/`, `js/` or `fonts/`
+`hop-lanes-standalone.html` is generated. It bundles the modules in the order of `tools/bundle-order.json`. Rebuild it after every change to `index.html`, `css/`, `js/` or `fonts/`
 (needs `npm`, `python3` and access to the npm registry):
 
 ```sh

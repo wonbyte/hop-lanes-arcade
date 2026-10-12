@@ -1,0 +1,245 @@
+import { owned } from './storage.js';
+import { cachedGeo, voxelMesh } from './voxel.js';
+
+// Colors, pixel portraits and voxel box lists for everything that is drawn.
+// ---------- shared colors (3D models and the pixel portraits use the same ones) ----------
+const COLORS = {
+  frog: { body: 0x4cbf3f, belly: 0xa6e37a, mouth: 0xe0453a, eye: 0xffffff, pupil: 0x111111, leg: 0x2d7a25 },
+  fox: { fur: 0xf07a2a, cream: 0xfff4e6, dark: 0x1a1a1a },
+  bunny: { fur: 0xf4f1ec, ear: 0xf7b9c4, eye: 0x222222, nose: 0xe06a7c },
+  cat: { fur: 0x6d6f7a, dark: 0x3a3b45, eye: 0xf2c33a, pupil: 0x111111, nose: 0xe88a9a },
+  robot: { body: 0xb8c0cc, dark: 0x5a6270, eye: 0x4fb8ff, light: 0xff6f5a },
+  coin: { face: 0xffd84a, rim: 0xc99a1e }
+};
+const css = hex => '#' + hex.toString(16).padStart(6, '0');
+
+// ---------- pixel portraits for the join cards ----------
+const PIX = {
+  frog: { rows: [
+    '............',
+    '..WWW..WWW..',
+    '..WKW..WKW..',
+    '.GGGGGGGGGG.',
+    '.GGGGGGGGGG.',
+    '.GRRRRRRRRG.',
+    '.GGGGGGGGGG.',
+    '.GLLLLLLLLG.',
+    '.GLLLLLLLLG.',
+    '.DD.DD.DD.DD',
+    '............',
+    '............'],
+    pal: { W: COLORS.frog.eye, K: COLORS.frog.pupil, G: COLORS.frog.body, R: COLORS.frog.mouth, L: COLORS.frog.belly, D: COLORS.frog.leg } },
+  fox: { rows: [
+    '.K........K.',
+    '.OO......OO.',
+    '.OOOOOOOOOO.',
+    '.OOKOOOOKOO.',
+    '.OOOOOOOOOO.',
+    '.OOWWWWWWOO.',
+    '.OWWWKKWWWO.',
+    '.OOWWWWWWOO.',
+    '.OOOWWWWOOO.',
+    '.OOOOOOOOOO.',
+    '..KK....KK..',
+    '............'],
+    pal: { O: COLORS.fox.fur, W: COLORS.fox.cream, K: COLORS.fox.dark } },
+  bunny: { rows: [
+    '...W....W...',
+    '...WP..WP...',
+    '...WP..WP...',
+    '...W....W...',
+    '..WWWWWWWW..',
+    '.WWWWWWWWWW.',
+    '.WWKWWWWKWW.',
+    '.WWWWWWWWWW.',
+    '.WWWWNNWWWW.',
+    '..WWWWWWWW..',
+    '...WW..WW...',
+    '............'],
+    pal: { W: COLORS.bunny.fur, P: COLORS.bunny.ear, K: COLORS.bunny.eye, N: COLORS.bunny.nose } },
+  cat: { rows: [
+    '.D........D.',
+    '.DD......DD.',
+    '.DFDFFFFDFD.',
+    '.FFFFFFFFFF.',
+    '.FFFFFFFFFF.',
+    '.FEEFFFFEEF.',
+    '.FEKFFFFKEF.',
+    '.FFFFFFFFFF.',
+    '.FFFFNNFFFF.',
+    '.FFFDFFDFFF.',
+    '..FFFFFFFF..',
+    '............'],
+    pal: { D: COLORS.cat.dark, F: COLORS.cat.fur, E: COLORS.cat.eye, K: COLORS.cat.pupil, N: COLORS.cat.nose } },
+  robot: { rows: [
+    '.....L......',
+    '....BBB.....',
+    '.BBBBBBBBBB.',
+    '.BDDDDDDDDB.',
+    '.BDEEDDEEDB.',
+    '.BDEEDDEEDB.',
+    '.BDDDDDDDDB.',
+    '.BDLLLLLLDB.',
+    '.BDDDDDDDDB.',
+    '.BBBBBBBBBB.',
+    '..BB....BB..',
+    '............'],
+    pal: { B: COLORS.robot.body, D: COLORS.robot.dark, E: COLORS.robot.eye, L: COLORS.robot.light } }
+};
+function drawPix(svg, art) {
+  let s = '';
+  art.rows.forEach((r, y) => [...r].forEach((c, x) => {
+    if (c !== '.') s += `<rect x="${x}" y="${y}" width="1" height="1" fill="${css(art.pal[c])}"/>`;
+  }));
+  svg.innerHTML = s;
+}
+
+// ---------- models (all face -z, which is "forward") ----------
+function frogBoxes() {
+  const c = COLORS.frog;
+  const b = [
+    [0.62, 0.36, 0.62, c.body, 0, 0.08, 0],
+    [0.5, 0.06, 0.5, c.belly, 0, 0.02, 0],
+    [0.5, 0.05, 0.04, c.mouth, 0, 0.22, -0.31]
+  ];
+  for (const s of [-1, 1]) b.push(
+    [0.2, 0.2, 0.2, c.eye, s * 0.17, 0.42, -0.16],
+    [0.08, 0.1, 0.06, c.pupil, s * 0.17, 0.48, -0.27],
+    [0.16, 0.12, 0.3, c.leg, s * 0.33, 0, 0.12],      // back legs
+    [0.1, 0.1, 0.12, c.leg, s * 0.22, 0, -0.32]);     // front feet
+  return b;
+}
+function foxBoxes() {
+  const c = COLORS.fox;
+  const b = [
+    [0.5, 0.5, 0.56, c.fur, 0, 0.1, 0],
+    [0.36, 0.3, 0.06, c.cream, 0, 0.12, -0.29],       // chest
+    [0.26, 0.16, 0.22, c.cream, 0, 0.3, -0.36],       // snout
+    [0.08, 0.07, 0.06, c.dark, 0, 0.42, -0.47],       // nose
+    [0.18, 0.18, 0.34, c.fur, 0, 0.25, 0.42],         // tail
+    [0.16, 0.16, 0.12, c.cream, 0, 0.26, 0.64]
+  ];
+  for (const s of [-1, 1]) b.push(
+    [0.07, 0.09, 0.04, c.dark, s * 0.15, 0.46, -0.28],  // eyes
+    [0.14, 0.18, 0.1, c.fur, s * 0.16, 0.6, -0.05],     // ears
+    [0.14, 0.06, 0.1, c.dark, s * 0.16, 0.78, -0.05],
+    [0.1, 0.12, 0.1, c.dark, s * 0.14, 0, -0.12]);      // legs
+  return b;
+}
+function bunnyBoxes() {
+  const c = COLORS.bunny;
+  const b = [
+    [0.5, 0.44, 0.56, c.fur, 0, 0.08, 0],
+    [0.08, 0.06, 0.04, c.nose, 0, 0.28, -0.29],
+    [0.16, 0.16, 0.14, c.fur, 0, 0.2, 0.33]           // tail
+  ];
+  for (const s of [-1, 1]) b.push(
+    [0.14, 0.5, 0.1, c.fur, s * 0.14, 0.5, -0.05],      // ears
+    [0.07, 0.36, 0.04, c.ear, s * 0.14, 0.56, -0.11],
+    [0.07, 0.08, 0.04, c.eye, s * 0.15, 0.36, -0.29],
+    [0.12, 0.1, 0.2, c.fur, s * 0.18, 0, -0.1]);        // feet
+  return b;
+}
+function catBoxes() {
+  const c = COLORS.cat;
+  const b = [
+    [0.5, 0.42, 0.6, c.fur, 0, 0.1, 0],
+    [0.07, 0.05, 0.04, c.nose, 0, 0.3, -0.31],
+    [0.52, 0.05, 0.08, c.dark, 0, 0.5, -0.05],        // stripes
+    [0.52, 0.05, 0.08, c.dark, 0, 0.5, 0.15],
+    [0.1, 0.1, 0.4, c.dark, 0.1, 0.3, 0.45],          // tail
+    [0.1, 0.3, 0.1, c.dark, 0.1, 0.35, 0.62]
+  ];
+  for (const s of [-1, 1]) b.push(
+    [0.12, 0.16, 0.1, c.dark, s * 0.17, 0.52, -0.1],    // ears
+    [0.09, 0.08, 0.04, c.eye, s * 0.14, 0.38, -0.31],
+    [0.03, 0.08, 0.05, c.pupil, s * 0.14, 0.38, -0.32],
+    [0.1, 0.12, 0.1, c.dark, s * 0.15, 0, -0.14],       // legs
+    [0.1, 0.12, 0.1, c.dark, s * 0.15, 0, 0.16]);
+  return b;
+}
+function robotBoxes() {
+  const c = COLORS.robot;
+  const b = [
+    [0.46, 0.5, 0.46, c.body, 0, 0.1, 0],
+    [0.36, 0.26, 0.04, c.dark, 0, 0.26, -0.24],       // face plate
+    [0.22, 0.04, 0.05, c.light, 0, 0.3, -0.26],       // mouth
+    [0.05, 0.2, 0.05, c.dark, 0, 0.6, 0],             // antenna
+    [0.1, 0.1, 0.1, c.light, 0, 0.78, 0],
+    [0.08, 0.08, 0.03, c.light, -0.1, 0.2, -0.24]     // chest light
+  ];
+  for (const s of [-1, 1]) b.push(
+    [0.1, 0.08, 0.05, c.eye, s * 0.1, 0.4, -0.26],
+    [0.08, 0.3, 0.12, c.dark, s * 0.3, 0.18, 0],        // arms
+    [0.14, 0.12, 0.2, c.dark, s * 0.13, 0, 0]);         // feet
+  return b;
+}
+const eagleBoxes = () => {
+  const b = [
+    [0.9, 0.32, 0.5, 0x4a3426, 0, 0, 0],
+    [0.3, 0.3, 0.3, 0xf4f1ec, 0, 0.1, -0.5],          // head
+    [0.12, 0.1, 0.2, 0xf2c33a, 0, 0.15, -0.72],       // beak
+    [0.4, 0.08, 0.3, 0xf4f1ec, 0, 0.1, 0.35]          // tail
+  ];
+  for (const s of [-1, 1]) b.push([1.5, 0.08, 0.45, 0x3a281d, s * 1.1, 0.2, 0], [0.05, 0.05, 0.05, 0x111111, s * 0.1, 0.28, -0.62]);
+  return b;
+};
+const coinBoxes = () => [[0.34, 0.34, 0.08, COLORS.coin.face, 0, 0.28, 0], [0.18, 0.18, 0.1, COLORS.coin.rim, 0, 0.36, 0]];
+// characters a player can pick; the first two are free, the rest are bought with coins
+const CHARACTERS = [
+  { key: 'frog', name: 'FROG', boxes: frogBoxes, price: 0 },
+  { key: 'fox', name: 'FOX', boxes: foxBoxes, price: 0 },
+  { key: 'bunny', name: 'BUNNY', boxes: bunnyBoxes, price: 30 },
+  { key: 'cat', name: 'CAT', boxes: catBoxes, price: 60 },
+  { key: 'robot', name: 'ROBOT', boxes: robotBoxes, price: 100 }
+];
+const isOwned = ch => ch.price === 0 || owned.has(ch.key);
+const CAR_COLORS = [0xe8513a, 0x3a8ee8, 0xf2c33a, 0x8f5ae0, 0x3ac27a, 0xf27fb0];
+function vehicleBoxes(truck, c) {
+  const len = truck ? 2.4 : 1.4;
+  const b = truck ? [
+    [1.7, 0.75, 0.8, 0xeeeeee, 0.3, 0.12, 0],
+    [0.6, 0.6, 0.78, c, -0.85, 0.12, 0],
+    [0.12, 0.3, 0.66, 0x223344, -1.12, 0.38, 0]
+  ] : [
+    [1.4, 0.42, 0.78, c, 0, 0.12, 0],
+    [0.75, 0.3, 0.66, 0xffffff, 0.08, 0.54, 0],
+    [0.06, 0.2, 0.6, 0x223344, -0.3, 0.58, 0]
+  ];
+  for (const wx of [-len / 2 + 0.3, len / 2 - 0.3]) for (const wz of [-0.38, 0.38])
+    b.push([0.3, 0.26, 0.1, 0x222222, wx, 0, wz]);
+  return b;
+}
+const logBoxes = len => [
+  [len, 0.26, 0.78, 0x8a5130, 0, -0.16, 0],
+  [0.12, 0.27, 0.7, 0xc08a5a, -len / 2 + 0.05, -0.16, 0],
+  [0.12, 0.27, 0.7, 0xc08a5a, len / 2 - 0.05, -0.16, 0]
+];
+const TRAIN_CARS = 4, TRAIN_CAR_LEN = 3, TRAIN_GAP = 0.15;
+const TRAIN_LEN = TRAIN_CARS * TRAIN_CAR_LEN + (TRAIN_CARS - 1) * TRAIN_GAP;
+function trainBoxes(dir) {
+  const b = [];
+  for (let i = 0; i < TRAIN_CARS; i++) {
+    const x = -TRAIN_LEN / 2 + TRAIN_CAR_LEN / 2 + i * (TRAIN_CAR_LEN + TRAIN_GAP);
+    const front = dir > 0 ? i === TRAIN_CARS - 1 : i === 0;
+    b.push([TRAIN_CAR_LEN, 0.9, 0.84, front ? 0xd83a3a : 0x3a6fd8, x, 0.12, 0],
+           [TRAIN_CAR_LEN - 0.3, 0.2, 0.86, 0xdde6ff, x, 0.62, 0]);
+  }
+  const wheels = TRAIN_CARS * 2;
+  for (let i = 0; i < wheels; i++)
+    b.push([0.4, 0.15, 0.9, 0x222222, -TRAIN_LEN / 2 + 0.6 + i * (TRAIN_LEN - 1.2) / (wheels - 1), 0, 0]);
+  return b;
+}
+function makeCharacter(boxesFn, key) {
+  const g = new THREE.Group();
+  const body = voxelMesh(cachedGeo(key, boxesFn));
+  g.add(body); g.userData.body = body;
+  return g;
+}
+
+// rail signal light: two shared materials, swapped instead of edited
+const LIGHT_OFF = new THREE.MeshLambertMaterial({ color: 0x331111 });
+const LIGHT_ON = new THREE.MeshLambertMaterial({ color: 0x331111, emissive: 0xff2222 });
+const lightGeo = new THREE.BoxGeometry(0.38, 0.2, 0.14);
+
+export { CAR_COLORS, CHARACTERS, COLORS, LIGHT_OFF, LIGHT_ON, PIX, TRAIN_CARS, TRAIN_CAR_LEN, TRAIN_GAP, TRAIN_LEN, bunnyBoxes, catBoxes, coinBoxes, css, drawPix, eagleBoxes, foxBoxes, frogBoxes, isOwned, lightGeo, logBoxes, makeCharacter, robotBoxes, trainBoxes, vehicleBoxes };

@@ -5,14 +5,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
+import { serve } from './serve.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const INDEX = pathToFileURL(path.join(ROOT, 'index.html')).href;
+let INDEX = '';   // served over http (set in before): module scripts do not load from file://
 const THREE = path.join(ROOT, 'node_modules/three/build/three.min.js');
 const ARGS = ['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist'];
 const T = 60000;
 
-let browser;
+let browser, site;
 
 async function launch() {
   try {
@@ -85,8 +86,8 @@ function scoreOverlaps() {
   return out;
 }
 
-test.before(async () => { browser = await launch(); });
-test.after(async () => { await browser?.close(); });
+test.before(async () => { browser = await launch(); site = await serve(ROOT); INDEX = site.url + '/index.html'; });
+test.after(async () => { await browser?.close(); await site?.close(); });
 
 for (const vp of VIEWPORTS) {
   test(`layout ${vp.name}`, async () => {

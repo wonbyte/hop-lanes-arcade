@@ -5,15 +5,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
+import { serve } from './serve.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const INDEX = pathToFileURL(path.join(ROOT, 'index.html')).href;
+let INDEX = '';   // served over http (set in before): module scripts do not load from file://
 const STANDALONE = pathToFileURL(path.join(ROOT, 'hop-lanes-standalone.html')).href;
 const THREE = path.join(ROOT, 'node_modules/three/build/three.min.js');
 const ARGS = ['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist'];
 const T = 60000; // generous per-wait timeout
 
-let browser;
+let browser, site;
 
 async function launch() {
   try {
@@ -63,8 +64,8 @@ const state = page => page.evaluate(() => window.hopLanes.state);
 const waitState = (page, s) =>
   page.waitForFunction(x => window.hopLanes && window.hopLanes.state === x, s, { timeout: T });
 
-test.before(async () => { browser = await launch(); });
-test.after(async () => { await browser?.close(); });
+test.before(async () => { browser = await launch(); site = await serve(ROOT); INDEX = site.url + '/index.html'; });
+test.after(async () => { await browser?.close(); await site?.close(); });
 
 test('1. loads with no page errors and reaches attract', async () => {
   const { context, page, errors } = await open({}, INDEX + '#debug');

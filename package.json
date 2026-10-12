@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "Hop Lanes arcade game",
   "scripts": {
-    "check": "node --check js/game.js && node --check server/scores.mjs && for f in tests/*.mjs; do node --check \"$f\" || exit 1; done",
+    "check": "for f in js/*.js server/*.mjs tests/*.mjs; do node --check \"$f\" || exit 1; done",
     "test": "npm run check && node tests/smoke.test.mjs && node tests/layout.test.mjs && node tests/scores-server.test.mjs",
     "build": "./tools/build-standalone.sh",
     "scores": "node server/scores.mjs",
@@ -16,5 +16,6 @@
   },
   "engines": {
     "node": ">=20"
-  }
+  },
+  "type": "module"
 }
