@@ -99,6 +99,15 @@ body {
 }
 #logo small { display: block; font-size: .32em; color: var(--gold); text-shadow: 2px 2px 0 #1d3b6b; margin-bottom: 8px; }
 
+/* touch ring: where the field was tapped, in the player's color */
+.ring {
+  position: absolute; z-index: 5; width: 56px; height: 56px; margin: -28px 0 0 -28px; border-radius: 50%;
+  border: 3px solid var(--p1-glow); box-shadow: 0 0 12px var(--p1-glow); pointer-events: none;
+  opacity: .9; animation: ring .35s ease-out forwards;
+}
+.ring.p2 { border-color: var(--p2-glow); box-shadow: 0 0 12px var(--p2-glow); }
+@keyframes ring { from { transform: scale(.5); opacity: .9; } to { transform: scale(1.5); opacity: 0; } }
+
 /* restart cover: the next world is built while this hides the screen */
 #wipe { position: absolute; inset: 0; z-index: 8; background: var(--sky); opacity: 0; pointer-events: none; transition: opacity .12s; }
 #wipe.on { opacity: 1; }
@@ -192,8 +201,10 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
   }
   #deck button { pointer-events: auto; }
   .pad.p1 { justify-content: flex-start; } .pad.p2 { justify-content: flex-end; }
+  .pad { gap: 6px; }
   .pad .lbl { display: none; }
-  .tap { width: 72px; }
+  .tap { width: 84px; }
+  .side { width: 50px; font-size: 18px; }
   #start { opacity: .85; }
   #app.playing #start { visibility: hidden; }   /* it does nothing during play, so it must not cover the field */
 }
@@ -209,7 +220,7 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
   #logo h1 { font-size: 20px; }
   .score { font-size: 16px; }
 }
-@media (prefers-reduced-motion: reduce) { .card.ready { animation: none; } .tap, .card, .pad, #wipe { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .card.ready { animation: none; } .tap, .card, .pad, #wipe { transition: none; } .ring { animation: none; opacity: .6; } }
 
 /* shown only when JavaScript is off */
 .nojs { margin: 0; padding: 16px; font: 16px var(--font-ui); color: var(--ink); background: var(--bg); }

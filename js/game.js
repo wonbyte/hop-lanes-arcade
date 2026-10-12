@@ -880,9 +880,23 @@ function fieldPlayer(clientX) {
   const r = stage.getBoundingClientRect();
   return clientX < r.left + r.width / 2 ? 0 : 1;
 }
+// a short ring where the field was touched, in the player's color, so the field reads as a control
+function touchRing(clientX, clientY, i) {
+  const r = stage.getBoundingClientRect();
+  const el = document.createElement('div');
+  el.className = 'ring p' + (i + 1);
+  el.style.left = (clientX - r.left) + 'px';
+  el.style.top = (clientY - r.top) + 'px';
+  stage.appendChild(el);
+  const gone = () => el.remove();
+  el.addEventListener('animationend', gone);
+  setTimeout(gone, 500);   // also without animations (reduced motion)
+}
 stage.addEventListener('pointerdown', e => {
   if (e.button > 0) return;
-  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, i: fieldPlayer(e.clientX), done: false });
+  const i = fieldPlayer(e.clientX);
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, i, done: false });
+  touchRing(e.clientX, e.clientY, i);
   try { stage.setPointerCapture(e.pointerId); } catch (err) {}   // release lands here even off the field
 });
 stage.addEventListener('pointermove', e => {
