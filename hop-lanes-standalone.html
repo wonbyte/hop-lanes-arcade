@@ -51,7 +51,7 @@ body {
   box-shadow: 0 4px 0 rgba(0,0,0,.25);
 }
 .hs { display: flex; flex-direction: column; align-items: center; gap: 6px; }
-.hs small { font-family: var(--font-pixel); font-size: clamp(7px, 1.9vw, 11px); letter-spacing: .08em; }
+.hs small { font-family: var(--font-pixel); font-size: clamp(8px, 2vw, 11px); letter-spacing: .08em; }
 .hs b {
   font-family: var(--font-pixel); font-size: clamp(16px, 5vw, 30px); color: var(--gold);
   text-shadow: 2px 2px 0 #1d3b6b, -1px -1px 0 #1d3b6b, 1px -1px 0 #1d3b6b, -1px 1px 0 #1d3b6b;
@@ -60,7 +60,7 @@ body {
 
 /* live scores */
 .score {
-  position: absolute; z-index: 3; top: 84px;
+  position: absolute; z-index: 3; top: calc(var(--marquee-h, 74px) + 10px);
   font-family: var(--font-pixel); font-size: clamp(18px, 5.5vw, 34px);
   color: var(--ink); text-shadow: 3px 3px 0 rgba(0,0,0,.55);
   font-variant-numeric: tabular-nums;
@@ -78,7 +78,7 @@ body {
 .card {
   width: min(36vw, 170px); padding: 10px 8px 8px; border-radius: 14px;
   display: flex; flex-direction: column; align-items: center; gap: 8px;
-  font-family: var(--font-pixel); font-size: clamp(7px, 2.1vw, 11px); text-align: center; line-height: 1.5;
+  font-family: var(--font-pixel); font-size: clamp(8px, 2.2vw, 11px); text-align: center; line-height: 1.5;
   box-shadow: 0 6px 0 rgba(0,0,0,.35); transition: transform .2s;
 }
 .card.p1 { background: var(--p1); }
@@ -98,14 +98,18 @@ body {
   margin: 0; font-size: clamp(22px, 8vw, 54px); color: var(--gold); line-height: 1.2;
   text-shadow: 4px 4px 0 #1d3b6b; text-wrap: balance;
 }
-#banner p { white-space: pre-line; margin: 14px 0 0; font-size: clamp(8px, 2.4vw, 13px); line-height: 1.8; text-shadow: 2px 2px 0 #000; }
-#logo { position: absolute; z-index: 4; left: 16px; right: 16px; top: 92px; text-align: center; pointer-events: none; }
+#banner p { white-space: pre-line; margin: 14px 0 0; font-size: clamp(9px, 2.6vw, 13px); line-height: 1.8; text-shadow: 2px 2px 0 #000; }
+#logo { position: absolute; z-index: 4; left: 16px; right: 16px; top: calc(var(--marquee-h, 74px) + 18px); text-align: center; pointer-events: none; }
 #logo h1 {
   margin: 0; font-weight: 400;
   display: inline-block; font-family: var(--font-pixel); font-size: clamp(22px, 7.5vw, 50px); line-height: 1.15;
   color: #fff; text-shadow: 0 5px 0 #b33a26, 4px 9px 0 rgba(0,0,0,.35); transform: rotate(-4deg);
 }
 #logo small { display: block; font-size: .32em; color: var(--gold); text-shadow: 2px 2px 0 #1d3b6b; margin-bottom: 8px; }
+
+/* restart cover: the next world is built while this hides the screen */
+#wipe { position: absolute; inset: 0; z-index: 8; background: var(--sky); opacity: 0; pointer-events: none; transition: opacity .12s; }
+#wipe.on { opacity: 1; }
 
 /* results */
 #results {
@@ -119,7 +123,7 @@ body {
 #results .row div { display: flex; flex-direction: column; gap: 8px; font-size: clamp(8px, 2.4vw, 12px); }
 #results .row b { font-size: clamp(20px, 6vw, 34px); font-variant-numeric: tabular-nums; }
 #results .r1 { color: var(--p1-glow); } #results .r2 { color: var(--p2-glow); }
-#results p { margin: 0; font-size: clamp(7px, 2vw, 10px); line-height: 1.8; }
+#results p { margin: 0; font-size: clamp(8px, 2.2vw, 11px); line-height: 1.8; }
 
 /* control deck */
 #deck {
@@ -130,7 +134,7 @@ body {
 }
 .pad { display: flex; align-items: center; justify-content: center; gap: 8px; transition: opacity .2s; }
 .pad.idle { opacity: .3; }
-.pad .lbl { font-family: var(--font-pixel); font-size: 8px; letter-spacing: .1em; white-space: nowrap; }
+.pad .lbl { font-family: var(--font-pixel); font-size: 9px; letter-spacing: .1em; white-space: nowrap; }
 .pad.p1 .lbl { color: var(--p1-glow); } .pad.p2 .lbl { color: var(--p2-glow); }
 button { font: inherit; color: inherit; border: 0; cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
 button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
@@ -148,7 +152,7 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
 }
 .side:active { transform: translateY(3px); box-shadow: 0 1px 0 #0b0d14; }
 #start {
-  font-family: var(--font-pixel); font-size: 8px; padding: 10px 10px; border-radius: 6px;
+  font-family: var(--font-pixel); font-size: 9px; padding: 10px 10px; border-radius: 6px;
   background: #e9ecf3; color: #10131c; box-shadow: 0 4px 0 #6b7080;
 }
 #start:active { transform: translateY(3px); box-shadow: 0 1px 0 #6b7080; }
@@ -168,13 +172,13 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
 @media (orientation: landscape) and (max-height: 520px) {
   #marquee { inset: 0 auto auto 50%; transform: translateX(-50%); width: min(70vw, 460px); padding: 6px 12px; border-radius: 0 0 12px 12px; }
   .hs { gap: 2px; }
-  .hs small { font-size: 7px; }
+  .hs small { font-size: 8px; }
   .hs b { font-size: 16px; }
   .score { top: 10px; font-size: 20px; }
-  #logo { top: 60px; }
+  #logo { top: calc(var(--marquee-h, 50px) + 10px); }
   #logo h1 { font-size: 24px; }
   #cards { bottom: auto; top: 50%; transform: translateY(-50%); justify-content: space-between; padding-inline: max(4px, env(safe-area-inset-left, 0px)) max(4px, env(safe-area-inset-right, 0px)); }
-  .card { width: 128px; padding: 8px 6px; gap: 4px; font-size: 7px; }
+  .card { width: 136px; padding: 8px 6px; gap: 4px; font-size: 8px; }
   .card svg { width: 40%; }
   #banner { top: 30%; }
   #deck {
@@ -187,7 +191,7 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
   .tap { width: 72px; }
   #start { opacity: .85; }
 }
-@media (prefers-reduced-motion: reduce) { .card.ready { animation: none; } .tap, .card, .pad { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .card.ready { animation: none; } .tap, .card, .pad, #wipe { transition: none; } }
 </style>
 </head>
 <body>
@@ -202,6 +206,7 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
     <div id="score2" class="score" hidden><span>P2 FOX</span><b>0</b></div>
     <div id="logo"><h1><small>ARCADE</small>HOP<br>LANES</h1></div>
     <div id="banner" hidden aria-live="polite"><h2></h2><p></p></div>
+    <div id="wipe" aria-hidden="true"></div>
     <div id="results" hidden aria-live="polite">
       <h2 id="resTitle">GAME OVER</h2>
       <div class="row">
@@ -275,11 +280,13 @@ const HIT_PAD = 0.28;         // extra hit width around cars and trains
 const TRAIN_SPEED = 26;
 const TRAIN_WARN = 1.3;       // seconds the signal flashes before a train
 const LANES_AHEAD = 22, LANES_BEHIND = 12;
+const FIRST_ROW = -8;         // rows behind the start line that are built for scenery
 let camLead = 4.2;            // camera looks this many rows past the scroll line (less on wide screens)
 const BEHIND_LIMIT = 4.5;     // fall this far behind the scroll line and you are out
 const COUNTDOWN = 3;
 const RESULTS_DELAY = 1.1;    // seconds from last death to the results panel (and restart)
 const GO_TIME = 0.6;
+const WIPE_MS = 130;          // restart fade; the new world is built while the screen is covered
 const TAU = Math.PI * 2;
 const $ = id => document.getElementById(id);
 
@@ -288,6 +295,19 @@ let state = 'attract', stateT = 0, camRow = 0, playT = 0, countdown = 0, goT = 0
 let visRows = 14;      // lanes further than this from the camera focus are not drawn
 let frameN = 0;
 let bannerKey = '';
+
+// ---------- test hooks and seeds ----------
+// #debug exposes window.hopLanes; #seed-42 or #debug-seed-42 builds the same world every game
+const hashMatch = /^#(debug)?(?:-?seed-(\d+))?$/.exec(location.hash) || [];
+const DEBUG = hashMatch[1] === 'debug';
+const FIXED_SEED = hashMatch[2] !== undefined ? Number(hashMatch[2]) >>> 0 : null;
+
+// ---------- shared colors (3D models and the pixel portraits use the same ones) ----------
+const COLORS = {
+  frog: { body: 0x4cbf3f, belly: 0xa6e37a, mouth: 0xe0453a, eye: 0xffffff, pupil: 0x111111, leg: 0x2d7a25 },
+  fox: { fur: 0xf07a2a, cream: 0xfff4e6, dark: 0x1a1a1a }
+};
+const css = hex => '#' + hex.toString(16).padStart(6, '0');
 
 // ---------- storage (best effort) ----------
 const BEST_KEY = 'hoplanes.best', DAY_PREFIX = 'hoplanes.day.';
@@ -310,13 +330,16 @@ function dropOldDays() {
   } catch (e) {}
 }
 let bestAll = load(BEST_KEY);
-let bestDay = 0;
+let bestDay = 0, shownDay = '';
 function refreshBests() {
-  bestDay = load(dayKey());
+  shownDay = dayKey();
+  bestDay = load(shownDay);
   $('best').textContent = bestAll;
   $('daily').textContent = bestDay;
 }
 dropOldDays();
+// a game left open past midnight starts a new "today"
+setInterval(() => { if (dayKey() !== shownDay) { dropOldDays(); refreshBests(); } }, 60000);
 
 // ---------- pixel portraits for the join cards ----------
 const PIX = {
@@ -333,7 +356,7 @@ const PIX = {
     '.DD.DD.DD.DD',
     '............',
     '............'],
-    pal: { W: '#fff', K: '#111', G: '#4cbf3f', R: '#e0453a', L: '#a6e37a', D: '#2d7a25' } },
+    pal: { W: COLORS.frog.eye, K: COLORS.frog.pupil, G: COLORS.frog.body, R: COLORS.frog.mouth, L: COLORS.frog.belly, D: COLORS.frog.leg } },
   fox: { rows: [
     '.K........K.',
     '.OO......OO.',
@@ -347,12 +370,12 @@ const PIX = {
     '.OOOOOOOOOO.',
     '..KK....KK..',
     '............'],
-    pal: { O: '#f07a2a', W: '#fff4e6', K: '#1a1a1a' } }
+    pal: { O: COLORS.fox.fur, W: COLORS.fox.cream, K: COLORS.fox.dark } }
 };
 function drawPix(svg, art) {
   let s = '';
   art.rows.forEach((r, y) => [...r].forEach((c, x) => {
-    if (c !== '.') s += `<rect x="${x}" y="${y}" width="1" height="1" fill="${art.pal[c]}"/>`;
+    if (c !== '.') s += `<rect x="${x}" y="${y}" width="1" height="1" fill="${css(art.pal[c])}"/>`;
   }));
   svg.innerHTML = s;
 }
@@ -380,6 +403,7 @@ const sfx = {
   hop: id => beep(id ? 520 : 440, 0.07, 'square', 0.04, 200),
   squash: () => beep(160, 0.25, 'sawtooth', 0.08, -120),
   splash: () => beep(900, 0.3, 'triangle', 0.06, -800),
+  fall: () => beep(300, 0.4, 'triangle', 0.06, -220),
   bell: () => beep(1250, 0.08, 'square', 0.025),
   horn: () => { beep(220, 0.5, 'sawtooth', 0.05); beep(277, 0.5, 'sawtooth', 0.04); },
   join: () => { beep(660, 0.08); setTimeout(() => beep(990, 0.12), 80); },
@@ -411,11 +435,12 @@ const lowGpu = matchMedia('(pointer: coarse)').matches;              // phones/t
 const touchQuery = matchMedia('(pointer: coarse)');                  // touch hints follow the current input
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const BLINK_STEPS = reduceMotion ? 2.5 : 8;                          // rail light on/off changes per second
-const stage = $('stage');
+const stage = $('stage'), marquee = $('marquee');
 let renderer;
 try { renderer = new THREE.WebGLRenderer({ antialias: true }); }
 catch (e) { fail('This browser can not show 3D graphics. Turn on WebGL or try another browser.'); return; }
-renderer.setPixelRatio(Math.min(lowGpu ? 1.5 : 2, window.devicePixelRatio || 1));
+let pixelRatio = Math.min(lowGpu ? 1.5 : 2, window.devicePixelRatio || 1);
+renderer.setPixelRatio(pixelRatio);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = lowGpu ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
 stage.prepend(renderer.domElement);
@@ -440,6 +465,8 @@ function resize() {
   const w = stage.clientWidth, h = stage.clientHeight;
   if (!w || !h) return;
   renderer.setSize(w, h, false);
+  // the score and the logo sit just under the top bar, whatever its height
+  stage.style.setProperty('--marquee-h', marquee.offsetHeight + 'px');
   const aspect = w / h;
   // wide screens (a phone held sideways) zoom out so enough rows stay visible,
   // and aim lower so the players sit above the floating buttons
@@ -454,9 +481,30 @@ function resize() {
   sc.left = -(halfW + 2); sc.right = halfW + 2;
   sc.updateProjectionMatrix();
 }
-if ('ResizeObserver' in window) new ResizeObserver(resize).observe(stage);   // also catches font loads and deck height changes
-else window.addEventListener('resize', resize);
+if ('ResizeObserver' in window) {
+  // the stage and the top bar both change size when fonts load or the phone turns
+  const ro = new ResizeObserver(resize);
+  ro.observe(stage); ro.observe(marquee);
+} else window.addEventListener('resize', resize);
 resize();
+
+// slow device? lower the resolution, then the shadow detail, a step at a time
+const perf = { ema: 1 / 60, t: 0 };
+function watchFrameTime(rawDt) {
+  if (state !== 'play' || rawDt > 0.1) return;          // ignore menus and tab switches
+  perf.ema += (rawDt - perf.ema) * 0.05;
+  if ((perf.t += rawDt) < 2) return;
+  perf.t = 0;
+  if (perf.ema < 0.022) return;                          // ~45 fps or better: keep quality
+  if (pixelRatio > 1) {
+    pixelRatio = Math.max(1, pixelRatio - 0.25);
+    renderer.setPixelRatio(pixelRatio);
+    resize();
+  } else if (sun.shadow.mapSize.x > 512) {
+    sun.shadow.mapSize.setScalar(sun.shadow.mapSize.x / 2);
+    if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
+  }
+}
 
 // ---------- merged voxel meshes ----------
 // Every model is a list of boxes [w, h, d, color, x, y, z] (y = bottom of the box).
@@ -500,37 +548,52 @@ const geoCache = new Map();
 const cachedGeo = (key, build) => geoCache.get(key) || geoCache.set(key, mergeBoxes(build())).get(key);
 
 // ---------- random ----------
-const rand = (a, b) => a + Math.random() * (b - a);
-const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+// The world is built from a seeded generator, so a seed always gives the same lanes.
+// Effects (particles, train timing after the first train) use Math.random and never shift the world.
+function mulberry32(seed) {
+  return () => {
+    seed = (seed + 0x6d2b79f5) >>> 0;
+    let t = seed;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+let worldSeed = 0, worldRng = Math.random;
+const rand = (a, b, r = worldRng) => a + r() * (b - a);
+const pick = (arr, r = worldRng) => arr[Math.floor(r() * arr.length)];
+const fxRand = (a, b) => rand(a, b, Math.random);
 
 // ---------- models (all face -z, which is "forward") ----------
 function frogBoxes() {
+  const c = COLORS.frog;
   const b = [
-    [0.62, 0.36, 0.62, 0x4cbf3f, 0, 0.08, 0],
-    [0.5, 0.06, 0.5, 0xa6e37a, 0, 0.02, 0],          // belly
-    [0.5, 0.05, 0.04, 0xe0453a, 0, 0.22, -0.31]       // mouth
+    [0.62, 0.36, 0.62, c.body, 0, 0.08, 0],
+    [0.5, 0.06, 0.5, c.belly, 0, 0.02, 0],
+    [0.5, 0.05, 0.04, c.mouth, 0, 0.22, -0.31]
   ];
   for (const s of [-1, 1]) b.push(
-    [0.2, 0.2, 0.2, 0xffffff, s * 0.17, 0.42, -0.16],  // eyes
-    [0.08, 0.1, 0.06, 0x111111, s * 0.17, 0.48, -0.27],
-    [0.16, 0.12, 0.3, 0x2d7a25, s * 0.33, 0, 0.12],    // back legs
-    [0.1, 0.1, 0.12, 0x2d7a25, s * 0.22, 0, -0.32]);   // front feet
+    [0.2, 0.2, 0.2, c.eye, s * 0.17, 0.42, -0.16],
+    [0.08, 0.1, 0.06, c.pupil, s * 0.17, 0.48, -0.27],
+    [0.16, 0.12, 0.3, c.leg, s * 0.33, 0, 0.12],      // back legs
+    [0.1, 0.1, 0.12, c.leg, s * 0.22, 0, -0.32]);     // front feet
   return b;
 }
 function foxBoxes() {
+  const c = COLORS.fox;
   const b = [
-    [0.5, 0.5, 0.56, 0xf07a2a, 0, 0.1, 0],
-    [0.36, 0.3, 0.06, 0xfff4e6, 0, 0.12, -0.29],      // chest
-    [0.26, 0.16, 0.22, 0xfff4e6, 0, 0.3, -0.36],      // snout
-    [0.08, 0.07, 0.06, 0x1a1a1a, 0, 0.42, -0.47],     // nose
-    [0.18, 0.18, 0.34, 0xf07a2a, 0, 0.25, 0.42],      // tail
-    [0.16, 0.16, 0.12, 0xfff4e6, 0, 0.26, 0.64]
+    [0.5, 0.5, 0.56, c.fur, 0, 0.1, 0],
+    [0.36, 0.3, 0.06, c.cream, 0, 0.12, -0.29],       // chest
+    [0.26, 0.16, 0.22, c.cream, 0, 0.3, -0.36],       // snout
+    [0.08, 0.07, 0.06, c.dark, 0, 0.42, -0.47],       // nose
+    [0.18, 0.18, 0.34, c.fur, 0, 0.25, 0.42],         // tail
+    [0.16, 0.16, 0.12, c.cream, 0, 0.26, 0.64]
   ];
   for (const s of [-1, 1]) b.push(
-    [0.07, 0.09, 0.04, 0x1a1a1a, s * 0.15, 0.46, -0.28], // eyes
-    [0.14, 0.18, 0.1, 0xf07a2a, s * 0.16, 0.6, -0.05],   // ears
-    [0.14, 0.06, 0.1, 0x1a1a1a, s * 0.16, 0.78, -0.05],
-    [0.1, 0.12, 0.1, 0x1a1a1a, s * 0.14, 0, -0.12]);     // legs
+    [0.07, 0.09, 0.04, c.dark, s * 0.15, 0.46, -0.28],  // eyes
+    [0.14, 0.18, 0.1, c.fur, s * 0.16, 0.6, -0.05],     // ears
+    [0.14, 0.06, 0.1, c.dark, s * 0.16, 0.78, -0.05],
+    [0.1, 0.12, 0.1, c.dark, s * 0.14, 0, -0.12]);      // legs
   return b;
 }
 const CAR_COLORS = [0xe8513a, 0x3a8ee8, 0xf2c33a, 0x8f5ae0, 0x3ac27a, 0xf27fb0];
@@ -583,7 +646,7 @@ const lightGeo = new THREE.BoxGeometry(0.38, 0.2, 0.14);
 
 // ---------- world ----------
 const lanes = new Map();
-let maxRow = -1;
+let maxRow = FIRST_ROW - 1;
 const worldGroup = new THREE.Group();
 scene.add(worldGroup);
 let lastKind = 'grass', streak = 0;
@@ -593,10 +656,10 @@ function laneKind(r) {
   const diff = Math.min(1, r / 120);
   let k;
   // keep runs of the same type together, like real roads and rivers
-  if (lastKind !== 'grass' && streak < (lastKind === 'road' ? 4 : 3) && Math.random() < 0.55) k = lastKind;
+  if (lastKind !== 'grass' && streak < (lastKind === 'road' ? 4 : 3) && worldRng() < 0.55) k = lastKind;
   else {
     const w = { grass: 0.32 - diff * 0.12, road: 0.36, river: 0.2 + diff * 0.06, rail: 0.12 + diff * 0.06 };
-    let x = Math.random() * (w.grass + w.road + w.river + w.rail);
+    let x = worldRng() * (w.grass + w.road + w.river + w.rail);
     k = 'rail';
     for (const key of ['grass', 'road', 'river']) { if ((x -= w[key]) < 0) { k = key; break; } }
     if (k === 'grass' && lastKind === 'grass') k = pick(['road', 'river']);
@@ -618,36 +681,29 @@ function fillTraffic(lane, count, z, makeObj) {
   }
 }
 
-function addLane(r) {
-  const kind = laneKind(r);
-  const prev = lanes.get(r - 1);
-  const z = -r;
-  const lane = {
-    r, kind, group: new THREE.Group(), objs: [], trees: new Set(),
-    dir: Math.random() < 0.5 ? 1 : -1, speed: 0, span: WRAP * 2 + 4
-  };
-  const diff = Math.min(1, r / 150);
-  const ground = [];   // static boxes, merged into one mesh at the end
-
-  if (kind === 'grass') {
+// One builder per lane type. Each adds its static boxes to `ground` (merged into one mesh later)
+// and its moving parts to lane.group / lane.objs.
+const LANE_BUILDERS = {
+  grass(lane, { r, z, diff, ground }) {
     ground.push([40, 0.3, 1, r % 2 ? 0xb7e05a : 0xaedb4f, 0, -0.3, z]);
     let inPlay = 0;
     for (let x = -12; x <= 12; x++) {
       const out = Math.abs(x) > PLAY_HALF;
       // column 0 never gets a tree, so there is always a way forward
-      const tree = out ? Math.random() < 0.85
-        : r > 1 && x !== 0 && inPlay < 4 && Math.random() < 0.16 + diff * 0.08;
+      const tree = out ? worldRng() < 0.85
+        : r > 1 && x !== 0 && inPlay < 4 && worldRng() < 0.16 + diff * 0.08;
       if (!tree) continue;
       if (!out) inPlay++;
       lane.trees.add(x);
       ground.push([0.3, 0.3, 0.3, 0x7a4b2a, x, 0, z], [0.72, pick([0.6, 0.9, 1.2, 1.5]), 0.72, 0xa9cf3a, x, 0.3, z]);
     }
-  } else if (kind === 'road') {
+  },
+  road(lane, { z, diff, prev, ground }) {
     ground.push([40, 0.3, 1, 0x4a4f5c, 0, -0.3, z]);
     if (prev && prev.kind === 'road')
       for (let x = -12; x <= 12; x += 2) ground.push([0.8, 0.02, 0.08, 0xe8e8e8, x, 0, z + 0.5]);
     lane.speed = rand(1.6, 2.8) + diff * 2.4;
-    const truck = Math.random() < 0.3, len = truck ? 2.4 : 1.4;
+    const truck = worldRng() < 0.3, len = truck ? 2.4 : 1.4;
     const rot = lane.dir > 0 ? 0 : Math.PI;
     fillTraffic(lane, Math.floor(rand(2, 4) + diff * 1.5), z, spacing => {
       const c = pick(CAR_COLORS);
@@ -655,15 +711,17 @@ function addLane(r) {
       mesh.rotation.y = rot;
       return { mesh, len, jitter: rand(0, spacing * 0.35) };
     });
-  } else if (kind === 'river') {
+  },
+  river(lane, { z, diff, prev, ground }) {
     ground.push([40, 0.3, 1, 0x5ec8f0, 0, -0.45, z]);
     if (prev && prev.kind === 'river') lane.dir = -prev.dir;
     lane.speed = rand(1.0, 1.9) + diff * 1.0;
     fillTraffic(lane, Math.max(3, Math.floor(rand(4, 6) - diff * 2)), z, () => {
-      const len = pick([2, 3, 3, 4]) - (diff > 0.6 && Math.random() < 0.5 ? 1 : 0);
+      const len = pick([2, 3, 3, 4]) - (diff > 0.6 && worldRng() < 0.5 ? 1 : 0);
       return { mesh: voxelMesh(cachedGeo('log' + len, () => logBoxes(len)), false), len };   // flat on the water
     });
-  } else if (kind === 'rail') {
+  },
+  rail(lane, { z, ground }) {
     ground.push([40, 0.3, 1, 0x7b6f6a, 0, -0.3, z]);
     for (let x = -14; x <= 14; x += 0.7) ground.push([0.18, 0.06, 0.9, 0x5a3d2a, x, 0, z]);
     const poleX = PLAY_HALF + 0.6;
@@ -678,6 +736,16 @@ function addLane(r) {
     lane.train.mesh.visible = false;
     lane.group.add(lane.train.mesh);
   }
+};
+
+function addLane(r) {
+  const kind = laneKind(r);
+  const lane = {
+    r, kind, group: new THREE.Group(), objs: [], trees: new Set(),
+    dir: worldRng() < 0.5 ? 1 : -1, speed: 0, span: WRAP * 2 + 4
+  };
+  const ground = [];
+  LANE_BUILDERS[kind](lane, { r, z: -r, diff: Math.min(1, r / 150), prev: lanes.get(r - 1), ground });
   // unique per lane, disposed with the lane; flat ground does not cast shadows, trees and the rail pole do
   lane.ground = voxelMesh(mergeBoxes(ground), kind === 'grass' ? lane.trees.size > 0 : kind === 'rail');
   lane.ground.matrixAutoUpdate = false;
@@ -696,51 +764,60 @@ function dropLane(lane) {
 
 const near = r => state === 'play' && Math.abs(r - camRow) < 14;
 
+function moveTraffic(lane, dt, now) {
+  const half = lane.span / 2, step = lane.dir * lane.speed * dt, river = lane.kind === 'river';
+  for (const o of lane.objs) {
+    o.x += step;
+    if (o.x > half) o.x -= lane.span;
+    else if (o.x < -half) o.x += lane.span;
+    o.mesh.position.x = o.x;
+    if (river) o.mesh.position.y = Math.sin(now / 400 + o.x) * 0.02;
+  }
+}
+function updateRail(lane, dt, now) {
+  const tr = lane.train;
+  let on;
+  if (!tr.active) {
+    lane.timer -= dt;
+    const blink = Math.floor(lane.timer * BLINK_STEPS);
+    on = lane.timer < TRAIN_WARN && blink % 2 === 0;
+    if (lane.timer < TRAIN_WARN && !lane.warned) { lane.warned = true; if (near(lane.r)) sfx.horn(); }
+    if (on && blink !== lane.lastBell && near(lane.r)) { lane.lastBell = blink; sfx.bell(); }
+    if (lane.timer <= 0) {
+      tr.active = true; tr.mesh.visible = true;
+      tr.x = -lane.dir * (WRAP + tr.len / 2 + 2);
+    }
+  } else {
+    tr.x += lane.dir * TRAIN_SPEED * dt;
+    tr.mesh.position.x = tr.x;
+    on = Math.floor(now * BLINK_STEPS / 1000) % 2 === 1;
+    if (Math.abs(tr.x) > WRAP + tr.len / 2 + 3) {
+      tr.active = false; tr.mesh.visible = false; lane.warned = false;
+      lane.timer = fxRand(3.5, 8);
+    }
+  }
+  lane.light.material = on ? LIGHT_ON : LIGHT_OFF;
+}
 function updateLanes(dt, now) {
   for (const lane of lanes.values()) {
-    if (lane.kind === 'road' || lane.kind === 'river') {
-      const half = lane.span / 2, step = lane.dir * lane.speed * dt, river = lane.kind === 'river';
-      for (const o of lane.objs) {
-        o.x += step;
-        if (o.x > half) o.x -= lane.span;
-        else if (o.x < -half) o.x += lane.span;
-        o.mesh.position.x = o.x;
-        if (river) o.mesh.position.y = Math.sin(now / 400 + o.x) * 0.02;
-      }
-    } else if (lane.kind === 'rail') {
-      const tr = lane.train;
-      let on;
-      if (!tr.active) {
-        lane.timer -= dt;
-        const blink = Math.floor(lane.timer * BLINK_STEPS);
-        on = lane.timer < TRAIN_WARN && blink % 2 === 0;
-        if (lane.timer < TRAIN_WARN && !lane.warned) { lane.warned = true; if (near(lane.r)) sfx.horn(); }
-        if (on && blink !== lane.lastBell && near(lane.r)) { lane.lastBell = blink; sfx.bell(); }
-        if (lane.timer <= 0) {
-          tr.active = true; tr.mesh.visible = true;
-          tr.x = -lane.dir * (WRAP + tr.len / 2 + 2);
-        }
-      } else {
-        tr.x += lane.dir * TRAIN_SPEED * dt;
-        tr.mesh.position.x = tr.x;
-        on = Math.floor(now * BLINK_STEPS / 1000) % 2 === 1;
-        if (Math.abs(tr.x) > WRAP + tr.len / 2 + 3) {
-          tr.active = false; tr.mesh.visible = false; lane.warned = false;
-          lane.timer = rand(3.5, 8);
-        }
-      }
-      lane.light.material = on ? LIGHT_ON : LIGHT_OFF;
-    }
+    if (lane.kind === 'road' || lane.kind === 'river') moveTraffic(lane, dt, now);
+    else if (lane.kind === 'rail') updateRail(lane, dt, now);
   }
 }
 
+// Visible rows are built at once; rows further ahead are added one per frame, so a restart
+// or a fast run never builds many lanes in a single frame.
+const lastNeededRow = () => Math.ceil(camRow + camLead + visRows);
 function resetWorld() {
   for (const lane of [...lanes.values()]) dropLane(lane);
-  maxRow = -1; lastKind = 'grass'; streak = 0;
-  for (let r = -8; r < LANES_AHEAD; r++) addLane(r);
+  worldSeed = FIXED_SEED !== null ? FIXED_SEED : (Math.random() * 4294967296) >>> 0;
+  worldRng = mulberry32(worldSeed);
+  maxRow = FIRST_ROW - 1; lastKind = 'grass'; streak = 0;
+  while (maxRow < lastNeededRow()) addLane(maxRow + 1);
 }
 function ensureLanes() {
-  while (maxRow < camRow + LANES_AHEAD) addLane(maxRow + 1);
+  while (maxRow < lastNeededRow()) addLane(maxRow + 1);
+  if (maxRow < camRow + LANES_AHEAD) addLane(maxRow + 1);
   for (const lane of lanes.values()) if (lane.r < camRow - LANES_BEHIND) dropLane(lane);
 }
 
@@ -784,23 +861,29 @@ function tryMove(p, dx, dr) {
   buzz(8);
 }
 
+const DEATH_SOUND = { splash: sfx.splash, slow: sfx.fall };
 function kill(p, cause) {
   if (!p.alive) return;
   p.alive = false; p.cause = cause; p.hop = null;
   buzz(70);
+  (DEATH_SOUND[cause] || sfx.squash)();
+  const { x, z } = p.mesh.position;
   if (cause === 'squash') p.mesh.userData.body.scale.set(1.35, 0.15, 1.35);
-  if (cause === 'splash') { sfx.splash(); splash(p.mesh.position.x, -p.row); }
-  else sfx.squash();
+  else if (cause === 'splash') burst(x, z, splashMat, 12);
+  else if (cause === 'slow') burst(x, z, dustMat, 8);
   checkOver();
 }
 
+// small particle bursts: water for splashes, dust when a player is left behind
 const parts = [];
-const partGeo = new THREE.BoxGeometry(0.14, 0.14, 0.14), partMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
-function splash(x, z) {
-  for (let i = 0; i < 12; i++) {
-    const m = new THREE.Mesh(partGeo, partMat);
-    m.position.set(x, 0, z);
-    m.userData.v = new THREE.Vector3(rand(-2, 2), rand(3, 5), rand(-2, 2));
+const partGeo = new THREE.BoxGeometry(0.14, 0.14, 0.14);
+const splashMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+const dustMat = new THREE.MeshLambertMaterial({ color: 0xd8d2c4 });
+function burst(x, z, material, count) {
+  for (let i = 0; i < count; i++) {
+    const m = new THREE.Mesh(partGeo, material);
+    m.position.set(x, 0.1, z);
+    m.userData.v = new THREE.Vector3(fxRand(-2, 2), fxRand(3, 5), fxRand(-2, 2));
     scene.add(m); parts.push(m);
   }
 }
@@ -819,58 +902,68 @@ function turnToward(m, target, dt) {
   m.rotation.y += d * Math.min(1, dt * 25);
 }
 
-function updatePlayer(p, dt) {
-  if (!p.mesh) return;
-  const m = p.mesh, body = m.userData.body;
-  turnToward(m, p.facing, dt);
-
-  if (!p.alive) {
-    if (p.cause === 'splash') m.position.y = Math.max(-1.2, m.position.y - dt * 2.5);
-    else if (p.cause === 'swept') { m.position.y -= dt * 4; m.position.x += Math.sign(m.position.x) * dt * 2; }
-    else if (p.cause === 'train') { m.position.x += p.trainDir * dt * TRAIN_SPEED; m.rotation.z += dt * 12; }
-    return;
+function animateDeath(p, dt) {
+  const m = p.mesh;
+  if (p.cause === 'splash') m.position.y = Math.max(-1.2, m.position.y - dt * 2.5);
+  else if (p.cause === 'swept') { m.position.y -= dt * 4; m.position.x += Math.sign(m.position.x) * dt * 2; }
+  else if (p.cause === 'train') { m.position.x += p.trainDir * dt * TRAIN_SPEED; m.rotation.z += dt * 12; }
+  else if (p.cause === 'slow') {   // tips over backwards and sinks out of view
+    m.rotation.x = Math.max(-Math.PI / 2, m.rotation.x - dt * 6);
+    m.position.y = Math.max(-0.6, m.position.y - dt * 0.8);
   }
-
-  const lane = lanes.get(p.row);
-  if (p.hop) {
-    const h = p.hop;
-    h.t += dt / HOP_TIME;
-    const t = Math.min(1, h.t);
-    p.x = h.fx + (h.tx - h.fx) * t;
-    m.position.set(p.x, Math.sin(t * Math.PI) * 0.45, h.fz + (h.tz - h.fz) * t);
-    body.scale.copy(ONE);
-    if (t >= 1) {
-      p.hop = null;
-      p.log = null;
-      if (lane && lane.kind === 'river') {
-        const log = lane.objs.find(o => Math.abs(o.x - p.x) < o.len / 2 + 0.05);
-        if (!log) { kill(p, 'splash'); return; }
-        // snap to the centre of the nearest log segment so standing feels solid
-        const k = (log.len - 1) / 2;
-        p.logOff = THREE.MathUtils.clamp(Math.round(p.x - log.x + k) - k, -k, k);
-        p.log = log;
-      } else p.x = Math.round(p.x);
-      body.scale.set(1.15, 0.8, 1.15);
-      if (p.queue) { const [qx, qr] = p.queue; p.queue = null; tryMove(p, qx, qr); }
-    }
-  } else {
-    body.scale.lerp(ONE, Math.min(1, dt * 14));
-    if (p.log) {
-      p.x = p.log.x + p.logOff;
-      m.position.x = p.x; m.position.y = 0.1;
-      if (Math.abs(p.x) > EDGE_DEATH) { kill(p, 'swept'); return; }
-    } else m.position.y = 0;
-  }
-
+}
+// returns false if the landing killed the player
+function land(p, lane) {
+  p.hop = null;
+  p.log = null;
+  if (lane && lane.kind === 'river') {
+    const log = lane.objs.find(o => Math.abs(o.x - p.x) < o.len / 2 + 0.05);
+    if (!log) { kill(p, 'splash'); return false; }
+    // snap to the centre of the nearest log segment so standing feels solid
+    const k = (log.len - 1) / 2;
+    p.logOff = THREE.MathUtils.clamp(Math.round(p.x - log.x + k) - k, -k, k);
+    p.log = log;
+  } else p.x = Math.round(p.x);
+  p.mesh.userData.body.scale.set(1.15, 0.8, 1.15);
+  if (p.queue) { const [qx, qr] = p.queue; p.queue = null; tryMove(p, qx, qr); }
+  return true;
+}
+function stepHop(p, lane, dt) {
+  const h = p.hop, m = p.mesh;
+  h.t += dt / HOP_TIME;
+  const t = Math.min(1, h.t);
+  p.x = h.fx + (h.tx - h.fx) * t;
+  m.position.set(p.x, Math.sin(t * Math.PI) * 0.45, h.fz + (h.tz - h.fz) * t);
+  m.userData.body.scale.copy(ONE);
+  return t < 1 || land(p, lane);
+}
+// standing still (or riding a log); returns false if the log carried the player off the edge
+function stand(p, dt) {
+  const m = p.mesh;
+  m.userData.body.scale.lerp(ONE, Math.min(1, dt * 14));
+  if (!p.log) { m.position.y = 0; return true; }
+  p.x = p.log.x + p.logOff;
+  m.position.x = p.x; m.position.y = 0.1;
+  if (Math.abs(p.x) > EDGE_DEATH) { kill(p, 'swept'); return false; }
+  return true;
+}
+function checkHazards(p, lane) {
   // until mid-hop the player is still over the row they left
   const hz = p.hop && p.hop.t < 0.5 ? lanes.get(p.hop.fromRow) : lane;
-  if (!hz) return;
-  if (hz.kind === 'road') {
+  if (hz && hz.kind === 'road') {
     for (const o of hz.objs) if (Math.abs(o.x - p.x) < o.len / 2 + HIT_PAD) { kill(p, 'squash'); return; }
-  } else if (hz.kind === 'rail' && hz.train.active) {
+  } else if (hz && hz.kind === 'rail' && hz.train.active) {
     if (Math.abs(hz.train.x - p.x) < hz.train.len / 2 + HIT_PAD) { p.trainDir = hz.dir; kill(p, 'train'); return; }
   }
   if (p.row < camRow - BEHIND_LIMIT) kill(p, 'slow');
+}
+function updatePlayer(p, dt) {
+  if (!p.mesh) return;
+  turnToward(p.mesh, p.facing, dt);
+  if (!p.alive) { animateDeath(p, dt); return; }
+  const lane = lanes.get(p.row);
+  const ok = p.hop ? stepHop(p, lane, dt) : stand(p, dt);
+  if (ok && p.alive) checkHazards(p, lanes.get(p.row));
 }
 
 // ---------- screens ----------
@@ -904,6 +997,19 @@ function toAttract() {
   $('score1').hidden = $('score2').hidden = true;
   setBanner('');
   setCards();
+}
+// cover the screen, build the new world under the cover, then fade back in
+const wipe = $('wipe');
+let restarting = false;
+function restart(joinPlayer) {
+  if (restarting) return;
+  restarting = true;
+  wipe.classList.add('on');
+  setTimeout(() => {
+    toAttract();
+    if (joinPlayer !== undefined) join(joinPlayer);
+    requestAnimationFrame(() => { wipe.classList.remove('on'); restarting = false; });
+  }, reduceMotion ? 0 : WIPE_MS);
 }
 function join(i) {
   const p = players[i];
@@ -943,18 +1049,20 @@ function checkOver() {
 }
 
 // ---------- input ----------
-const canRestart = () => state === 'over' && stateT > RESULTS_DELAY;
+const canRestart = () => state === 'over' && stateT > RESULTS_DELAY && !restarting;
 function press(i, dx, dr) {
   audio();
+  if (restarting) return;
   if (state === 'attract' || state === 'countdown') join(i);
   else if (state === 'play') { if (players[i].joined) tryMove(players[i], dx, dr); }
-  else if (canRestart()) { toAttract(); join(i); }
+  else if (canRestart()) restart(i);
 }
 function pressStart() {
   audio();
+  if (restarting) return;
   if (state === 'attract') join(0);
   else if (state === 'countdown') countdown = Math.min(countdown, 0.01);
-  else if (canRestart()) toAttract();
+  else if (canRestart()) restart();
 }
 
 const KEYS = {
@@ -1016,44 +1124,50 @@ stage.addEventListener('pointercancel', endTouch);
 $('app').addEventListener('contextmenu', e => e.preventDefault());
 
 // ---------- loop ----------
-let last = performance.now();
-function frame(now) {
-  const dt = Math.max(0, Math.min(0.05, (now - last) / 1000));
-  last = now; stateT += dt;
-
-  if (state === 'countdown') {
-    const before = Math.ceil(countdown);
-    countdown -= dt;
-    const n = Math.ceil(countdown);
-    if (n !== before && n > 0) sfx.tick();
-    if (countdown <= 0) startPlay();
-    else setBanner(String(n), (players.every(p => p.joined) ? 'FROG VS FOX' : 'OTHER PLAYER: TAP TO JOIN')
-      + (touchQuery.matches ? '\nTAP TO HOP \u00b7 SWIPE TO TURN' : ''));
-  } else if (state === 'play') {
-    playT += dt;
-    if (goT > 0 && (goT -= dt) <= 0) setBanner('');
-    let lead = -Infinity;
-    for (const p of players) if (p.joined && p.alive) lead = Math.max(lead, p.row);
-    // the camera creeps forward on its own, and catches up fast to a player who runs ahead
-    camRow += Math.min(1.1, 0.3 + playT * 0.006) * dt;
-    if (lead - 2 > camRow) camRow += (lead - 2 - camRow) * Math.min(1, dt * 3);
-  } else if (state === 'over' && stateT > RESULTS_DELAY) {
-    resultsEl.hidden = false;
-  }
-
-  ensureLanes();
-  updateLanes(dt, now);
-  const focusRow = camRow + camLead;
-  for (const lane of lanes.values()) lane.group.visible = Math.abs(lane.r - focusRow) < visRows;
-  for (const p of players) updatePlayer(p, dt);
-  updateParts(dt);
-
-  // camera: look a few rows ahead of the scroll line
+function updateCountdown(dt) {
+  const before = Math.ceil(countdown);
+  countdown -= dt;
+  const n = Math.ceil(countdown);
+  if (n !== before && n > 0) sfx.tick();
+  if (countdown <= 0) startPlay();
+  else setBanner(String(n), (players.every(p => p.joined) ? 'FROG VS FOX' : 'OTHER PLAYER: TAP TO JOIN')
+    + (touchQuery.matches ? '\nTAP TO HOP · SWIPE TO TURN' : ''));
+}
+function updateCamera(dt) {
+  playT += dt;
+  if (goT > 0 && (goT -= dt) <= 0) setBanner('');
+  let lead = -Infinity;
+  for (const p of players) if (p.joined && p.alive) lead = Math.max(lead, p.row);
+  // the camera creeps forward on its own, and catches up fast to a player who runs ahead
+  camRow += Math.min(1.1, 0.3 + playT * 0.006) * dt;
+  if (lead - 2 > camRow) camRow += (lead - 2 - camRow) * Math.min(1, dt * 3);
+}
+function placeCamera() {
   focus.set(0, 0, -(camRow + camLead));
   camera.position.copy(focus).add(CAM_OFF);
   camera.lookAt(focus);
   sun.position.set(focus.x - 6, 14, focus.z + 6);
   sun.target.position.copy(focus);
+  const focusRow = camRow + camLead;
+  for (const lane of lanes.values()) lane.group.visible = Math.abs(lane.r - focusRow) < visRows;
+}
+
+let last = performance.now();
+function frame(now) {
+  const rawDt = (now - last) / 1000;
+  const dt = Math.max(0, Math.min(0.05, rawDt));
+  last = now; stateT += dt;
+
+  if (state === 'countdown') updateCountdown(dt);
+  else if (state === 'play') updateCamera(dt);
+  else if (state === 'over' && stateT > RESULTS_DELAY) resultsEl.hidden = false;
+
+  ensureLanes();
+  updateLanes(dt, now);
+  for (const p of players) updatePlayer(p, dt);
+  updateParts(dt);
+  placeCamera();
+  watchFrameTime(rawDt);
 
   // menus need no 60fps: draw every other frame there to save battery
   const idle = state === 'attract' || (state === 'over' && stateT > RESULTS_DELAY);
@@ -1062,8 +1176,21 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
-if (location.hash === '#debug') {
-  window.hopLanes = { players, renderer, get state() { return state; }, get camRow() { return camRow; } };
+if (DEBUG) {
+  window.hopLanes = {
+    players, renderer,
+    get state() { return state; },
+    get camRow() { return camRow; },
+    get seed() { return worldSeed; },
+    get pixelRatio() { return pixelRatio; },
+    // lane types for rows 0..30 (builds missing rows ahead first)
+    laneKinds() {
+      while (maxRow < 30) addLane(maxRow + 1);
+      const out = [];
+      for (let r = 0; r <= 30; r++) out.push(lanes.get(r).kind);
+      return out;
+    }
+  };
 }
 toAttract();
 requestAnimationFrame(frame);

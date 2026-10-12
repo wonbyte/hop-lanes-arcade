@@ -32,4 +32,18 @@ of the screen is Player 1 and the right half is Player 2.
 ./tools/build-standalone.sh
 ```
 
+## Tests
+
+```sh
+npm install
+npm test        # Playwright smoke tests (about 3 minutes; Three.js is served from node_modules)
+```
+
+GitHub Actions runs the tests on every push and checks that `hop-lanes-standalone.html` is up to date.
+
+## Seeds and debug
+
+- `index.html#seed-42` builds the same world every game (any whole number works).
+- `index.html#debug` exposes `window.hopLanes` for tests; `#debug-seed-42` does both.
+
 Third-party licenses: see `THIRD_PARTY_NOTICES.md`.

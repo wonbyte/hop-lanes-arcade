@@ -1,0 +1,14 @@
+{
+  "name": "hop-lanes",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Hop Lanes arcade game",
+  "scripts": {
+    "test": "node tests/smoke.test.mjs",
+    "build": "./tools/build-standalone.sh"
+  },
+  "devDependencies": {
+    "playwright": "1.56.1",
+    "three": "0.128.0"
+  }
+}
