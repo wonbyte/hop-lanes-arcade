@@ -137,16 +137,8 @@ test('5. seeded worlds are deterministic', async () => {
   const kinds = async seed => {
     const { context, page } = await open({}, `${INDEX}#debug-seed-${seed}`);
     try {
-      const ok = await page.waitForFunction(() => !!window.hopLanes, null, { timeout: 15000 }).then(() => true, () => false);
-      assert.ok(ok, `FAIL: window.hopLanes missing for #debug-seed-${seed} (seed hash not supported by index.html yet)`);
       await waitState(page, 'attract');
-      const r = await page.evaluate(() => {
-        const h = window.hopLanes;
-        if (typeof h.laneKinds !== 'function') return { missing: true };
-        return { seed: h.seed, kinds: h.laneKinds() };
-      });
-      assert.ok(!r.missing, 'FAIL: window.hopLanes.laneKinds is not defined (seed feature missing from index.html)');
-      return r;
+      return await page.evaluate(() => ({ seed: window.hopLanes.seed, kinds: window.hopLanes.laneKinds() }));
     } finally { await context.close(); }
   };
   const a = await kinds(42), b = await kinds(42), c = await kinds(7);

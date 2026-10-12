@@ -166,6 +166,14 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
   .side { width: 42px; }
   .tap { width: 72px; }
 }
+/* very narrow phones (320px and less) */
+@media (max-width: 340px) {
+  .side { width: 34px; }
+  .tap { width: 60px; }
+  .pad { gap: 2px; }
+  .pad .lbl { font-size: 8px; }
+  #deck { padding-inline: 6px; gap: 2px; }
+}
 /* phone held sideways: controls float over the field, nothing else covers it */
 @media (orientation: landscape) and (max-height: 520px) {
   #marquee { inset: 0 auto auto 50%; transform: translateX(-50%); width: min(70vw, 460px); padding: 6px 12px; border-radius: 0 0 12px 12px; }
@@ -279,6 +287,8 @@ const COUNTDOWN = 3;
 const RESULTS_DELAY = 1.1;    // seconds from last death to the results panel (and restart)
 const GO_TIME = 0.6;
 const WIPE_MS = 130;          // restart fade; the new world is built while the screen is covered
+const DIFF_ROWS = 140;        // rows until the game reaches full difficulty
+const difficulty = r => Math.min(1, Math.max(0, r) / DIFF_ROWS);
 const TAU = Math.PI * 2;
 const $ = id => document.getElementById(id);
 
@@ -405,12 +415,13 @@ const sfx = {
 
 // ---------- phone extras: buzz and keep the screen on (both optional) ----------
 function buzz(ms) { try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) {} }
-let wakeLock = null, wantAwake = false;
+let wakeLock = null, wakePending = false, wantAwake = false;
 async function keepAwake(on) {
   wantAwake = on;
   try {
-    if (on && !wakeLock && navigator.wakeLock) {
-      const lock = await navigator.wakeLock.request('screen');
+    if (on && !wakeLock && !wakePending && navigator.wakeLock) {
+      wakePending = true;   // one request at a time, or an orphaned lock keeps the screen on
+      const lock = await navigator.wakeLock.request('screen').finally(() => { wakePending = false; });
       if (!wantAwake) { lock.release(); return; }   // the game ended while we waited
       wakeLock = lock;
       lock.addEventListener('release', () => { if (wakeLock === lock) wakeLock = null; });
@@ -645,7 +656,7 @@ let lastKind = 'grass', streak = 0;
 
 function laneKind(r) {
   if (r < 4) return 'grass';
-  const diff = Math.min(1, r / 120);
+  const diff = difficulty(r);
   let k;
   // keep runs of the same type together, like real roads and rivers
   if (lastKind !== 'grass' && streak < (lastKind === 'road' ? 4 : 3) && worldRng() < 0.55) k = lastKind;
@@ -696,7 +707,7 @@ const LANE_BUILDERS = {
       for (let x = -12; x <= 12; x += 2) ground.push([0.8, 0.02, 0.08, 0xe8e8e8, x, 0, z + 0.5]);
     lane.speed = rand(1.6, 2.8) + diff * 2.4;
     const truck = worldRng() < 0.3, len = truck ? 2.4 : 1.4;
-    const rot = lane.dir > 0 ? 0 : Math.PI;
+    const rot = lane.dir > 0 ? Math.PI : 0;   // vehicle models face -x; turn them to face where they drive
     fillTraffic(lane, Math.floor(rand(2, 4) + diff * 1.5), z, spacing => {
       const c = pick(CAR_COLORS);
       const mesh = voxelMesh(cachedGeo(`car${truck}${c}`, () => vehicleBoxes(truck, c)));
@@ -737,7 +748,7 @@ function addLane(r) {
     dir: worldRng() < 0.5 ? 1 : -1, speed: 0, span: WRAP * 2 + 4
   };
   const ground = [];
-  LANE_BUILDERS[kind](lane, { r, z: -r, diff: Math.min(1, r / 150), prev: lanes.get(r - 1), ground });
+  LANE_BUILDERS[kind](lane, { r, z: -r, diff: difficulty(r), prev: lanes.get(r - 1), ground });
   // unique per lane, disposed with the lane; flat ground does not cast shadows, trees and the rail pole do
   lane.ground = voxelMesh(mergeBoxes(ground), kind === 'grass' ? lane.trees.size > 0 : kind === 'rail');
   lane.ground.matrixAutoUpdate = false;
@@ -754,7 +765,7 @@ function dropLane(lane) {
   lanes.delete(lane.r);
 }
 
-const near = r => state === 'play' && Math.abs(r - camRow) < 14;
+const near = r => state === 'play' && Math.abs(r - (camRow + camLead)) < visRows;   // rails on screen
 
 function moveTraffic(lane, dt, now) {
   const half = lane.span / 2, step = lane.dir * lane.speed * dt, river = lane.kind === 'river';
@@ -800,17 +811,19 @@ function updateLanes(dt, now) {
 // Visible rows are built at once; rows further ahead are added one per frame, so a restart
 // or a fast run never builds many lanes in a single frame.
 const lastNeededRow = () => Math.ceil(camRow + camLead + visRows);
+const firstNeededRow = () => Math.min(camRow - LANES_BEHIND, Math.floor(camRow + camLead - visRows));
 function resetWorld() {
   for (const lane of [...lanes.values()]) dropLane(lane);
   worldSeed = FIXED_SEED !== null ? FIXED_SEED : (Math.random() * 4294967296) >>> 0;
   worldRng = mulberry32(worldSeed);
-  maxRow = FIRST_ROW - 1; lastKind = 'grass'; streak = 0;
+  maxRow = Math.min(FIRST_ROW, firstNeededRow()) - 1; lastKind = 'grass'; streak = 0;
   while (maxRow < lastNeededRow()) addLane(maxRow + 1);
 }
 function ensureLanes() {
   while (maxRow < lastNeededRow()) addLane(maxRow + 1);
   if (maxRow < camRow + LANES_AHEAD) addLane(maxRow + 1);
-  for (const lane of lanes.values()) if (lane.r < camRow - LANES_BEHIND) dropLane(lane);
+  const first = firstNeededRow();
+  for (const lane of lanes.values()) if (lane.r < first) dropLane(lane);
 }
 
 // ---------- players ----------
@@ -846,7 +859,10 @@ function tryMove(p, dx, dr) {
     if (lane.kind === 'grass' && lane.trees.has(tx)) return;
   }
   if (p.row + dr < camRow - BEHIND_LIMIT) return;
-  p.hop = { t: 0, fromRow: p.row, fx: p.x, fz: -p.row, tx, tz: -(p.row + dr) };
+  p.hop = {
+    t: 0, fromRow: p.row, fx: p.x, fz: -p.row, tx, tz: -(p.row + dr),
+    carry: p.log, carryX0: p.log ? p.log.x : 0, span: p.log ? lanes.get(p.row).span : 0
+  };
   p.row += dr;
   if (p.row > p.score) { p.score = p.row; p.scoreEl.textContent = p.score; }
   sfx.hop(p.id);
@@ -860,7 +876,7 @@ function kill(p, cause) {
   buzz(70);
   (DEATH_SOUND[cause] || sfx.squash)();
   const { x, z } = p.mesh.position;
-  if (cause === 'squash') p.mesh.userData.body.scale.set(1.35, 0.15, 1.35);
+  if (cause === 'squash') { p.mesh.position.y = 0; p.mesh.userData.body.scale.set(1.35, 0.15, 1.35); }
   else if (cause === 'splash') burst(x, z, splashMat, 12);
   else if (cause === 'slow') burst(x, z, dustMat, 8);
   checkOver();
@@ -924,7 +940,12 @@ function stepHop(p, lane, dt) {
   const h = p.hop, m = p.mesh;
   h.t += dt / HOP_TIME;
   const t = Math.min(1, h.t);
-  p.x = h.fx + (h.tx - h.fx) * t;
+  let drift = 0;
+  if (h.carry) {   // a hop that starts on a log moves with the log
+    drift = h.carry.x - h.carryX0;
+    if (Math.abs(drift) > h.span / 2) drift -= Math.sign(drift) * h.span;   // the log wrapped around
+  }
+  p.x = h.fx + (h.tx - h.fx) * t + drift;
   m.position.set(p.x, Math.sin(t * Math.PI) * 0.45, h.fz + (h.tz - h.fz) * t);
   m.userData.body.scale.copy(ONE);
   return t < 1 || land(p, lane);
@@ -1086,7 +1107,7 @@ $('start').addEventListener('click', pressStart);
 const SWIPE_MIN = 24;   // px of travel before a touch counts as a swipe
 const pointers = new Map();
 function fieldPlayer(clientX) {
-  if (state === 'play') {
+  if (state === 'play' || state === 'over') {   // a solo player owns the whole field, also for "play again"
     const solo = players.filter(p => p.joined);
     if (solo.length === 1) return solo[0].id;
   }
@@ -1096,6 +1117,7 @@ function fieldPlayer(clientX) {
 stage.addEventListener('pointerdown', e => {
   if (e.button > 0) return;
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, i: fieldPlayer(e.clientX), done: false });
+  try { stage.setPointerCapture(e.pointerId); } catch (err) {}   // release lands here even off the field
 });
 stage.addEventListener('pointermove', e => {
   const t = pointers.get(e.pointerId);
