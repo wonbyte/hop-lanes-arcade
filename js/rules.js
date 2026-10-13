@@ -43,6 +43,7 @@ function hopTarget(lane, x, dx, half) {
   if (!lane) return null;
   if (lane.kind === 'river') { const tx = x + dx; return Math.abs(tx) > half + 0.5 ? null : tx; }   // any column: logs decide
   const tx = Math.round(x + dx);
+  if (lane.kind === 'grass' && lane.secret === tx) return tx;   // a hidden column past the edge
   if (Math.abs(tx) > half) return null;
   if (lane.kind === 'grass' && lane.trees.has(tx)) return null;
   return tx;

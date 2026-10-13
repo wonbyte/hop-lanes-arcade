@@ -36,10 +36,25 @@ function save() {
   fs.renameSync(tmp, DATA_FILE);
 }
 
-const top = () => scores.slice(0, TOP_N).map(({ name, score, at }) => ({ name, score, at }));
+const MODES = ['classic', 'race', 'daily', 'room'];
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-function add(name, score) {
-  scores.push({ name, score, at: new Date().toISOString() });
+// Top entries, optionally only those with a given day and/or mode. Entries saved before
+// day/mode existed read as day null, mode 'classic'.
+function top(day, mode) {
+  const out = [];
+  for (const e of scores) {
+    const d = e.day ?? null, m = e.mode ?? 'classic';
+    if (day && d !== day) continue;
+    if (mode && m !== mode) continue;
+    out.push({ name: e.name, score: e.score, at: e.at, day: d, mode: m });
+    if (out.length >= TOP_N) break;
+  }
+  return out;
+}
+
+function add(name, score, day, mode) {
+  scores.push({ name, score, at: new Date().toISOString(), day, mode });
   // Highest score first; earlier entries win ties (sort is stable).
   scores.sort((a, b) => b.score - a.score);
   if (scores.length > MAX_ENTRIES) scores.length = MAX_ENTRIES;
@@ -102,7 +117,16 @@ function validate(obj) {
   if (name.length < 1 || name.length > 16 || !/^[A-Za-z0-9 ]+$/.test(name)) return null;
   const score = obj.score;
   if (!Number.isInteger(score) || score < 0 || score > 100000) return null;
-  return { name, score };
+  let day = null, mode = 'classic';
+  if (obj.day !== undefined) {
+    if (typeof obj.day !== 'string' || !DAY_RE.test(obj.day)) return null;
+    day = obj.day;
+  }
+  if (obj.mode !== undefined) {
+    if (!MODES.includes(obj.mode)) return null;
+    mode = obj.mode;
+  }
+  return { name, score, day, mode };
 }
 
 const server = http.createServer(async (req, res) => {
@@ -115,15 +139,20 @@ const server = http.createServer(async (req, res) => {
       'Access-Control-Allow-Headers': 'Content-Type, X-Hop-Token',
       'Access-Control-Max-Age': '86400',
     }); return res.end(); }
-    if (req.method === 'GET') return send(res, 200, { top: top() });
+    if (req.method === 'GET') {
+      const day = url.searchParams.get('day'), mode = url.searchParams.get('mode');
+      if (day !== null && !DAY_RE.test(day)) return send(res, 400, { error: 'invalid day' });
+      if (mode !== null && !MODES.includes(mode)) return send(res, 400, { error: 'invalid mode' });
+      return send(res, 200, { top: top(day, mode) });
+    }
     if (req.method === 'POST') {
       if (POST_TOKEN && req.headers['x-hop-token'] !== POST_TOKEN) return send(res, 401, { error: 'bad token' });
       if (limited(req.socket.remoteAddress || 'unknown')) return send(res, 429, { error: 'rate limited' });
       let parsed;
       try { parsed = JSON.parse(await readBody(req)); } catch { return send(res, 400, { error: 'bad json' }); }
       const entry = validate(parsed);
-      if (!entry) return send(res, 400, { error: 'invalid name or score' });
-      add(entry.name, entry.score);
+      if (!entry) return send(res, 400, { error: 'invalid name, score, day or mode' });
+      add(entry.name, entry.score, entry.day, entry.mode);
       return send(res, 200, { top: top() });
     }
     send(res, 404, { error: 'not found' });

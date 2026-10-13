@@ -53,6 +53,25 @@ test('valid scores are ordered; invalid are rejected', async () => {
   assert.ok(fs.existsSync(path.join(dir, new URL(base).port ? `s${new URL(base).port}.json` : 's.json')), 'persisted');
 });
 
+test('per-day boards: day and mode on POST, filters on GET', async () => {
+  const srv = await start({ RATE_MAX: '1000' });
+  const sp = b => fetch(srv.base + '/scores', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
+  const get = q => fetch(srv.base + '/scores' + q);
+  assert.equal((await sp({ name: 'A', score: 10, day: '2026-01-01', mode: 'daily' })).status, 200);
+  assert.equal((await sp({ name: 'B', score: 30, day: '2026-01-01', mode: 'classic' })).status, 200);
+  assert.equal((await sp({ name: 'C', score: 20, day: '2026-01-02', mode: 'daily' })).status, 200);
+  assert.equal((await sp({ name: 'D', score: 5, day: '2026-1-1' })).status, 400);
+  assert.equal((await sp({ name: 'D', score: 5, mode: 'x' })).status, 400);
+  const d1 = (await (await get('?day=2026-01-01')).json()).top;
+  assert.deepEqual(d1.map(e => e.name), ['B', 'A']);
+  assert.deepEqual(d1.map(e => [e.day, e.mode]), [['2026-01-01', 'classic'], ['2026-01-01', 'daily']]);
+  const dd = (await (await get('?day=2026-01-01&mode=daily')).json()).top;
+  assert.deepEqual(dd.map(e => e.name), ['A']);
+  assert.equal((await (await get('')).json()).top.length, 3);
+  assert.equal((await get('?day=bad')).status, 400);
+  assert.equal((await get('?mode=x')).status, 400);
+});
+
 test('rate limit: 429 after 10 POSTs per minute', async () => {
   const srv = await start({});
   const codes = [];

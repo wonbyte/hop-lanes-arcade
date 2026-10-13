@@ -1,8 +1,8 @@
 import { sfx } from './audio.js';
-import { COIN_CHANCE, FIRST_ROW, FIXED_SEED, G, LANES_AHEAD, LANES_BEHIND, PLAY_HALF, TRAIN_SPEED, TRAIN_WARN, WRAP, difficulty } from './core.js';
-import { mulberry32, nextLaneKind } from './rules.js';
+import { COIN_CHANCE, FIRST_ROW, FIXED_SEED, G, LANES_AHEAD, LANES_BEHIND, PLAY_HALF, POWER_CHANCE, TRAIN_SPEED, TRAIN_WARN, WRAP, difficulty } from './core.js';
+import { hashString, mulberry32, nextLaneKind } from './rules.js';
 import { BLINK_STEPS, scene } from './gfx.js';
-import { CAR_COLORS, LIGHT_OFF, LIGHT_ON, POLICE_BLUE, POLICE_RED, TRAIN_LEN, coinBoxes, lightGeo, logBoxes, policeBoxes, trainBoxes, vehicleBoxes } from './models.js';
+import { CAR_COLORS, LIGHT_OFF, LIGHT_ON, POLICE_BLUE, POLICE_RED, TRAIN_CARS, coinBoxes, lightGeo, logBoxes, magnetBoxes, policeBoxes, shieldBoxes, trainBoxes, trainLen, vehicleBoxes } from './models.js';
 import { dailySeed } from './storage.js';
 import { cachedGeo, mergeBoxes, voxelMat, voxelMesh } from './voxel.js';
 
@@ -20,7 +20,7 @@ const lanes = new Map();
 let maxRow = FIRST_ROW - 1;
 const worldGroup = new THREE.Group();
 scene.add(worldGroup);
-let lastKind = 'grass', streak = 0;
+let lastKind = 'grass', streak = 0, bossChunk = 0;
 
 function laneKind(r) {
   const k = nextLaneKind(r, difficulty(r), { kind: lastKind, streak }, worldRng);
@@ -100,30 +100,56 @@ function placeCoin(lane, z, cols) {
   coinMeshes.add(m);
 }
 const playColumns = () => Array.from({ length: PLAY_HALF * 2 + 1 }, (_, i) => i - PLAY_HALF);
+// a power-up (shield or magnet) on a free column, now and then past row 10
+function placePower(lane, r, z, cols) {
+  if (r <= 10 || !cols.length || worldRng() >= POWER_CHANCE) return;
+  const kind = worldRng() < 0.5 ? 'shield' : 'magnet';
+  const x = pick(cols.filter(c => !lane.coins.has(c)));
+  if (x === undefined) return;
+  const m = voxelMesh(cachedGeo(kind, kind === 'shield' ? shieldBoxes : magnetBoxes), false);
+  m.position.set(x, 0, z);
+  lane.group.add(m);
+  lane.power = { x, kind, mesh: m };
+  coinMeshes.add(m);   // turns like a coin
+}
+// weather by 40-row chunk, seeded: rain (snow in December) from row 20 on; it changes the look and the traffic
+let snowSeason = new Date().getMonth() === 11;
+function weatherAt(r) {
+  if (r < 20) return '';
+  const chunk = Math.floor(r / 40);
+  const roll = mulberry32((worldSeed ^ Math.imul(chunk + 7, 0x85ebca6b)) >>> 0)();
+  return roll < 0.25 ? (snowSeason ? 'snow' : 'rain') : '';
+}
 
 // One builder per lane type. Each adds its static boxes to `ground` (merged into one mesh later)
 // and its moving parts to lane.group / lane.objs.
 const LANE_BUILDERS = {
   grass(lane, { r, z, diff, ground }) {
-    ground.push([40, 0.3, 1, r % 2 ? 0xb7e05a : 0xaedb4f, 0, -0.3, z]);
+    const snow = weatherAt(r) === 'snow';
+    ground.push([40, 0.3, 1, snow ? (r % 2 ? 0xe6eef7 : 0xdbe6f2) : r % 2 ? 0xb7e05a : 0xaedb4f, 0, -0.3, z]);
+    // now and then a hidden column just past the edge holds a coin worth three
+    lane.secret = r > 5 && worldRng() < 0.12 ? (worldRng() < 0.5 ? -1 : 1) * (PLAY_HALF + 1) : null;
     let inPlay = 0;
     for (let x = -12; x <= 12; x++) {
       const out = Math.abs(x) > PLAY_HALF;
       // column 0 never gets a tree, so there is always a way forward
-      const tree = out ? worldRng() < 0.85
+      const tree = out ? x !== lane.secret && worldRng() < 0.85
         : r > 1 && x !== 0 && inPlay < 4 && worldRng() < 0.16 + diff * 0.08;
       if (!tree) continue;
       if (!out) inPlay++;
       lane.trees.add(x);
-      ground.push([0.3, 0.3, 0.3, 0x7a4b2a, x, 0, z], [0.72, pick([0.6, 0.9, 1.2, 1.5]), 0.72, 0xa9cf3a, x, 0.3, z]);
+      ground.push([0.3, 0.3, 0.3, 0x7a4b2a, x, 0, z], [0.72, pick([0.6, 0.9, 1.2, 1.5]), 0.72, snow ? 0xd4e6ec : 0xa9cf3a, x, 0.3, z]);
     }
-    if (r >= 1 && worldRng() < COIN_CHANCE.grass) placeCoin(lane, z, playColumns().filter(x => !lane.trees.has(x)));
+    const free = playColumns().filter(x => !lane.trees.has(x));
+    if (r >= 1 && worldRng() < COIN_CHANCE.grass) placeCoin(lane, z, free);
+    if (lane.secret !== null) placeCoin(lane, z, [lane.secret]);
+    placePower(lane, r, z, free);
   },
   road(lane, { z, diff, prev, ground }) {
     ground.push([40, 0.3, 1, 0x4a4f5c, 0, -0.3, z]);
     if (prev && prev.kind === 'road')
       for (let x = -12; x <= 12; x += 2) ground.push([0.8, 0.02, 0.08, 0xe8e8e8, x, 0, z + 0.5]);
-    lane.speed = rand(1.6, 2.8) + diff * 2.4;
+    lane.speed = (rand(1.6, 2.8) + diff * 2.4) * (weatherAt(lane.r) === 'rain' ? 1.1 : 1);   // rain: drivers hurry
     // further out, some roads are police chases: faster, with flashing lights
     lane.police = diff > 0.3 && worldRng() < 0.22;
     if (lane.police) lane.speed += 1.6;
@@ -137,11 +163,12 @@ const LANE_BUILDERS = {
       return o;
     });
     if (worldRng() < COIN_CHANCE.road) placeCoin(lane, z, playColumns());
+    placePower(lane, lane.r, z, playColumns());
   },
   river(lane, { z, diff, prev, ground }) {
     ground.push([40, 0.3, 1, 0x5ec8f0, 0, -0.45, z]);
     if (prev && prev.kind === 'river') lane.dir = -prev.dir;
-    lane.speed = rand(1.0, 1.9) + diff * 1.0;
+    lane.speed = (rand(1.0, 1.9) + diff * 1.0) * (weatherAt(lane.r) === 'rain' ? 1.2 : 1);   // rain: faster water
     fillTraffic(lane, Math.max(3, Math.floor(rand(4, 6) - diff * 2)), z, () => {
       const len = pick([2, 3, 3, 4]) - (diff > 0.6 && worldRng() < 0.5 ? 1 : 0);
       return { inst: new Inst('log' + len, () => logBoxes(len), false), len };   // flat on the water, no shadow
@@ -165,9 +192,14 @@ const LANE_BUILDERS = {
       if (Math.abs(x) > PLAY_HALF && worldRng() < 0.5) ground.push([0.3, pick([0.3, 0.5]), 0.3, 0x8a7a3a, x, 0, z]);   // reeds
     }
     if (worldRng() < COIN_CHANCE.mud) placeCoin(lane, z, playColumns());
+    placePower(lane, r, z, playColumns());
   },
-  rail(lane, { z, ground }) {
+  rail(lane, { r, z, ground }) {
     ground.push([40, 0.3, 1, 0x7b6f6a, 0, -0.3, z]);
+    // the first rail past each 100 rows carries the boss train: twice as long, faster, more warning
+    lane.boss = r >= 100 && Math.floor(r / 100) > bossChunk;
+    if (lane.boss) bossChunk = Math.floor(r / 100);
+    const cars = lane.boss ? TRAIN_CARS * 2 : TRAIN_CARS;
     for (let x = -14; x <= 14; x += 0.7) ground.push([0.18, 0.06, 0.9, 0x5a3d2a, x, 0, z]);
     const poleX = PLAY_HALF + 0.6;
     ground.push([40, 0.06, 0.08, 0x9aa3b5, 0, 0.05, z - 0.28], [40, 0.06, 0.08, 0x9aa3b5, 0, 0.05, z + 0.28],
@@ -175,8 +207,10 @@ const LANE_BUILDERS = {
     lane.light = new THREE.Mesh(lightGeo, LIGHT_OFF);
     lane.light.position.set(poleX, 1.2, z + 0.45);
     lane.group.add(lane.light);
-    Object.assign(lane, { timer: rand(2, 6), warned: false, lastBell: -1 });
-    lane.train = { inst: new Inst('train' + lane.dir, () => trainBoxes(lane.dir), true), len: TRAIN_LEN, x: 99, active: false };
+    // train timing is seeded per lane (not by frame), so a replay sees the same trains
+    const rng = mulberry32((worldSeed ^ Math.imul(r + 1000, 0x9e3779b1)) >>> 0);
+    Object.assign(lane, { timer: rand(2, 6), warned: false, lastBell: -1, rng, speed: TRAIN_SPEED * (lane.boss ? 1.25 : 1), warn: TRAIN_WARN * (lane.boss ? 1.7 : 1) });
+    lane.train = { inst: new Inst('train' + lane.dir + cars, () => trainBoxes(lane.dir, cars), true), len: trainLen(cars), x: 99, active: false };
   }
 };
 
@@ -202,6 +236,7 @@ function dropLane(lane) {
   worldGroup.remove(lane.group);
   for (const o of lane.objs) o.inst.drop();
   if (lane.train) lane.train.inst.drop();
+  if (lane.power) coinMeshes.delete(lane.power.mesh);
   for (const m of lane.coins.values()) coinMeshes.delete(m);
   lane.ground.geometry.dispose();
   lanes.delete(lane.r);
@@ -225,21 +260,21 @@ function updateRail(lane, dt, now) {
   if (!tr.active) {
     lane.timer -= dt;
     const blink = Math.floor(lane.timer * BLINK_STEPS);
-    on = lane.timer < TRAIN_WARN && blink % 2 === 0;
-    if (lane.timer < TRAIN_WARN && !lane.warned) { lane.warned = true; if (near(lane.r)) sfx.horn(); }
+    on = lane.timer < lane.warn && blink % 2 === 0;
+    if (lane.timer < lane.warn && !lane.warned) { lane.warned = true; if (near(lane.r)) { sfx.horn(); if (lane.boss) setTimeout(sfx.horn, 600); } }
     if (on && blink !== lane.lastBell && near(lane.r)) { lane.lastBell = blink; sfx.bell(); }
     if (lane.timer <= 0) {
       tr.active = true;
       tr.x = -lane.dir * (WRAP + tr.len / 2 + 2);
     }
   } else {
-    tr.x += lane.dir * TRAIN_SPEED * dt;
+    tr.x += lane.dir * lane.speed * dt;
     tr.inst.set(tr.x, 0, -lane.r);
     on = Math.floor(now * BLINK_STEPS / 1000) % 2 === 1;
     if (Math.abs(tr.x) > WRAP + tr.len / 2 + 3) {
       tr.active = false; tr.inst.set(0, 0, 0, 0, false); lane.warned = false;
       const diff = difficulty(lane.r);
-      lane.timer = fxRand(3.5 - diff * 2, 8 - diff * 4);   // far out, trains come twice as often
+      lane.timer = rand(3.5 - diff * 2, 8 - diff * 4, lane.rng);   // far out, trains come twice as often
     }
   }
   lane.light.material = on ? LIGHT_ON : LIGHT_OFF;
@@ -257,9 +292,11 @@ const lastNeededRow = () => Math.ceil(G.camRow + G.camLead + G.visRows);
 const firstNeededRow = () => Math.min(G.camRow - LANES_BEHIND, Math.floor(G.camRow + G.camLead - G.visRows));
 function resetWorld() {
   for (const lane of [...lanes.values()]) dropLane(lane);
-  worldSeed = FIXED_SEED !== null ? FIXED_SEED : G.mode === 'daily' ? dailySeed() : (Math.random() * 4294967296) >>> 0;
+  worldSeed = G.replay ? G.replay.seed : FIXED_SEED !== null ? FIXED_SEED
+    : G.mode === 'daily' ? dailySeed() : G.mode === 'room' ? hashString('room:' + G.room) : (Math.random() * 4294967296) >>> 0;
   worldRng = mulberry32(worldSeed);
-  maxRow = Math.min(FIRST_ROW, firstNeededRow()) - 1; lastKind = 'grass'; streak = 0;
+  snowSeason = new Date().getMonth() === 11;
+  maxRow = Math.min(FIRST_ROW, firstNeededRow()) - 1; lastKind = 'grass'; streak = 0; bossChunk = 0;
   while (maxRow < lastNeededRow()) addLane(maxRow + 1);
 }
 function ensureLanes() {
@@ -280,4 +317,4 @@ function laneKinds() {   // lane types for rows 0..30 (builds missing rows ahead
   return out;
 }
 
-export { Inst, LANE_BUILDERS, addLane, fleet, coinMeshes, dropLane, ensureLanes, fillTraffic, firstNeededRow, fxRand, getSeed, laneCoins, laneKind, laneKinds, lanes, lastKind, lastNeededRow, maxRow, moveTraffic, near, pick, placeCoin, playColumns, rand, resetWorld, streak, updateLanes, updateRail, worldGroup, worldRng, worldSeed };
+export { Inst, LANE_BUILDERS, addLane, bossChunk, fleet, placePower, weatherAt, coinMeshes, dropLane, ensureLanes, fillTraffic, firstNeededRow, fxRand, getSeed, laneCoins, laneKind, laneKinds, lanes, lastKind, lastNeededRow, maxRow, moveTraffic, near, pick, placeCoin, playColumns, rand, resetWorld, streak, updateLanes, updateRail, worldGroup, worldRng, worldSeed };

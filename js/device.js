@@ -1,6 +1,11 @@
 // Phone extras: vibration and keeping the screen awake. Both are optional.
 // ---------- phone extras: buzz and keep the screen on (both optional) ----------
-function buzz(ms) { try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) {} }
+// browsers refuse to vibrate before the first touch or key (and log an error), so wait for one
+let gestured = false;
+const noteGesture = () => { gestured = true; };
+window.addEventListener('pointerdown', noteGesture, { capture: true, once: true });
+window.addEventListener('keydown', noteGesture, { capture: true, once: true });
+function buzz(ms) { try { if (gestured && navigator.vibrate) navigator.vibrate(ms); } catch (e) {} }
 let wakeLock = null, wakePending = false, wantAwake = false;
 async function keepAwake(on) {
   wantAwake = on;

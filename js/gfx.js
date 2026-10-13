@@ -38,15 +38,20 @@ scene.add(sun, sun.target);
 // day turns into night as the players get far: sky, ambient and sun blend toward a blue dusk
 const DAY = { sky: new THREE.Color(0x74d3f2), sun: new THREE.Color(0xffffff), hemi: 0.65, sunI: 0.6 };
 const NIGHT = { sky: new THREE.Color(0x1b2242), sun: new THREE.Color(0x9fb3ff), hemi: 0.28, sunI: 0.42 };
-let nightT = -1;
-function setNight(row) {
+const RAIN_SKY = new THREE.Color(0x6b8294), SNOW_SKY = new THREE.Color(0xd6e2ec);
+let nightT = -1, wetT = 0, shownWeather = '';
+const weatherEl = $('weather');
+// sky and light by row (night) and weather at the camera; the weather tint fades over a second
+function setNight(row, weather = '') {
   const t = Math.min(1, Math.max(0, (row - NIGHT_START) / (NIGHT_FULL - NIGHT_START)));
-  if (t === nightT) return;
-  nightT = t;
-  scene.background.copy(DAY.sky).lerp(NIGHT.sky, t);
+  const wet = weather ? 1 : 0;
+  if (weather !== shownWeather) { shownWeather = weather; weatherEl.className = weather; }
+  if (t === nightT && wet === wetT) return;
+  nightT = t; wetT += (wet - wetT) * 0.03; if (Math.abs(wet - wetT) < 0.01) wetT = wet;
+  scene.background.copy(DAY.sky).lerp(NIGHT.sky, t).lerp(weather === 'snow' ? SNOW_SKY : RAIN_SKY, wetT * (weather === 'snow' ? 0.5 : 0.6));
   sun.color.copy(DAY.sun).lerp(NIGHT.sun, t);
-  hemi.intensity = DAY.hemi + (NIGHT.hemi - DAY.hemi) * t;
-  sun.intensity = DAY.sunI + (NIGHT.sunI - DAY.sunI) * t;
+  hemi.intensity = (DAY.hemi + (NIGHT.hemi - DAY.hemi) * t) * (1 - wetT * 0.15);
+  sun.intensity = (DAY.sunI + (NIGHT.sunI - DAY.sunI) * t) * (1 - wetT * 0.3);
 }
 
 function resize() {

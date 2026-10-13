@@ -1,11 +1,15 @@
 import { audio, sfx, startTune, stopTune } from './audio.js';
 import { $, COUNTDOWN, G, GO_TIME, MODES, PRIZE_COST, SCORES_TOKEN, SCORES_URL, WIPE_MS } from './core.js';
+import { nextLang, setLang, t } from './i18n.js';
+import { MISSIONS, MISSION_REWARD, advanceMissions, doneMissions, emptyStats, missionsText, parseMissions } from './missions.js';
+import { encodeReplay } from './replay.js';
+import { hashString } from './rules.js';
 import { keepAwake } from './device.js';
 import { reduceMotion, resetFrameWatch, touchQuery } from './gfx.js';
 import { CHARACTERS, PIX, PRIZES, drawPix, isOwned } from './models.js';
 import { charOf, despawn, players, spawn } from './players.js';
-import { BEST_KEY, DAILY_KEY, HOWTO_KEY, INSTALL_KEY, MODE_KEY, OWNED_KEY, PICK_KEY, dayKey, load, loadText, owned, refreshBests, save, setBank } from './storage.js';
-import { resetWorld } from './world.js';
+import { BEST_KEY, DAILY_KEY, HANDICAP_KEY, HOWTO_KEY, INSTALL_KEY, MISSIONS_KEY, MODE_KEY, OWNED_KEY, PICK_KEY, ROOM_KEY, dayKey, load, loadText, owned, refreshBests, save, setBank } from './storage.js';
+import { getSeed, resetWorld } from './world.js';
 
 // Screens and flow: join cards and the shop, countdown, results, restart, pause, first-run help, online scores.
 // ---------- screens ----------
@@ -20,7 +24,7 @@ function setBanner(h, sub = '') {
   bannerH.textContent = h; bannerP.textContent = sub;
 }
 const pads = document.querySelectorAll('.pad');
-const joinText = () => touchQuery.matches ? 'TAP THIS\nSIDE TO JOIN' : 'PRESS TAP\nTO JOIN';
+const joinText = () => t(touchQuery.matches ? 'TAP THIS\nSIDE TO JOIN' : 'PRESS TAP\nTO JOIN');
 function setCard(i) {
   const c = $('card' + (i + 1)), p = players[i], ch = charOf(p), locked = !isOwned(ch);
   pads[i].classList.toggle('idle', (G.state === 'play' || G.state === 'over') && !p.joined);
@@ -29,9 +33,9 @@ function setCard(i) {
   c.style.visibility = G.state === 'play' || G.state === 'over' ? 'hidden' : 'visible';
   if (p.shownChar !== ch.key) { drawPix($('pic' + (i + 1)), PIX[ch.key]); p.shownChar = ch.key; }
   const head = c.querySelector('.head'), st = c.querySelector('.state');
-  if (p.joined) { head.textContent = 'READY!'; st.textContent = 'PLAYER ' + (i + 1); }
-  else if (locked) { head.textContent = G.bank >= ch.price ? 'TAP TO BUY' : 'NEED ' + ch.price + ' COINS'; st.textContent = ch.name + ' · ' + ch.price + ' COINS'; }
-  else { head.textContent = joinText(); st.textContent = ch.name; }
+  if (p.joined) { head.textContent = t('READY!'); st.textContent = t('PLAYER {n}', { n: i + 1 }); }
+  else if (locked) { head.textContent = G.bank >= ch.price ? t('TAP TO BUY') : t('NEED {n} COINS', { n: ch.price }); st.textContent = t('{name} · {n} COINS', { name: t(ch.name), n: ch.price }); }
+  else { head.textContent = joinText(); st.textContent = t(ch.name); }
   for (const b of c.querySelectorAll('.cyc')) b.disabled = p.joined;
 }
 function cycleChar(i, d) {
@@ -51,20 +55,63 @@ function shakeCard(i) {
 const menu = $('menu');
 const setCards = () => { setCard(0); setCard(1); menu.hidden = G.state !== 'attract'; };
 
-// ---------- title menu: game mode and the prize machine ----------
+// ---------- title menu: game mode, room code, prize machine, handicap, language, missions ----------
 const MODE_TEXT = { classic: 'MODE: CLASSIC', race: 'MODE: RACE', daily: 'MODE: DAILY' };
 function setMode(mode) {
   G.mode = mode;
   save(MODE_KEY, mode);
-  $('mode').textContent = MODE_TEXT[mode];
-  if (G.state === 'attract') resetWorld();   // daily mode uses today's seed
+  $('mode').textContent = mode === 'room' ? t('ROOM: {code}', { code: G.room }) : t(MODE_TEXT[mode]);
+  if (G.state === 'attract') resetWorld();   // daily and room modes have their own seeds
 }
-function cycleMode() { sfx.tick(); setMode(MODES[(MODES.indexOf(G.mode) + 1) % MODES.length]); }
+// room mode: two phones that enter the same code play the same world (seed = the code)
+const randomCode = () => Array.from({ length: 4 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ'[Math.floor(Math.random() * 24)]).join('');
+function askRoom() {
+  let code = null;
+  try { code = window.prompt(t('ROOM CODE (4 LETTERS)'), G.room || randomCode()); } catch (e) {}
+  code = code === null ? '' : code.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+  if (!code) return false;
+  G.room = code; save(ROOM_KEY, code);
+  return true;
+}
+function cycleMode() {
+  sfx.tick();
+  let mode = MODES[(MODES.indexOf(G.mode) + 1) % MODES.length];
+  if (mode === 'room' && !askRoom()) mode = MODES[0];
+  setMode(mode);
+}
 function updatePrize() {
   const left = PRIZES.filter(k => !owned.has(k));
   const b = $('prize');
   b.disabled = !left.length;
-  b.textContent = left.length ? 'PRIZE \u00b7 ' + PRIZE_COST + ' COINS' : 'ALL PRIZES WON';
+  b.textContent = left.length ? t('PRIZE · {n} COINS', { n: PRIZE_COST }) : t('ALL PRIZES WON');
+}
+const HANDICAP_TEXT = ['HANDICAP: OFF', 'SHIELD: P1', 'SHIELD: P2'];
+function setHandicap(n) { G.handicap = n; save(HANDICAP_KEY, n); $('handicap').textContent = t(HANDICAP_TEXT[n]); }
+$('handicap').addEventListener('click', () => { audio(); sfx.tick(); setHandicap((G.handicap + 1) % 3); });
+$('lang').addEventListener('click', () => { audio(); sfx.tick(); setLang(nextLang()); refreshTexts(); });
+// missions: three small goals; a done one pays coins and the next one takes its place
+let missions = parseMissions(loadText(MISSIONS_KEY));
+const MISSION_TEXT = { coins: 'COLLECT {n} COINS IN ONE RUN', row: 'REACH ROW {n}', rivers: 'CROSS {n} RIVERS', hops: 'HOP {n} TIMES', logs: 'RIDE {n} LOGS', combo: 'COMBO OF {n}', powers: 'GRAB A POWER-UP', secrets: 'FIND A HIDDEN COIN' };
+const missionText = i => t(MISSION_TEXT[MISSIONS[i].stat], { n: MISSIONS[i].goal });
+function showMissions() {
+  const box = $('missions');
+  box.querySelector('h3').textContent = t('MISSIONS');
+  box.querySelectorAll('li').forEach((li, k) => { li.textContent = missionText(missions.active[k]); });
+}
+function payMissions() {   // at game over: which missions this run finished; returns the note text
+  const done = doneMissions(missions, G.run);
+  if (!done.length) return '';
+  const text = done.map(i => missionText(i)).join(' + ');
+  missions = advanceMissions(missions, done);
+  save(MISSIONS_KEY, missionsText(missions));
+  setBank(G.bank + MISSION_REWARD * done.length);
+  showMissions();
+  return t('MISSION DONE +{n}', { n: MISSION_REWARD * done.length }) + ': ' + text + '. ';
+}
+// everything that shows text in the current language
+function refreshTexts() {
+  setMode(G.mode); updatePrize(); setHandicap(G.handicap); showMissions(); setCards();
+  if (G.state === 'over') $('share').textContent = t('SHARE');
 }
 let menuNote = 0;
 function flashBanner(h, sub, ms) {
@@ -76,14 +123,14 @@ function prizeMachine() {
   if (G.state !== 'attract') return;
   const left = PRIZES.filter(k => !owned.has(k));
   if (!left.length) return;
-  if (G.bank < PRIZE_COST) { sfx.nope(); flashBanner('NEED ' + PRIZE_COST + ' COINS', 'COLLECT THEM ON THE ROAD', 1400); return; }
+  if (G.bank < PRIZE_COST) { sfx.nope(); flashBanner(t('NEED {n} COINS', { n: PRIZE_COST }), t('COLLECT THEM ON THE ROAD'), 1400); return; }
   setBank(G.bank - PRIZE_COST);
   const key = left[Math.floor(Math.random() * left.length)];
   owned.add(key); save(OWNED_KEY, [...owned].join(','));
   const idx = CHARACTERS.findIndex(c => c.key === key);
   players[0].charIndex = idx; save(PICK_KEY + 0, key);
   sfx.prize();
-  flashBanner('YOU GOT ' + CHARACTERS[idx].name + '!', 'IT IS NOW PLAYER 1', 2200);
+  flashBanner(t('YOU GOT {name}!', { name: t(CHARACTERS[idx].name) }), t('IT IS NOW PLAYER 1'), 2200);
   updatePrize();
   setCards();
 }
@@ -91,28 +138,31 @@ $('mode').addEventListener('click', () => { audio(); cycleMode(); });
 $('prize').addEventListener('click', () => { audio(); prizeMachine(); });
 setMode(G.mode);
 updatePrize();
+setHandicap(G.handicap);
+showMissions();
 
-// ---------- share and confetti ----------
-let shareText = '';
+// ---------- share, replay link and confetti ----------
+let shareText = '', replayText = '';
 // Share sheet where it works, clipboard where it does not, and as a last resort the text itself, selected.
 // Both the share call and the clipboard write must happen in the tap itself (Safari refuses them a moment later),
 // so the clipboard write starts at once and its result is used only if the share sheet is refused.
-function shareScore() {
-  const b = $('share');
+function shareOut(b, text, sheet) {
   let copied;
-  try { copied = navigator.clipboard.writeText(shareText).then(() => true, () => false); }
+  try { copied = navigator.clipboard.writeText(text).then(() => true, () => false); }
   catch (e) { copied = Promise.resolve(false); }
   const finish = async shared => {
-    if (shared) { b.textContent = 'SHARED!'; return; }
-    if (await copied) { b.textContent = 'COPIED!'; return; }
-    const t = $('shareText');                       // nothing automatic works here: let the player copy by hand
-    t.value = shareText; t.hidden = false; t.focus(); t.select();
-    b.textContent = 'SELECT AND COPY';
+    if (shared) { b.textContent = t('SHARED!'); return; }
+    if (await copied) { b.textContent = t(sheet ? 'COPIED!' : 'REPLAY LINK COPIED!'); return; }
+    const box = $('shareText');                     // nothing automatic works here: let the player copy by hand
+    box.value = text; box.hidden = false; box.focus(); box.select();
+    b.textContent = t('SELECT AND COPY');
   };
-  if (navigator.share) navigator.share({ text: shareText }).then(() => finish(true), e => { if (!e || e.name !== 'AbortError') finish(false); });
+  if (sheet && navigator.share) navigator.share({ text }).then(() => finish(true), e => { if (!e || e.name !== 'AbortError') finish(false); });
   else finish(false);
 }
+const shareScore = () => shareOut($('share'), shareText, true);
 $('share').addEventListener('click', shareScore);
+$('replayBtn').addEventListener('click', () => shareOut($('replayBtn'), replayText, false));
 const confettiBox = $('confetti');
 function confetti() {
   if (reduceMotion) return;
@@ -136,9 +186,12 @@ function toAttract() {
   refreshBests();
   resultsEl.hidden = true; $('logo').hidden = false;
   $('score1').hidden = $('score2').hidden = true;
-  $('share').textContent = 'SHARE';
+  $('share').textContent = t('SHARE');
+  $('replayBtn').textContent = t('COPY REPLAY LINK');
+  $('replayBtn').hidden = true;
   $('shareText').hidden = true;
   $('resBest').hidden = true;
+  $('replayTag').hidden = !G.replay;
   setBanner('');
   setCards();
 }
@@ -146,6 +199,10 @@ function toAttract() {
 const wipe = $('wipe');
 function restart(joinPlayer) {
   if (G.restarting) return;
+  if (G.replay) {   // the replay has played: the next game is a normal one
+    G.replay = null;
+    try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+  }
   G.restarting = true;
   wipe.classList.add('on');
   setTimeout(() => {
@@ -158,7 +215,7 @@ function join(i) {
   const p = players[i];
   if (p.joined) return;
   const ch = charOf(p);
-  if (!isOwned(ch)) {                                   // a locked character: buy it with coins, or no join
+  if (!isOwned(ch) && !G.replay) {                      // a locked character: buy it with coins, or no join
     if (G.bank < ch.price) { sfx.nope(); shakeCard(i); return; }
     setBank(G.bank - ch.price);
     owned.add(ch.key); save(OWNED_KEY, [...owned].join(','));
@@ -173,11 +230,13 @@ function join(i) {
   setCards();
 }
 function startPlay() {
-  G.state = 'play'; G.playT = 0; G.goT = GO_TIME; sfx.go();
+  G.state = 'play'; G.playT = 0; G.playTick = 0; G.goT = GO_TIME; sfx.go();
+  G.run = emptyStats(); G.record = [];
+  if (G.replay) G.replay.i = 0;
   $('app').classList.add('playing');
   resetFrameWatch();
   keepAwake(true);
-  setBanner('GO!');
+  setBanner(t('GO!'));
   players.forEach((p, i) => { $('score' + (i + 1)).hidden = !p.joined; });
   setCards();
 }
@@ -194,37 +253,46 @@ function checkOver() {
   setBanner('');
   const top = Math.max(p1.joined ? p1.score : 0, p2.joined ? p2.score : 0);
   let note = '';
-  if (top > G.bestAll) { G.bestAll = top; save(BEST_KEY, top); note = 'NEW ALL TIME BEST!'; }
-  if (top > load(dayKey())) { save(dayKey(), top); note = note || 'NEW BEST TODAY!'; }
-  if (G.mode === 'daily') {
-    const k = DAILY_KEY + dayKey();
-    if (top > load(k)) { save(k, top); note = 'NEW DAILY CHALLENGE BEST!'; }
-    else note = 'DAILY CHALLENGE BEST ' + load(k) + '. ' + note;
+  const replay = !!G.replay;   // a replay changes no records and pays nothing
+  if (!replay) {
+    if (top > G.bestAll) { G.bestAll = top; save(BEST_KEY, top); note = 'NEW ALL TIME BEST!'; }
+    if (top > load(dayKey())) { save(dayKey(), top); note = note || 'NEW BEST TODAY!'; }
+    if (G.mode === 'daily') {
+      const k = DAILY_KEY + dayKey();
+      if (top > load(k)) { save(k, top); note = 'NEW DAILY CHALLENGE BEST!'; }
+      else note = t('DAILY CHALLENGE BEST {n}.', { n: load(k) }) + ' ' + note;
+    }
   }
   refreshBests();
   // who wins: in a race the one still standing (or the higher score), otherwise the higher score
   let winner = null;
   if (both) winner = race && (p1.alive !== p2.alive) ? (p1.alive ? p1 : p2) : p1.score === p2.score ? null : (p1.score > p2.score ? p1 : p2);
-  $('resTitle').textContent = !both ? 'GAME OVER' : !winner ? 'TIE GAME!' : charOf(winner).name + ' WINS!';
-  if (race && winner) note = 'BY ' + Math.abs(p1.score - p2.score) + ' ROWS. ' + note;
+  $('resTitle').textContent = replay ? t('REPLAY OVER') : !both ? t('GAME OVER') : !winner ? t('TIE GAME!') : t('{name} WINS!', { name: t(charOf(winner).name) });
+  if (race && winner) note = t('BY {n} ROWS.', { n: Math.abs(p1.score - p2.score) }) + ' ' + note;
   const hero = winner || (p1.joined ? p1 : p2);
-  shareText = 'I scored ' + top + ' in Hop Lanes as ' + charOf(hero).name + '! ' + location.origin + location.pathname;
+  const page = location.origin + location.pathname;
+  shareText = t('I scored {n} in Hop Lanes as {name}!', { n: top, name: t(charOf(hero).name) }) + (G.mode === 'room' ? ' ' + t('Room {code}', { code: G.room }) + '.' : '') + ' ' + page;
+  // the replay link: the seed, the animals and every hop of this run
+  const canReplay = !replay && G.record.length && location.protocol !== 'file:';
+  if (canReplay) replayText = page + '#replay-' + encodeReplay({ seed: getSeed(), mode: G.mode, chars: [charOf(p1).key, charOf(p2).key], joined: [p1.joined, p2.joined], events: G.record });
+  $('replayBtn').hidden = !canReplay;
   // a new best gets its own big line, a jingle and (all time) confetti
   const best = top >= 1 && /^NEW .*BEST!/.exec(note.replace(/^.*\. /, ''));
   $('resBest').hidden = !best;
   if (best) {
-    $('resBest').textContent = best[0];
+    $('resBest').textContent = t(best[0]);
     note = note.replace(best[0], '').replace(/^ +| +$/g, '');
     if (best[0].includes('ALL TIME')) { confetti(); sfx.best(); } else sfx.cheer();
-  }
+  } else sfx.over();
+  if (!replay) note = payMissions() + note;
   $('res1').hidden = !p1.joined; $('res2').hidden = !p2.joined;
   $('res1').querySelector('span').textContent = charOf(p1).name;
   $('res2').querySelector('span').textContent = charOf(p2).name;
   $('world').hidden = true;
-  postScore(charOf(hero).name, top);
+  if (!replay) postScore(charOf(hero).name, top);
   $('res1').querySelector('b').textContent = p1.score;
   $('res2').querySelector('b').textContent = p2.score;
-  $('resNote').textContent = (note ? note + ' ' : '') + 'PRESS TAP TO PLAY AGAIN';
+  $('resNote').textContent = (note ? note + ' ' : '') + t('PRESS TAP TO PLAY AGAIN');
 }
 
 // optional online score list: silent when no server is set or it can not be reached
@@ -233,14 +301,17 @@ async function postScore(name, score) {
   try {
     const ctrl = new AbortController();
     setTimeout(() => ctrl.abort(), 4000);
+    const daily = G.mode === 'daily';
     const res = await fetch(SCORES_URL, {
       method: 'POST', headers: { 'Content-Type': 'application/json', ...(SCORES_TOKEN ? { 'X-Hop-Token': SCORES_TOKEN } : {}) },
-      body: JSON.stringify({ name, score }), signal: ctrl.signal
+      body: JSON.stringify({ name, score, day: dayKey(), mode: G.mode }), signal: ctrl.signal
     });
     if (!res.ok) return;
-    const top = (await res.json()).top;
+    let top = (await res.json()).top;
+    // daily mode compares with everyone who played today's world
+    if (daily) top = (await (await fetch(SCORES_URL + '?day=' + dayKey() + '&mode=daily', { signal: ctrl.signal })).json()).top;
     if (Array.isArray(top) && top.length && G.state === 'over') {
-      $('world').textContent = 'WORLD BEST ' + top[0].score + ' \u00b7 ' + top[0].name;
+      $('world').textContent = t(daily ? 'TODAY TOP {n} · {name}' : 'WORLD BEST {n} · {name}', { n: top[0].score, name: top[0].name });
       $('world').hidden = false;
     }
   } catch (e) { /* offline, blocked by the page policy, or no server: nothing to show */ }
@@ -252,7 +323,7 @@ function pauseGame() {
   if (G.state !== 'play' && G.state !== 'countdown') return;
   pausedFrom = G.state; G.state = 'paused';
   keepAwake(false);
-  setBanner('PAUSED', touchQuery.matches ? 'TAP TO CONTINUE' : 'PRESS ANY KEY');
+  setBanner(t('PAUSED'), t(touchQuery.matches ? 'TAP TO CONTINUE' : 'PRESS ANY KEY'));
 }
 function resumeGame() {
   if (G.state !== 'paused') return;
@@ -282,16 +353,16 @@ if (iosSafari && canHint()) installBtn.hidden = false;
 installBtn.addEventListener('click', () => {
   sfx.tick();
   if (installEvent) { installEvent.prompt(); installEvent = null; hintDone(); return; }
-  flashBanner('ADD TO HOME SCREEN', 'TAP SHARE IN SAFARI, THEN "ADD TO HOME SCREEN"', 4000);
+  flashBanner(t('ADD TO HOME SCREEN'), t('TAP SHARE IN SAFARI, THEN "ADD TO HOME SCREEN"'), 4000);
   hintDone();
 });
 
 // ---------- first-run help ----------
 const howto = $('howto');
 function showHowto() {
-  howto.querySelector('p').textContent = touchQuery.matches
+  howto.querySelector('p').textContent = t(touchQuery.matches
     ? 'Tap the game to hop forward.\nSwipe to move left, right or back.\nCollect coins to unlock animals.\nStand still too long and the eagle gets you!'
-    : 'Player 1: W A S D.  Player 2: arrow keys.\nCollect coins to unlock animals.\nStand still too long and the eagle gets you!';
+    : 'Player 1: W A S D.  Player 2: arrow keys.\nCollect coins to unlock animals.\nStand still too long and the eagle gets you!');
   howto.hidden = false;
 }
 function hideHowto() {
@@ -302,4 +373,4 @@ function hideHowto() {
 }
 $('gotit').addEventListener('click', hideHowto);
 
-export { banner, bannerH, bannerKey, bannerP, checkOver, confetti, cycleChar, cycleMode, hideHowto, howto, join, joinText, menu, pads, pauseGame, pausedFrom, postScore, prizeMachine, restart, resultsEl, resumeGame, setBanner, setCard, setCards, setMode, shakeCard, shareScore, showHowto, startPlay, toAttract, updatePrize, wipe };
+export { askRoom, banner, bannerH, bannerKey, bannerP, checkOver, confetti, cycleChar, cycleMode, hideHowto, howto, join, joinText, menu, pads, pauseGame, pausedFrom, payMissions, postScore, prizeMachine, refreshTexts, restart, resultsEl, resumeGame, setBanner, setCard, setCards, setHandicap, setMode, shakeCard, shareOut, shareScore, showHowto, showMissions, startPlay, toAttract, updatePrize, wipe };

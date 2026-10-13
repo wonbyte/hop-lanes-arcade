@@ -1,7 +1,10 @@
 [
 "rules",
 "core",
+"missions",
+"replay",
 "storage",
+"i18n",
 "audio",
 "device",
 "voxel",

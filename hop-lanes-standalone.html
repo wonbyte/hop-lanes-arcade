@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-39XI3s8LdrESZTBHNdmBOcg+qoOFHbyUAx2fflk/31k=' 'sha256-Xx+zDhwuBUukiC1x/vCiFOTnLtiWaQihmniwRuuv0wE='; style-src 'sha256-77t9Nxp+hUemiTdyp0/QsW83aYXSmrVHI/MgNO6xv7I='; font-src data:; img-src data:; connect-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-39XI3s8LdrESZTBHNdmBOcg+qoOFHbyUAx2fflk/31k=' 'sha256-1ChC/F6mVcrsQyLHxNEXGqwvbdZd2n9g6lBhq3xXnUA='; style-src 'sha256-/hVuxYykRbhRhvhYw/XS6DeIA0GZAl1wvGkUmRPPj5A='; font-src data:; img-src data:; connect-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Hop Lanes Arcade</title>
 <meta name="description" content="Two-player voxel arcade game: Frog vs Fox hop across roads, rivers and train tracks.">
 <meta name="theme-color" content="#10131c">
@@ -122,12 +122,39 @@ body {
   position: absolute; z-index: 4; left: 16px; right: 16px; top: calc(var(--marquee-h, 74px) + 150px);
   display: flex; justify-content: center; gap: 8px; flex-wrap: wrap;
 }
-#menu button, #share {
+#menu { pointer-events: none; }   /* taps between the buttons reach the field */
+#menu button { pointer-events: auto; }
+#menu button, #share, #replayBtn {
   font-family: var(--font-pixel); font-size: 8px; min-height: 36px; padding: 8px 12px; border-radius: 10px;
   background: rgba(10,12,20,.6); color: var(--gold); box-shadow: 0 3px 0 rgba(0,0,0,.5); white-space: nowrap;
 }
 #menu button:disabled { opacity: .45; }
-#share { margin-top: 4px; }
+#menu::after { content: ''; flex-basis: 100%; height: 0; order: 1; }   /* a line break: the missions sit under the buttons */
+#missions {
+  order: 2; width: min(100%, 360px); margin-top: 2px; padding: 8px 12px; border-radius: 10px; background: rgba(10,12,20,.55);
+  font-family: var(--font-pixel); font-size: 8px; line-height: 1.9; color: #fff; text-align: center;
+}
+#missions h3 { margin: 0 0 2px; font-size: 8px; color: var(--gold); letter-spacing: .1em; }
+#missions ul { margin: 0; padding: 0; list-style: none; }
+#missions ul li::before { content: '\25C6 '; color: var(--gold); }
+#replayTag {
+  position: absolute; z-index: 5; left: 50%; transform: translateX(-50%); top: calc(var(--marquee-h, 74px) + 8px);
+  padding: 4px 10px; border-radius: 8px; background: rgba(216,58,58,.85); color: #fff; font-family: var(--font-pixel); font-size: 9px; letter-spacing: .1em;
+}
+/* weather: rain streaks and snow flakes drawn with gradients, no images */
+#weather { position: absolute; inset: 0; z-index: 2; pointer-events: none; opacity: 0; transition: opacity 1s; }
+#weather.rain {
+  opacity: .5; background: repeating-linear-gradient(100deg, transparent 0 14px, rgba(220,235,255,.45) 14px 15px, transparent 15px 26px);
+  background-size: 60px 140px; animation: rain .5s linear infinite;
+}
+#weather.snow {
+  opacity: .8; background: radial-gradient(circle, #fff 1.5px, transparent 2px) 0 0 / 46px 46px, radial-gradient(circle, #fff 1px, transparent 1.6px) 23px 23px / 70px 70px;
+  animation: snow 6s linear infinite;
+}
+@keyframes rain { to { background-position: -40px 140px; } }
+@keyframes snow { to { background-position: 20px 46px, 43px 93px; } }
+@media (prefers-reduced-motion: reduce) { #weather.rain, #weather.snow { animation: none; } }
+#share, #replayBtn { margin-top: 4px; }
 #shareText {
   width: 100%; box-sizing: border-box; margin-top: 8px; padding: 8px; border: 0; border-radius: 8px; resize: none;
   font-family: var(--font-pixel); font-size: 8px; line-height: 1.8; color: var(--ink); background: rgba(0,0,0,.45);
@@ -309,9 +336,9 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
   <p class="sr-only">Two-player road crossing game. Player 1 moves with W, A, S and D. Player 2 moves with the arrow keys. Space starts. On a touch screen, tap the game to hop and swipe to move.</p>
   <div id="stage">
     <div id="marquee">
-      <div class="hs"><small>BEST</small><b id="best">0</b></div>
-      <div class="hs"><small>TODAY</small><b id="daily">0</b></div>
-      <div class="hs"><small>COINS</small><b id="bank">0</b></div>
+      <div class="hs"><small data-i18n="BEST">BEST</small><b id="best">0</b></div>
+      <div class="hs"><small data-i18n="TODAY">TODAY</small><b id="daily">0</b></div>
+      <div class="hs"><small data-i18n="COINS">COINS</small><b id="bank">0</b></div>
       <button type="button" id="mute" aria-pressed="false">SOUND ON</button>
     </div>
     <div id="score1" class="score" hidden><span>P1 FROG</span><b>0</b></div>
@@ -320,15 +347,20 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
     <div id="menu">
       <button type="button" id="mode">MODE: CLASSIC</button>
       <button type="button" id="prize">PRIZE &#183; 50 COINS</button>
-      <button type="button" id="install" hidden>ADD TO HOME SCREEN</button>
+      <button type="button" id="handicap">HANDICAP: OFF</button>
+      <button type="button" id="lang" aria-label="Language">EN</button>
+      <button type="button" id="install" hidden data-i18n="ADD TO HOME SCREEN">ADD TO HOME SCREEN</button>
+      <div id="missions"><h3>MISSIONS</h3><ul><li></li><li></li><li></li></ul></div>
     </div>
+    <div id="weather" aria-hidden="true"></div>
+    <div id="replayTag" hidden data-i18n="REPLAY">REPLAY</div>
     <div id="confetti" aria-hidden="true"></div>
     <div id="banner" hidden aria-live="polite"><h2></h2><p></p></div>
     <div id="howto" hidden>
       <div class="box">
-        <h2>HOW TO PLAY</h2>
+        <h2 data-i18n="HOW TO PLAY">HOW TO PLAY</h2>
         <p></p>
-        <button type="button" id="gotit">GOT IT</button>
+        <button type="button" id="gotit" data-i18n="GOT IT">GOT IT</button>
       </div>
     </div>
     <div id="wipe" aria-hidden="true"></div>
@@ -342,6 +374,7 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
       <p id="world" hidden></p>
       <p id="resNote"></p>
       <button type="button" id="share">SHARE</button>
+      <button type="button" id="replayBtn" hidden>COPY REPLAY LINK</button>
       <textarea id="shareText" hidden readonly rows="2" aria-label="Score text to copy"></textarea>
     </div>
     <div id="cards">
@@ -368,16 +401,16 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
   <div id="deck">
     <div class="pad p1">
       <button type="button" class="side" data-p="0" data-dx="-1" aria-label="Player 1 left">&#9664;</button>
-      <div class="pad-col"><button type="button" class="tap" id="tap1" data-p="0" aria-label="Player 1 hop forward">TAP</button><span class="lbl">PLAYER 1</span></div>
+      <div class="pad-col"><button type="button" class="tap" id="tap1" data-p="0" aria-label="Player 1 hop forward" data-i18n="TAP">TAP</button><span class="lbl" data-i18n="PLAYER 1">PLAYER 1</span></div>
       <button type="button" class="side" data-p="0" data-dx="1" aria-label="Player 1 right">&#9654;</button>
     </div>
     <div class="pad-col">
-      <button type="button" id="start">START</button>
-      <div id="keys">P1 W A S D<br>P2 ARROWS<br>SPACE START</div>
+      <button type="button" id="start" data-i18n="START">START</button>
+      <div id="keys"><span data-i18n="P1 W A S D">P1 W A S D</span><br><span data-i18n="P2 ARROWS">P2 ARROWS</span><br><span data-i18n="SPACE START">SPACE START</span></div>
     </div>
     <div class="pad p2">
       <button type="button" class="side" data-p="1" data-dx="-1" aria-label="Player 2 left">&#9664;</button>
-      <div class="pad-col"><button type="button" class="tap" id="tap2" data-p="1" aria-label="Player 2 hop forward">TAP</button><span class="lbl">PLAYER 2</span></div>
+      <div class="pad-col"><button type="button" class="tap" id="tap2" data-p="1" aria-label="Player 2 hop forward" data-i18n="TAP">TAP</button><span class="lbl" data-i18n="PLAYER 2">PLAYER 2</span></div>
       <button type="button" class="side" data-p="1" data-dx="1" aria-label="Player 2 right">&#9654;</button>
     </div>
   </div>
@@ -3265,6 +3298,7 @@ function hopTarget(lane, x, dx, half) {
   if (!lane) return null;
   if (lane.kind === 'river') { const tx = x + dx; return Math.abs(tx) > half + 0.5 ? null : tx; }   // any column: logs decide
   const tx = Math.round(x + dx);
+  if (lane.kind === 'grass' && lane.secret === tx) return tx;   // a hidden column past the edge
   if (Math.abs(tx) > half) return null;
   if (lane.kind === 'grass' && lane.trees.has(tx)) return null;
   return tx;
@@ -3294,7 +3328,14 @@ const EAGLE_WARN = 1.5;       // seconds before the swoop a warning sounds
 const COIN_CHANCE = { grass: 0.28, road: 0.18, lily: 0.4, mud: 0.3 };   // chance of a coin on a lane
 const PRIZE_COST = 50;        // coins for one turn of the prize machine
 const NIGHT_START = 90, NIGHT_FULL = 150;   // rows over which day turns into night
-const MODES = ['classic', 'race', 'daily'];
+const MODES = ['classic', 'race', 'daily', 'room'];
+const STEP = 1 / 120;         // the game steps at a fixed rate, so a replay plays back the same run
+const POWER_CHANCE = 0.05;    // chance of a power-up (shield or magnet) on a lane past row 10
+const COMBO_GAP = 0.45;       // seconds between hops that keep a combo alive
+const COMBO_EVERY = 5;        // hops of combo per bonus coin
+const SHIELD_TIME = 1.2;      // seconds a rescued player can not be hit
+const MAGNET_TIME = 8;        // seconds the magnet pulls coins
+const MAGNET_REACH = 1.6;     // columns the magnet reaches
 const DIFF_ROWS = 140;        // rows until the game reaches full difficulty
 const difficulty = r => difficultyAt(r, DIFF_ROWS);
 const TAU = Math.PI * 2;
@@ -3309,13 +3350,23 @@ const G = {
   restarting: false,
   mode: 'classic',     // classic | race (first to die loses) | daily (one shared seed per day)
   bank: 0,             // coins collected over all games (set by storage.js)
-  bestAll: 0           // all-time best score (set by storage.js)
+  bestAll: 0,          // all-time best score (set by storage.js)
+  tick: 0,             // fixed steps since boot
+  playTick: 0,         // fixed steps since play began (replay time base)
+  record: [],          // this run's hops: [playTick, player, dx, dr]
+  replay: null,        // a decoded replay being played back, or null
+  run: null,           // this run's stats (missions)
+  handicap: 0,         // 0 = off, 1 / 2 = that player starts with a shield
+  room: '',            // room code (room mode: a shared world for two phones)
+  weather: ''          // '', 'rain' or 'snow' at the camera
 };
 
 // ---------- test hooks and seeds ----------
 // #debug exposes window.hopLanes; #seed-42 or #debug-seed-42 builds the same world every game
 const hashMatch = /^#(debug)?(?:-?seed-(\d+))?$/.exec(location.hash) || [];
-const DEBUG = hashMatch[1] === 'debug';
+const replayMatch = /^#(debug-)?replay-([\w-]+)$/.exec(location.hash) || [];
+const DEBUG = hashMatch[1] === 'debug' || replayMatch[1] === 'debug-';
+const REPLAY_CODE = replayMatch[2] || '';
 const FIXED_SEED = hashMatch[2] !== undefined ? Number(hashMatch[2]) >>> 0 : null;
 // optional online score list: <meta name="hop-lanes-scores" content="https://.../scores"> (see server/README.md)
 const meta = name => (document.querySelector('meta[name="' + name + '"]') || {}).content || '';
@@ -3332,6 +3383,81 @@ function fail(why) {
 }
 if (!window.THREE) { fail('The 3D library did not load. Connect to the internet, or open hop-lanes-standalone.html.'); return; }
 try {
+// Missions: small goals that pay coins. Three are active; a finished one is replaced by the next.
+// Pure: the list and the checks. screens.js shows them and pays out.
+const MISSION_REWARD = 20;
+// stat: a field of the run stats (players.js G.run); goal: the value to reach in one run
+const MISSIONS = [
+  { key: 'coins10', stat: 'coins', goal: 10 },
+  { key: 'row30', stat: 'row', goal: 30 },
+  { key: 'rivers5', stat: 'rivers', goal: 5 },
+  { key: 'hops100', stat: 'hops', goal: 100 },
+  { key: 'logs3', stat: 'logs', goal: 3 },
+  { key: 'combo10', stat: 'combo', goal: 10 },
+  { key: 'row60', stat: 'row', goal: 60 },
+  { key: 'coins20', stat: 'coins', goal: 20 },
+  { key: 'power1', stat: 'powers', goal: 1 },
+  { key: 'rivers10', stat: 'rivers', goal: 10 },
+  { key: 'hops200', stat: 'hops', goal: 200 },
+  { key: 'row100', stat: 'row', goal: 100 },
+  { key: 'coins30', stat: 'coins', goal: 30 },
+  { key: 'secret1', stat: 'secrets', goal: 1 },
+  { key: 'combo20', stat: 'combo', goal: 20 }
+];
+const ACTIVE = 3;
+// saved as "next,a,b,c": the index the next new mission comes from, then the active indexes
+function parseMissions(text) {
+  const n = String(text || '').split(',').map(Number);
+  if (n.length === ACTIVE + 1 && n.every(x => Number.isInteger(x) && x >= 0 && x < MISSIONS.length)) return { next: n[0], active: n.slice(1) };
+  return { next: ACTIVE % MISSIONS.length, active: [0, 1, 2] };
+}
+const missionsText = m => [m.next, ...m.active].join(',');
+// the stats of a run: which active missions are now done
+const doneMissions = (m, stats) => m.active.filter(i => (stats[MISSIONS[i].stat] || 0) >= MISSIONS[i].goal);
+// replace the done ones with the next ones in the list (it wraps, so missions never run out)
+function advanceMissions(m, done) {
+  const active = m.active.slice();
+  let next = m.next;
+  for (const i of done) {
+    while (active.includes(next)) next = (next + 1) % MISSIONS.length;
+    active[active.indexOf(i)] = next;
+    next = (next + 1) % MISSIONS.length;
+  }
+  return { next, active };
+}
+const emptyStats = () => ({ coins: 0, row: 0, rivers: 0, hops: 0, logs: 0, combo: 0, powers: 0, secrets: 0 });
+// Replays: a run is its seed, mode, characters and every hop with the tick it happened on.
+// The game steps at a fixed rate (app.js STEP), the world is seeded and the train timers are too,
+// so playing the same hops on the same ticks gives the same run. Pure: no DOM, tested by node.
+const REPLAY_VERSION = 1;
+const DIRS = { '0,1': 'U', '0,-1': 'D', '-1,0': 'L', '1,0': 'R' };
+const DIR_MOVE = { U: [0, 1], D: [0, -1], L: [-1, 0], R: [1, 0] };
+// run = { seed, mode, chars: [key, key], joined: [bool, bool], events: [[tick, player, dx, dr], ...] }
+function encodeReplay(run) {
+  let last = 0;
+  const ev = run.events.map(([t, p, dx, dr]) => { const d = t - last; last = t; return d + (p ? 'b' : 'a') + DIRS[dx + ',' + dr]; }).join('');
+  const text = [REPLAY_VERSION, run.seed, run.mode, run.chars.join(','), (run.joined[0] ? 1 : 0) + (run.joined[1] ? 2 : 0), ev].join('|');
+  return btoa(text).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function decodeReplay(code) {
+  try {
+    const text = atob(code.replace(/-/g, '+').replace(/_/g, '/'));
+    const [v, seed, mode, chars, joined, ev] = text.split('|');
+    if (Number(v) !== REPLAY_VERSION || !/^\d+$/.test(seed) || !/^[a-z]+$/.test(mode)) return null;
+    const keys = chars.split(',');
+    if (keys.length !== 2 || !keys.every(k => /^[a-z]+$/.test(k))) return null;
+    const events = [];
+    let t = 0;
+    for (const m of ev.matchAll(/(\d+)([ab])([UDLR])/g)) {
+      t += Number(m[1]);
+      const [dx, dr] = DIR_MOVE[m[3]];
+      events.push([t, m[2] === 'b' ? 1 : 0, dx, dr]);
+    }
+    if (events.length * 6 < ev.length - 2) return null;   // junk in the event text
+    const mask = Number(joined);
+    return { seed: Number(seed) >>> 0, mode, chars: keys, joined: [!!(mask & 1), !!(mask & 2)], events };
+  } catch (e) { return null; }
+}
 // Saved data: best scores, coins, owned characters. Everything is best effort (private mode, blocked storage).
 // ---------- storage (best effort) ----------
 const BEST_KEY = 'hoplanes.best', DAY_PREFIX = 'hoplanes.day.';
@@ -3355,12 +3481,16 @@ function dropOldDays() {
 }
 const COINS_KEY = 'hoplanes.coins', OWNED_KEY = 'hoplanes.owned', PICK_KEY = 'hoplanes.pick';
 const HOWTO_KEY = 'hoplanes.howto', MUTE_KEY = 'hoplanes.mute', MODE_KEY = 'hoplanes.mode', DAILY_KEY = 'hoplanes.dailychal.', INSTALL_KEY = 'hoplanes.install';
+const MISSIONS_KEY = 'hoplanes.missions', HANDICAP_KEY = 'hoplanes.handicap', ROOM_KEY = 'hoplanes.room';
 function loadText(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
 G.bank = load(COINS_KEY);   // coins collected over all games
 const owned = new Set(loadText(OWNED_KEY).split(',').filter(Boolean));
 function setBank(n) { G.bank = Math.max(0, n); save(COINS_KEY, G.bank); $('bank').textContent = G.bank; }
 G.bestAll = load(BEST_KEY);
 G.mode = MODES.includes(loadText(MODE_KEY)) ? loadText(MODE_KEY) : 'classic';
+G.handicap = Math.min(2, load(HANDICAP_KEY));
+G.room = loadText(ROOM_KEY).replace(/[^A-Z0-9]/g, '').slice(0, 6);
+if (G.mode === 'room' && !G.room) G.mode = 'classic';
 // the daily challenge: one seed for everyone, made from today's date
 const dailySeed = () => hashString(dayKey());
 let bestDay = 0, shownDay = '';
@@ -3374,6 +3504,96 @@ dropOldDays();
 setBank(G.bank);
 // a game left open past midnight starts a new "today"
 setInterval(() => { if (dayKey() !== shownDay) { dropOldDays(); refreshBests(); } }, 60000);
+// Text in three languages. Keys are the English strings; a missing translation falls back to English.
+// Static markup uses data-i18n="key"; code calls t(key, { n, name }).
+const ES = {
+  'TAP THIS\nSIDE TO JOIN': 'TOCA ESTE\nLADO PARA ENTRAR', 'PRESS TAP\nTO JOIN': 'PULSA TAP\nPARA ENTRAR', 'READY!': '¡LISTO!',
+  'PLAYER {n}': 'JUGADOR {n}', 'TAP TO BUY': 'TOCA PARA COMPRAR', 'NEED {n} COINS': 'FALTAN {n} MONEDAS', '{name} · {n} COINS': '{name} · {n} MONEDAS',
+  FROG: 'RANA', FOX: 'ZORRO', BUNNY: 'CONEJO', CAT: 'GATO', ROBOT: 'ROBOT', PIG: 'CERDO', PENGUIN: 'PINGÜINO', TURTLE: 'TORTUGA',
+  'MODE: CLASSIC': 'MODO: CLÁSICO', 'MODE: RACE': 'MODO: CARRERA', 'MODE: DAILY': 'MODO: DIARIO', 'ROOM: {code}': 'SALA: {code}',
+  'PRIZE · {n} COINS': 'PREMIO · {n} MONEDAS', 'ALL PRIZES WON': 'TODOS LOS PREMIOS', 'COLLECT THEM ON THE ROAD': 'RECÓGELAS EN EL CAMINO',
+  'YOU GOT {name}!': '¡TIENES {name}!', 'IT IS NOW PLAYER 1': 'AHORA ES EL JUGADOR 1',
+  'SHARED!': '¡COMPARTIDO!', 'COPIED!': '¡COPIADO!', 'SELECT AND COPY': 'SELECCIONA Y COPIA', SHARE: 'COMPARTIR',
+  'COPY REPLAY LINK': 'COPIAR REPETICIÓN', 'REPLAY LINK COPIED!': '¡ENLACE COPIADO!', 'REPLAY OVER': 'FIN DE LA REPETICIÓN', REPLAY: 'REPETICIÓN',
+  'GAME OVER': 'FIN DEL JUEGO', 'TIE GAME!': '¡EMPATE!', '{name} WINS!': '¡GANA {name}!',
+  'NEW ALL TIME BEST!': '¡NUEVO RÉCORD!', 'NEW BEST TODAY!': '¡MEJOR DE HOY!', 'NEW DAILY CHALLENGE BEST!': '¡RÉCORD DEL RETO DIARIO!',
+  'DAILY CHALLENGE BEST {n}.': 'MEJOR DEL RETO DIARIO {n}.', 'BY {n} ROWS.': 'POR {n} FILAS.', 'PRESS TAP TO PLAY AGAIN': 'PULSA TAP PARA JUGAR OTRA VEZ',
+  'WORLD BEST {n} · {name}': 'MEJOR DEL MUNDO {n} · {name}', 'TODAY TOP {n} · {name}': 'MEJOR DE HOY {n} · {name}',
+  'I scored {n} in Hop Lanes as {name}!': '¡Hice {n} en Hop Lanes como {name}!', 'Room {code}': 'Sala {code}',
+  PAUSED: 'PAUSA', 'TAP TO CONTINUE': 'TOCA PARA SEGUIR', 'PRESS ANY KEY': 'PULSA UNA TECLA', 'GO!': '¡YA!',
+  'FROG VS FOX': 'RANA CONTRA ZORRO', 'OTHER PLAYER: TAP TO JOIN': 'OTRO JUGADOR: TOCA PARA ENTRAR', 'TAP TO HOP · SWIPE TO TURN': 'TOCA PARA SALTAR · DESLIZA PARA GIRAR',
+  'Tap the game to hop forward.\nSwipe to move left, right or back.\nCollect coins to unlock animals.\nStand still too long and the eagle gets you!':
+    'Toca el juego para saltar.\nDesliza para ir a un lado o atrás.\nJunta monedas para abrir animales.\n¡Si te quedas quieto, el águila te atrapa!',
+  'Player 1: W A S D.  Player 2: arrow keys.\nCollect coins to unlock animals.\nStand still too long and the eagle gets you!':
+    'Jugador 1: W A S D.  Jugador 2: flechas.\nJunta monedas para abrir animales.\n¡Si te quedas quieto, el águila te atrapa!',
+  'HOW TO PLAY': 'CÓMO JUGAR', 'GOT IT': 'ENTENDIDO', BEST: 'RÉCORD', TODAY: 'HOY', COINS: 'MONEDAS', TAP: 'TAP', 'PLAYER 1': 'JUGADOR 1', 'PLAYER 2': 'JUGADOR 2',
+  START: 'INICIO', 'P1 W A S D': 'J1 W A S D', 'P2 ARROWS': 'J2 FLECHAS', 'SPACE START': 'ESPACIO INICIO', 'SOUND ON': 'SONIDO SÍ', 'SOUND OFF': 'SONIDO NO',
+  'ADD TO HOME SCREEN': 'AÑADIR A INICIO', 'TAP SHARE IN SAFARI, THEN "ADD TO HOME SCREEN"': 'TOCA COMPARTIR EN SAFARI Y LUEGO "AÑADIR A INICIO"',
+  MAGNET: 'IMÁN', 'HANDICAP: OFF': 'VENTAJA: NO', 'SHIELD: P1': 'ESCUDO: J1', 'SHIELD: P2': 'ESCUDO: J2', 'ROOM CODE (4 LETTERS)': 'CÓDIGO DE SALA (4 LETRAS)',
+  MISSIONS: 'MISIONES', 'MISSION DONE +{n}': 'MISIÓN HECHA +{n}',
+  'COLLECT {n} COINS IN ONE RUN': 'JUNTA {n} MONEDAS EN UNA PARTIDA', 'REACH ROW {n}': 'LLEGA A LA FILA {n}', 'CROSS {n} RIVERS': 'CRUZA {n} RÍOS',
+  'HOP {n} TIMES': 'SALTA {n} VECES', 'RIDE {n} LOGS': 'MONTA {n} TRONCOS', 'COMBO OF {n}': 'COMBO DE {n}', 'GRAB A POWER-UP': 'COGE UN POTENCIADOR', 'FIND A HIDDEN COIN': 'HALLA UNA MONEDA OCULTA'
+};
+const DE = {
+  'TAP THIS\nSIDE TO JOIN': 'TIPPE HIER\nZUM MITSPIELEN', 'PRESS TAP\nTO JOIN': 'DRÜCKE TAP\nZUM MITSPIELEN', 'READY!': 'BEREIT!',
+  'PLAYER {n}': 'SPIELER {n}', 'TAP TO BUY': 'TIPPEN ZUM KAUFEN', 'NEED {n} COINS': 'NOCH {n} MÜNZEN', '{name} · {n} COINS': '{name} · {n} MÜNZEN',
+  FROG: 'FROSCH', FOX: 'FUCHS', BUNNY: 'HASE', CAT: 'KATZE', ROBOT: 'ROBOTER', PIG: 'SCHWEIN', PENGUIN: 'PINGUIN', TURTLE: 'SCHILDKRÖTE',
+  'MODE: CLASSIC': 'MODUS: KLASSISCH', 'MODE: RACE': 'MODUS: RENNEN', 'MODE: DAILY': 'MODUS: TÄGLICH', 'ROOM: {code}': 'RAUM: {code}',
+  'PRIZE · {n} COINS': 'PREIS · {n} MÜNZEN', 'ALL PRIZES WON': 'ALLE PREISE GEWONNEN', 'COLLECT THEM ON THE ROAD': 'SAMMLE SIE AUF DER STRASSE',
+  'YOU GOT {name}!': 'DU HAST {name}!', 'IT IS NOW PLAYER 1': 'JETZT SPIELER 1',
+  'SHARED!': 'GETEILT!', 'COPIED!': 'KOPIERT!', 'SELECT AND COPY': 'MARKIEREN UND KOPIEREN', SHARE: 'TEILEN',
+  'COPY REPLAY LINK': 'REPLAY-LINK KOPIEREN', 'REPLAY LINK COPIED!': 'LINK KOPIERT!', 'REPLAY OVER': 'REPLAY ZU ENDE', REPLAY: 'REPLAY',
+  'GAME OVER': 'SPIEL VORBEI', 'TIE GAME!': 'UNENTSCHIEDEN!', '{name} WINS!': '{name} GEWINNT!',
+  'NEW ALL TIME BEST!': 'NEUER REKORD!', 'NEW BEST TODAY!': 'TAGESBESTE!', 'NEW DAILY CHALLENGE BEST!': 'NEUER TAGES-REKORD!',
+  'DAILY CHALLENGE BEST {n}.': 'TAGES-REKORD {n}.', 'BY {n} ROWS.': 'MIT {n} REIHEN.', 'PRESS TAP TO PLAY AGAIN': 'DRÜCKE TAP FÜR NOCH EIN SPIEL',
+  'WORLD BEST {n} · {name}': 'WELTREKORD {n} · {name}', 'TODAY TOP {n} · {name}': 'HEUTE BESTE {n} · {name}',
+  'I scored {n} in Hop Lanes as {name}!': 'Ich habe {n} in Hop Lanes als {name} geschafft!', 'Room {code}': 'Raum {code}',
+  PAUSED: 'PAUSE', 'TAP TO CONTINUE': 'TIPPEN ZUM WEITERSPIELEN', 'PRESS ANY KEY': 'DRÜCKE EINE TASTE', 'GO!': 'LOS!',
+  'FROG VS FOX': 'FROSCH GEGEN FUCHS', 'OTHER PLAYER: TAP TO JOIN': 'ZWEITER SPIELER: TIPPEN ZUM MITSPIELEN', 'TAP TO HOP · SWIPE TO TURN': 'TIPPEN ZUM HÜPFEN · WISCHEN ZUM DREHEN',
+  'Tap the game to hop forward.\nSwipe to move left, right or back.\nCollect coins to unlock animals.\nStand still too long and the eagle gets you!':
+    'Tippe auf das Spiel, um zu hüpfen.\nWische nach links, rechts oder zurück.\nSammle Münzen für neue Tiere.\nStehst du zu lange still, holt dich der Adler!',
+  'Player 1: W A S D.  Player 2: arrow keys.\nCollect coins to unlock animals.\nStand still too long and the eagle gets you!':
+    'Spieler 1: W A S D.  Spieler 2: Pfeiltasten.\nSammle Münzen für neue Tiere.\nStehst du zu lange still, holt dich der Adler!',
+  'HOW TO PLAY': 'SO GEHT ES', 'GOT IT': 'ALLES KLAR', BEST: 'REKORD', TODAY: 'HEUTE', COINS: 'MÜNZEN', TAP: 'TAP', 'PLAYER 1': 'SPIELER 1', 'PLAYER 2': 'SPIELER 2',
+  START: 'START', 'P1 W A S D': 'S1 W A S D', 'P2 ARROWS': 'S2 PFEILE', 'SPACE START': 'LEERTASTE START', 'SOUND ON': 'TON AN', 'SOUND OFF': 'TON AUS',
+  'ADD TO HOME SCREEN': 'ZUM STARTBILDSCHIRM', 'TAP SHARE IN SAFARI, THEN "ADD TO HOME SCREEN"': 'IN SAFARI AUF TEILEN, DANN "ZUM HOME-BILDSCHIRM"',
+  MAGNET: 'MAGNET', 'HANDICAP: OFF': 'HANDICAP: AUS', 'SHIELD: P1': 'SCHILD: S1', 'SHIELD: P2': 'SCHILD: S2', 'ROOM CODE (4 LETTERS)': 'RAUMCODE (4 BUCHSTABEN)',
+  MISSIONS: 'MISSIONEN', 'MISSION DONE +{n}': 'MISSION GESCHAFFT +{n}',
+  'COLLECT {n} COINS IN ONE RUN': 'SAMMLE {n} MÜNZEN IN EINEM LAUF', 'REACH ROW {n}': 'ERREICHE REIHE {n}', 'CROSS {n} RIVERS': 'ÜBERQUERE {n} FLÜSSE',
+  'HOP {n} TIMES': 'HÜPFE {n} MAL', 'RIDE {n} LOGS': 'REITE AUF {n} STÄMMEN', 'COMBO OF {n}': 'COMBO VON {n}', 'GRAB A POWER-UP': 'SCHNAPP DIR EIN POWER-UP', 'FIND A HIDDEN COIN': 'FINDE EINE VERSTECKTE MÜNZE'
+};
+const LANGS = ['en', 'es', 'de'];
+const TABLES = { en: {}, es: ES, de: DE };
+const LANG_KEY = 'hoplanes.lang';
+let lang = 'en';
+function pickLang() {
+  let saved = '';
+  try { saved = localStorage.getItem(LANG_KEY) || ''; } catch (e) {}
+  const nav = (navigator.language || 'en').slice(0, 2).toLowerCase();
+  lang = LANGS.includes(saved) ? saved : LANGS.includes(nav) ? nav : 'en';
+  document.documentElement.lang = lang;
+}
+function setLang(l) {
+  lang = l;
+  try { localStorage.setItem(LANG_KEY, l); } catch (e) {}
+  document.documentElement.lang = l;
+  applyLang();
+}
+const nextLang = () => LANGS[(LANGS.indexOf(lang) + 1) % LANGS.length];
+function t(key, args) {
+  let s = TABLES[lang][key] || key;
+  if (args) for (const k in args) s = s.split('{' + k + '}').join(args[k]);
+  return s;
+}
+// static texts: every element with data-i18n gets its text in the current language
+function applyLang() {
+  for (const el of document.querySelectorAll('[data-i18n]')) el.textContent = t(el.dataset.i18n);
+  const b = document.getElementById('lang');
+  if (b) b.textContent = lang.toUpperCase();
+}
+pickLang();
+applyLang();
+const getLang = () => lang;
 // Sound effects made with the Web Audio API, and the mute switch.
 // ---------- audio ----------
 let actx = null;
@@ -3388,7 +3608,7 @@ function setMuted(on) {
   try { localStorage.setItem(MUTE_KEY, on ? '1' : '0'); } catch (e) {}
   const b = $('mute');
   b.setAttribute('aria-pressed', String(on));
-  b.textContent = on ? 'SOUND OFF' : 'SOUND ON';
+  b.textContent = t(on ? 'SOUND OFF' : 'SOUND ON');
 }
 function beep(freq, dur, type = 'square', vol = 0.06, slide = 0) {
   if (!actx || muted) return;
@@ -3419,12 +3639,17 @@ const sfx = {
   nope: () => beep(140, 0.2, 'sawtooth', 0.06),
   eagle: () => { beep(1500, 0.18, 'sawtooth', 0.05, -500); setTimeout(() => beep(1300, 0.25, 'sawtooth', 0.05, -600), 180); },
   best: () => [523, 659, 784, 1047, 784, 1047, 1319].forEach((f, i) => setTimeout(() => beep(f, i === 6 ? 0.4 : 0.12, 'square', 0.05), i * 90)),
+  over: () => [659, 587, 523, 392].forEach((f, i) => setTimeout(() => beep(f, i === 3 ? 0.5 : 0.14, 'triangle', 0.06), i * 140)),
   prize: () => [392, 523, 659, 784, 1047].forEach((f, i) => setTimeout(() => beep(f, 0.14, 'triangle', 0.06), i * 70))
 };
 
 // ---------- the title tune: a short chip loop while the title screen shows ----------
 // (browsers allow sound only after a touch or key, so it starts after the first input)
-const TUNE = [523, 659, 784, 659, 523, 392, 440, 494, 523, 659, 784, 1047, 784, 659, 587, 523];
+// 32 steps of [lead, bass]: C - G - A - F, eight steps each (bass on every other step)
+const LEAD = [523, 659, 784, 659, 523, 659, 784, 1047, 988, 784, 587, 784, 988, 784, 587, 784,
+  880, 1047, 880, 659, 523, 659, 880, 659, 698, 880, 1047, 880, 698, 784, 659, 523];
+const ROOTS = [131, 98, 110, 87];
+const TUNE = LEAD.map((f, i) => [f, i % 2 ? 0 : ROOTS[i >> 3]]);
 const TUNE_STEP = 170, TUNE_LOOPS = 2;
 let tuneTimer = 0, tuneStep = 0;
 function startTune() {
@@ -3432,7 +3657,9 @@ function startTune() {
   tuneStep = 0;
   const next = () => {
     if (tuneStep >= TUNE.length * TUNE_LOOPS || muted) { tuneTimer = 0; return; }
-    beep(TUNE[tuneStep % TUNE.length], 0.13, tuneStep % 4 === 0 ? 'square' : 'triangle', 0.035);
+    const [lead, bass] = TUNE[tuneStep % TUNE.length];
+    beep(lead, 0.13, 'square', 0.035);
+    if (bass) beep(bass, 0.15, 'triangle', 0.025);
     tuneStep++;
     tuneTimer = setTimeout(next, TUNE_STEP);
   };
@@ -3445,7 +3672,12 @@ const isMuted = () => muted;
 function idleAudio() { if (actx && actx.state === 'running') actx.suspend().catch(() => {}); }
 // Phone extras: vibration and keeping the screen awake. Both are optional.
 // ---------- phone extras: buzz and keep the screen on (both optional) ----------
-function buzz(ms) { try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) {} }
+// browsers refuse to vibrate before the first touch or key (and log an error), so wait for one
+let gestured = false;
+const noteGesture = () => { gestured = true; };
+window.addEventListener('pointerdown', noteGesture, { capture: true, once: true });
+window.addEventListener('keydown', noteGesture, { capture: true, once: true });
+function buzz(ms) { try { if (gestured && navigator.vibrate) navigator.vibrate(ms); } catch (e) {} }
 let wakeLock = null, wakePending = false, wantAwake = false;
 async function keepAwake(on) {
   wantAwake = on;
@@ -3823,19 +4055,24 @@ const logBoxes = len => [
 ];
 const TRAIN_CARS = 4, TRAIN_CAR_LEN = 3, TRAIN_GAP = 0.15;
 const TRAIN_LEN = TRAIN_CARS * TRAIN_CAR_LEN + (TRAIN_CARS - 1) * TRAIN_GAP;
-function trainBoxes(dir) {
-  const b = [];
-  for (let i = 0; i < TRAIN_CARS; i++) {
-    const x = -TRAIN_LEN / 2 + TRAIN_CAR_LEN / 2 + i * (TRAIN_CAR_LEN + TRAIN_GAP);
-    const front = dir > 0 ? i === TRAIN_CARS - 1 : i === 0;
-    b.push([TRAIN_CAR_LEN, 0.9, 0.84, front ? 0xd83a3a : 0x3a6fd8, x, 0.12, 0],
-           [TRAIN_CAR_LEN - 0.3, 0.2, 0.86, 0xdde6ff, x, 0.62, 0]);
+const trainLen = cars => cars * TRAIN_CAR_LEN + (cars - 1) * TRAIN_GAP;
+function trainBoxes(dir, cars = TRAIN_CARS) {
+  const b = [], len = trainLen(cars), boss = cars > TRAIN_CARS;
+  for (let i = 0; i < cars; i++) {
+    const x = -len / 2 + TRAIN_CAR_LEN / 2 + i * (TRAIN_CAR_LEN + TRAIN_GAP);
+    const front = dir > 0 ? i === cars - 1 : i === 0;
+    b.push([TRAIN_CAR_LEN, boss ? 1.1 : 0.9, 0.84, front ? 0xd83a3a : boss ? 0x2a2f3a : 0x3a6fd8, x, 0.12, 0],
+           [TRAIN_CAR_LEN - 0.3, 0.2, 0.86, boss ? 0xffd84a : 0xdde6ff, x, boss ? 0.82 : 0.62, 0]);
   }
-  const wheels = TRAIN_CARS * 2;
+  const wheels = cars * 2;
   for (let i = 0; i < wheels; i++)
-    b.push([0.4, 0.15, 0.9, 0x222222, -TRAIN_LEN / 2 + 0.6 + i * (TRAIN_LEN - 1.2) / (wheels - 1), 0, 0]);
+    b.push([0.4, 0.15, 0.9, 0x222222, -len / 2 + 0.6 + i * (len - 1.2) / (wheels - 1), 0, 0]);
   return b;
 }
+// power-ups: a blue shield gem and a red magnet
+const shieldBoxes = () => [[0.5, 0.5, 0.5, 0x4fb8ff, 0, 0.3, 0], [0.3, 0.3, 0.3, 0xeaf6ff, 0, 0.4, 0]];
+const magnetBoxes = () => [[0.16, 0.5, 0.16, 0xe8513a, -0.2, 0.25, 0], [0.16, 0.5, 0.16, 0xe8513a, 0.2, 0.25, 0],
+  [0.56, 0.16, 0.16, 0xe8513a, 0, 0.2, 0], [0.16, 0.14, 0.16, 0xeeeeee, -0.2, 0.61, 0], [0.16, 0.14, 0.16, 0xeeeeee, 0.2, 0.61, 0]];
 function makeCharacter(boxesFn, key) {
   const g = new THREE.Group();
   const body = voxelMesh(cachedGeo(key, boxesFn));
@@ -3885,15 +4122,20 @@ scene.add(sun, sun.target);
 // day turns into night as the players get far: sky, ambient and sun blend toward a blue dusk
 const DAY = { sky: new THREE.Color(0x74d3f2), sun: new THREE.Color(0xffffff), hemi: 0.65, sunI: 0.6 };
 const NIGHT = { sky: new THREE.Color(0x1b2242), sun: new THREE.Color(0x9fb3ff), hemi: 0.28, sunI: 0.42 };
-let nightT = -1;
-function setNight(row) {
+const RAIN_SKY = new THREE.Color(0x6b8294), SNOW_SKY = new THREE.Color(0xd6e2ec);
+let nightT = -1, wetT = 0, shownWeather = '';
+const weatherEl = $('weather');
+// sky and light by row (night) and weather at the camera; the weather tint fades over a second
+function setNight(row, weather = '') {
   const t = Math.min(1, Math.max(0, (row - NIGHT_START) / (NIGHT_FULL - NIGHT_START)));
-  if (t === nightT) return;
-  nightT = t;
-  scene.background.copy(DAY.sky).lerp(NIGHT.sky, t);
+  const wet = weather ? 1 : 0;
+  if (weather !== shownWeather) { shownWeather = weather; weatherEl.className = weather; }
+  if (t === nightT && wet === wetT) return;
+  nightT = t; wetT += (wet - wetT) * 0.03; if (Math.abs(wet - wetT) < 0.01) wetT = wet;
+  scene.background.copy(DAY.sky).lerp(NIGHT.sky, t).lerp(weather === 'snow' ? SNOW_SKY : RAIN_SKY, wetT * (weather === 'snow' ? 0.5 : 0.6));
   sun.color.copy(DAY.sun).lerp(NIGHT.sun, t);
-  hemi.intensity = DAY.hemi + (NIGHT.hemi - DAY.hemi) * t;
-  sun.intensity = DAY.sunI + (NIGHT.sunI - DAY.sunI) * t;
+  hemi.intensity = (DAY.hemi + (NIGHT.hemi - DAY.hemi) * t) * (1 - wetT * 0.15);
+  sun.intensity = (DAY.sunI + (NIGHT.sunI - DAY.sunI) * t) * (1 - wetT * 0.3);
 }
 
 function resize() {
@@ -3985,7 +4227,7 @@ const lanes = new Map();
 let maxRow = FIRST_ROW - 1;
 const worldGroup = new THREE.Group();
 scene.add(worldGroup);
-let lastKind = 'grass', streak = 0;
+let lastKind = 'grass', streak = 0, bossChunk = 0;
 
 function laneKind(r) {
   const k = nextLaneKind(r, difficulty(r), { kind: lastKind, streak }, worldRng);
@@ -4065,30 +4307,56 @@ function placeCoin(lane, z, cols) {
   coinMeshes.add(m);
 }
 const playColumns = () => Array.from({ length: PLAY_HALF * 2 + 1 }, (_, i) => i - PLAY_HALF);
+// a power-up (shield or magnet) on a free column, now and then past row 10
+function placePower(lane, r, z, cols) {
+  if (r <= 10 || !cols.length || worldRng() >= POWER_CHANCE) return;
+  const kind = worldRng() < 0.5 ? 'shield' : 'magnet';
+  const x = pick(cols.filter(c => !lane.coins.has(c)));
+  if (x === undefined) return;
+  const m = voxelMesh(cachedGeo(kind, kind === 'shield' ? shieldBoxes : magnetBoxes), false);
+  m.position.set(x, 0, z);
+  lane.group.add(m);
+  lane.power = { x, kind, mesh: m };
+  coinMeshes.add(m);   // turns like a coin
+}
+// weather by 40-row chunk, seeded: rain (snow in December) from row 20 on; it changes the look and the traffic
+let snowSeason = new Date().getMonth() === 11;
+function weatherAt(r) {
+  if (r < 20) return '';
+  const chunk = Math.floor(r / 40);
+  const roll = mulberry32((worldSeed ^ Math.imul(chunk + 7, 0x85ebca6b)) >>> 0)();
+  return roll < 0.25 ? (snowSeason ? 'snow' : 'rain') : '';
+}
 
 // One builder per lane type. Each adds its static boxes to `ground` (merged into one mesh later)
 // and its moving parts to lane.group / lane.objs.
 const LANE_BUILDERS = {
   grass(lane, { r, z, diff, ground }) {
-    ground.push([40, 0.3, 1, r % 2 ? 0xb7e05a : 0xaedb4f, 0, -0.3, z]);
+    const snow = weatherAt(r) === 'snow';
+    ground.push([40, 0.3, 1, snow ? (r % 2 ? 0xe6eef7 : 0xdbe6f2) : r % 2 ? 0xb7e05a : 0xaedb4f, 0, -0.3, z]);
+    // now and then a hidden column just past the edge holds a coin worth three
+    lane.secret = r > 5 && worldRng() < 0.12 ? (worldRng() < 0.5 ? -1 : 1) * (PLAY_HALF + 1) : null;
     let inPlay = 0;
     for (let x = -12; x <= 12; x++) {
       const out = Math.abs(x) > PLAY_HALF;
       // column 0 never gets a tree, so there is always a way forward
-      const tree = out ? worldRng() < 0.85
+      const tree = out ? x !== lane.secret && worldRng() < 0.85
         : r > 1 && x !== 0 && inPlay < 4 && worldRng() < 0.16 + diff * 0.08;
       if (!tree) continue;
       if (!out) inPlay++;
       lane.trees.add(x);
-      ground.push([0.3, 0.3, 0.3, 0x7a4b2a, x, 0, z], [0.72, pick([0.6, 0.9, 1.2, 1.5]), 0.72, 0xa9cf3a, x, 0.3, z]);
+      ground.push([0.3, 0.3, 0.3, 0x7a4b2a, x, 0, z], [0.72, pick([0.6, 0.9, 1.2, 1.5]), 0.72, snow ? 0xd4e6ec : 0xa9cf3a, x, 0.3, z]);
     }
-    if (r >= 1 && worldRng() < COIN_CHANCE.grass) placeCoin(lane, z, playColumns().filter(x => !lane.trees.has(x)));
+    const free = playColumns().filter(x => !lane.trees.has(x));
+    if (r >= 1 && worldRng() < COIN_CHANCE.grass) placeCoin(lane, z, free);
+    if (lane.secret !== null) placeCoin(lane, z, [lane.secret]);
+    placePower(lane, r, z, free);
   },
   road(lane, { z, diff, prev, ground }) {
     ground.push([40, 0.3, 1, 0x4a4f5c, 0, -0.3, z]);
     if (prev && prev.kind === 'road')
       for (let x = -12; x <= 12; x += 2) ground.push([0.8, 0.02, 0.08, 0xe8e8e8, x, 0, z + 0.5]);
-    lane.speed = rand(1.6, 2.8) + diff * 2.4;
+    lane.speed = (rand(1.6, 2.8) + diff * 2.4) * (weatherAt(lane.r) === 'rain' ? 1.1 : 1);   // rain: drivers hurry
     // further out, some roads are police chases: faster, with flashing lights
     lane.police = diff > 0.3 && worldRng() < 0.22;
     if (lane.police) lane.speed += 1.6;
@@ -4102,11 +4370,12 @@ const LANE_BUILDERS = {
       return o;
     });
     if (worldRng() < COIN_CHANCE.road) placeCoin(lane, z, playColumns());
+    placePower(lane, lane.r, z, playColumns());
   },
   river(lane, { z, diff, prev, ground }) {
     ground.push([40, 0.3, 1, 0x5ec8f0, 0, -0.45, z]);
     if (prev && prev.kind === 'river') lane.dir = -prev.dir;
-    lane.speed = rand(1.0, 1.9) + diff * 1.0;
+    lane.speed = (rand(1.0, 1.9) + diff * 1.0) * (weatherAt(lane.r) === 'rain' ? 1.2 : 1);   // rain: faster water
     fillTraffic(lane, Math.max(3, Math.floor(rand(4, 6) - diff * 2)), z, () => {
       const len = pick([2, 3, 3, 4]) - (diff > 0.6 && worldRng() < 0.5 ? 1 : 0);
       return { inst: new Inst('log' + len, () => logBoxes(len), false), len };   // flat on the water, no shadow
@@ -4130,9 +4399,14 @@ const LANE_BUILDERS = {
       if (Math.abs(x) > PLAY_HALF && worldRng() < 0.5) ground.push([0.3, pick([0.3, 0.5]), 0.3, 0x8a7a3a, x, 0, z]);   // reeds
     }
     if (worldRng() < COIN_CHANCE.mud) placeCoin(lane, z, playColumns());
+    placePower(lane, r, z, playColumns());
   },
-  rail(lane, { z, ground }) {
+  rail(lane, { r, z, ground }) {
     ground.push([40, 0.3, 1, 0x7b6f6a, 0, -0.3, z]);
+    // the first rail past each 100 rows carries the boss train: twice as long, faster, more warning
+    lane.boss = r >= 100 && Math.floor(r / 100) > bossChunk;
+    if (lane.boss) bossChunk = Math.floor(r / 100);
+    const cars = lane.boss ? TRAIN_CARS * 2 : TRAIN_CARS;
     for (let x = -14; x <= 14; x += 0.7) ground.push([0.18, 0.06, 0.9, 0x5a3d2a, x, 0, z]);
     const poleX = PLAY_HALF + 0.6;
     ground.push([40, 0.06, 0.08, 0x9aa3b5, 0, 0.05, z - 0.28], [40, 0.06, 0.08, 0x9aa3b5, 0, 0.05, z + 0.28],
@@ -4140,8 +4414,10 @@ const LANE_BUILDERS = {
     lane.light = new THREE.Mesh(lightGeo, LIGHT_OFF);
     lane.light.position.set(poleX, 1.2, z + 0.45);
     lane.group.add(lane.light);
-    Object.assign(lane, { timer: rand(2, 6), warned: false, lastBell: -1 });
-    lane.train = { inst: new Inst('train' + lane.dir, () => trainBoxes(lane.dir), true), len: TRAIN_LEN, x: 99, active: false };
+    // train timing is seeded per lane (not by frame), so a replay sees the same trains
+    const rng = mulberry32((worldSeed ^ Math.imul(r + 1000, 0x9e3779b1)) >>> 0);
+    Object.assign(lane, { timer: rand(2, 6), warned: false, lastBell: -1, rng, speed: TRAIN_SPEED * (lane.boss ? 1.25 : 1), warn: TRAIN_WARN * (lane.boss ? 1.7 : 1) });
+    lane.train = { inst: new Inst('train' + lane.dir + cars, () => trainBoxes(lane.dir, cars), true), len: trainLen(cars), x: 99, active: false };
   }
 };
 
@@ -4167,6 +4443,7 @@ function dropLane(lane) {
   worldGroup.remove(lane.group);
   for (const o of lane.objs) o.inst.drop();
   if (lane.train) lane.train.inst.drop();
+  if (lane.power) coinMeshes.delete(lane.power.mesh);
   for (const m of lane.coins.values()) coinMeshes.delete(m);
   lane.ground.geometry.dispose();
   lanes.delete(lane.r);
@@ -4190,21 +4467,21 @@ function updateRail(lane, dt, now) {
   if (!tr.active) {
     lane.timer -= dt;
     const blink = Math.floor(lane.timer * BLINK_STEPS);
-    on = lane.timer < TRAIN_WARN && blink % 2 === 0;
-    if (lane.timer < TRAIN_WARN && !lane.warned) { lane.warned = true; if (near(lane.r)) sfx.horn(); }
+    on = lane.timer < lane.warn && blink % 2 === 0;
+    if (lane.timer < lane.warn && !lane.warned) { lane.warned = true; if (near(lane.r)) { sfx.horn(); if (lane.boss) setTimeout(sfx.horn, 600); } }
     if (on && blink !== lane.lastBell && near(lane.r)) { lane.lastBell = blink; sfx.bell(); }
     if (lane.timer <= 0) {
       tr.active = true;
       tr.x = -lane.dir * (WRAP + tr.len / 2 + 2);
     }
   } else {
-    tr.x += lane.dir * TRAIN_SPEED * dt;
+    tr.x += lane.dir * lane.speed * dt;
     tr.inst.set(tr.x, 0, -lane.r);
     on = Math.floor(now * BLINK_STEPS / 1000) % 2 === 1;
     if (Math.abs(tr.x) > WRAP + tr.len / 2 + 3) {
       tr.active = false; tr.inst.set(0, 0, 0, 0, false); lane.warned = false;
       const diff = difficulty(lane.r);
-      lane.timer = fxRand(3.5 - diff * 2, 8 - diff * 4);   // far out, trains come twice as often
+      lane.timer = rand(3.5 - diff * 2, 8 - diff * 4, lane.rng);   // far out, trains come twice as often
     }
   }
   lane.light.material = on ? LIGHT_ON : LIGHT_OFF;
@@ -4222,9 +4499,11 @@ const lastNeededRow = () => Math.ceil(G.camRow + G.camLead + G.visRows);
 const firstNeededRow = () => Math.min(G.camRow - LANES_BEHIND, Math.floor(G.camRow + G.camLead - G.visRows));
 function resetWorld() {
   for (const lane of [...lanes.values()]) dropLane(lane);
-  worldSeed = FIXED_SEED !== null ? FIXED_SEED : G.mode === 'daily' ? dailySeed() : (Math.random() * 4294967296) >>> 0;
+  worldSeed = G.replay ? G.replay.seed : FIXED_SEED !== null ? FIXED_SEED
+    : G.mode === 'daily' ? dailySeed() : G.mode === 'room' ? hashString('room:' + G.room) : (Math.random() * 4294967296) >>> 0;
   worldRng = mulberry32(worldSeed);
-  maxRow = Math.min(FIRST_ROW, firstNeededRow()) - 1; lastKind = 'grass'; streak = 0;
+  snowSeason = new Date().getMonth() === 11;
+  maxRow = Math.min(FIRST_ROW, firstNeededRow()) - 1; lastKind = 'grass'; streak = 0; bossChunk = 0;
   while (maxRow < lastNeededRow()) addLane(maxRow + 1);
 }
 function ensureLanes() {
@@ -4263,11 +4542,61 @@ function spawn(p) {
   scene.add(p.mesh);
   Object.assign(p, {
     x: p.startX, row: 0, alive: true, hop: null, queue: null, score: 0, coins: 0, idleT: 0, warned: false, eagle: null, breath: p.id * 1.7,
-    facing: 0, cause: '', log: null, logOff: 0, trainDir: 0
+    facing: 0, cause: '', log: null, logOff: 0, trainDir: 0,
+    combo: 0, lastHop: -9, shield: false, safeT: 0, magnetT: 0, label: ''
   });
   p.mesh.position.set(p.x, 0, 0);
   p.scoreEl.textContent = '0';
-  $('score' + (p.id + 1)).querySelector('span').textContent = 'P' + (p.id + 1) + ' ' + ch.name;
+  setLabel(p);
+  if (G.handicap === p.id + 1 && !G.replay) giveShield(p);   // the handicap: a shield to start with
+}
+// the name over the score, plus the combo and the magnet while they last
+function setLabel(p) {
+  const text = 'P' + (p.id + 1) + ' ' + t(charOf(p).name) + (p.combo >= 3 ? ' x' + p.combo : '') + (p.magnetT > 0 ? ' ' + t('MAGNET') : '');
+  if (text !== p.label) { p.label = text; $('score' + (p.id + 1)).querySelector('span').textContent = text; }
+}
+// ---------- power-ups ----------
+const bubbleMat = new THREE.MeshLambertMaterial({ color: 0x4fb8ff, transparent: true, opacity: 0.35 });
+const bubbleGeo = new THREE.BoxGeometry(1.05, 1.05, 1.05);
+function giveShield(p) {
+  p.shield = true;
+  if (!p.mesh.userData.bubble) { const b = new THREE.Mesh(bubbleGeo, bubbleMat); b.position.y = 0.5; p.mesh.add(b); p.mesh.userData.bubble = b; }
+  p.mesh.userData.bubble.visible = true;
+}
+function pickPower(p, lane) {
+  const pw = lane.power;
+  lane.power = null;
+  lane.group.remove(pw.mesh);
+  coinMeshes.delete(pw.mesh);
+  if (pw.kind === 'shield') giveShield(p); else p.magnetT = MAGNET_TIME;
+  if (G.run) G.run.powers++;
+  sfx.prize(); buzz(20);
+  burst(p.x, -p.row, pw.kind === 'shield' ? splashMat : coinMat, 8);
+}
+// the shield takes one hit: the player hops back to the last safe row and can not be hit for a moment
+function rescue(p) {
+  p.shield = false;
+  p.mesh.userData.bubble.visible = false;
+  p.safeT = SHIELD_TIME;
+  sfx.eagle(); buzz(40);
+  burst(p.mesh.position.x, p.mesh.position.z, splashMat, 10);
+  let r = p.row - 1;
+  for (let k = p.row - 1; k >= p.row - 3; k--) {   // the nearest row behind with solid ground
+    const l = lanes.get(k);
+    if (l && l.kind !== 'river' && l.kind !== 'lily') { r = k; break; }
+  }
+  const tx = Math.max(-PLAY_HALF, Math.min(PLAY_HALF, Math.round(p.x)));
+  p.hop = { t: 0, dur: HOP_TIME * 2, fromRow: p.row, fx: p.x, fz: p.mesh.position.z, tx, tz: -r, carry: null, carryX0: 0, span: 0 };
+  p.queue = null; p.log = null; p.row = r;
+}
+function updateMagnet(p, dt) {
+  p.magnetT = Math.max(0, p.magnetT - dt);
+  if (!p.magnetT) return;
+  for (let r = p.row - 1; r <= p.row + 1; r++) {
+    const lane = lanes.get(r);
+    if (!lane) continue;
+    for (const [x, coin] of lane.coins) if (Math.abs(x - p.x) <= MAGNET_REACH) collectCoin(p, lane, x, coin);
+  }
 }
 function despawn(p) {
   if (p.mesh) { scene.remove(p.mesh); p.mesh = null; }
@@ -4299,6 +4628,24 @@ function updateEagle(p, dt) {
   }
 }
 
+// hops are queued and applied at the start of the next fixed step, so a replay can play them on the same ticks
+const moveQ = [];
+function queueMove(i, dx, dr) { moveQ.push([i, dx, dr]); }
+function applyMoves() {
+  const rp = G.replay;
+  if (rp) {   // a replay drives the players; the queue is dropped
+    while (rp.i < rp.events.length && rp.events[rp.i][0] <= G.playTick) { const [, i, dx, dr] = rp.events[rp.i++]; tryMove(players[i], dx, dr); }
+    moveQ.length = 0;
+    return;
+  }
+  for (const [i, dx, dr] of moveQ) {
+    const p = players[i];
+    if (!p.joined || !p.alive) continue;
+    G.record.push([G.playTick, i, dx, dr]);
+    tryMove(p, dx, dr);
+  }
+  moveQ.length = 0;
+}
 function tryMove(p, dx, dr) {
   if (!p.alive || p.eagle) return;   // once the eagle is coming there is no escape
   if (p.hop) { p.queue = [dx, dr]; return; }
@@ -4314,7 +4661,14 @@ function tryMove(p, dx, dr) {
   };
   p.row += dr;
   p.idleT = 0; p.warned = false;
-  if (p.row > p.score) { p.score = p.row; p.scoreEl.textContent = p.score; }
+  if (p.row > p.score) { p.score = p.row; p.scoreEl.textContent = p.score; if (G.run) G.run.row = Math.max(G.run.row, p.score); }
+  if (G.run) G.run.hops++;
+  // quick hops in a row build a combo; every COMBO_EVERY hops of it pay a coin
+  p.combo = G.playT - p.lastHop < COMBO_GAP ? p.combo + 1 : 1;
+  p.lastHop = G.playT;
+  if (G.run) G.run.combo = Math.max(G.run.combo, p.combo);
+  if (p.combo >= COMBO_EVERY && p.combo % COMBO_EVERY === 0) { p.coins++; setBank(G.bank + 1); sfx.coin(); burst(p.x, -p.row, coinMat, 4); }
+  setLabel(p);
   if (p.hop.dur > HOP_TIME) sfx.mud(); else sfx.hop(p.id);
   buzz(8);
 }
@@ -4322,6 +4676,9 @@ function tryMove(p, dx, dr) {
 const DEATH_SOUND = { splash: sfx.splash, slow: sfx.fall, eagle: sfx.fall };
 function kill(p, cause) {
   if (!p.alive) return;
+  const hit = cause === 'squash' || cause === 'train' || cause === 'splash';
+  if (hit && p.safeT > 0) return;
+  if (hit && p.shield) { rescue(p); return; }
   p.alive = false; p.cause = cause; p.hop = null;
   buzz(70);
   (DEATH_SOUND[cause] || sfx.squash)();
@@ -4373,32 +4730,39 @@ function animateDeath(p, dt) {
     m.position.y = Math.max(-0.6, m.position.y - dt * 0.8);
   }
 }
-function collectCoin(p, lane, coin) {
+function collectCoin(p, lane, x, coin) {
   lane.group.remove(coin);
-  lane.coins.delete(p.x);
+  lane.coins.delete(x);
   coinMeshes.delete(coin);
-  p.coins++;
-  setBank(G.bank + 1);
+  const secret = lane.secret === x;
+  const value = secret ? 3 : 1;
+  p.coins += value;
+  setBank(G.bank + value);
+  if (G.run) { G.run.coins += value; if (secret) G.run.secrets++; }
   sfx.coin();
   buzz(15);
-  burst(p.x, -p.row, coinMat, 6);
+  burst(x, -lane.r, coinMat, secret ? 14 : 6);
 }
 // returns false if the landing killed the player
 function land(p, lane) {
+  const from = lanes.get(p.hop.fromRow);
   p.hop = null;
   p.log = null;
   if (lane && lane.kind === 'river') {
     const log = lane.objs.find(o => Math.abs(o.x - p.x) < o.len / 2 + 0.05);
-    if (!log) { kill(p, 'splash'); return false; }
+    if (!log) { kill(p, 'splash'); return p.alive; }
     // snap to the centre of the nearest log segment so standing feels solid
     const k = (log.len - 1) / 2;
     p.logOff = THREE.MathUtils.clamp(Math.round(p.x - log.x + k) - k, -k, k);
     p.log = log;
+    if (G.run) G.run.logs++;
   } else {
     p.x = Math.round(p.x);
-    if (lane && lane.kind === 'lily' && !lane.pads.has(p.x)) { kill(p, 'splash'); return false; }
+    if (lane && lane.kind === 'lily' && !lane.pads.has(p.x)) { kill(p, 'splash'); return p.alive; }
+    if (G.run && from && from.kind === 'river' && lane && lane.r > from.r) G.run.rivers++;   // crossed a river
     const coin = lane && lane.coins.get(p.x);
-    if (coin) collectCoin(p, lane, coin);
+    if (coin) collectCoin(p, lane, p.x, coin);
+    if (lane && lane.power && lane.power.x === p.x) pickPower(p, lane);
   }
   p.mesh.userData.body.scale.set(1.15, 0.8, 1.15);
   if (p.queue) { const [qx, qr] = p.queue; p.queue = null; tryMove(p, qx, qr); }
@@ -4443,12 +4807,17 @@ function checkHazards(p, lane) {
 }
 function updatePlayer(p, dt) {
   if (!p.mesh) return;
-  turnToward(p.mesh, p.facing, dt);
+  // standing a while, the animal looks around
+  const look = p.alive && !p.hop && !p.eagle && p.idleT > 1.2 ? Math.sin((p.idleT - 1.2) * 1.8) * 0.4 : 0;
+  turnToward(p.mesh, p.facing + look, dt);
   if (!p.alive) { if (p.eagle) updateEagle(p, dt); else animateDeath(p, dt); return; }
+  if (p.safeT > 0) { p.safeT = Math.max(0, p.safeT - dt); p.mesh.visible = !p.safeT || Math.floor(p.safeT * 12) % 2 === 0; }
   const lane = lanes.get(p.row);
   const ok = p.hop ? stepHop(p, lane, dt) : stand(p, dt);
-  if (ok && p.alive) checkHazards(p, lanes.get(p.row));
+  if (ok && p.alive && !p.safeT) checkHazards(p, lanes.get(p.row));
   if (!p.alive || G.state !== 'play') return;
+  if (p.magnetT) { updateMagnet(p, dt); if (!p.magnetT) setLabel(p); }
+  if (p.combo && !p.hop && G.playT - p.lastHop > COMBO_GAP + 0.2) { p.combo = 0; setLabel(p); }
   if (!p.hop) p.idleT += dt;
   if (!p.warned && p.idleT > EAGLE_IDLE - EAGLE_SWOOP - EAGLE_WARN) { p.warned = true; sfx.warn(); }   // move, or the eagle comes
   if (!p.eagle && p.idleT > EAGLE_IDLE - EAGLE_SWOOP) sendEagle(p);
@@ -4467,7 +4836,7 @@ function setBanner(h, sub = '') {
   bannerH.textContent = h; bannerP.textContent = sub;
 }
 const pads = document.querySelectorAll('.pad');
-const joinText = () => touchQuery.matches ? 'TAP THIS\nSIDE TO JOIN' : 'PRESS TAP\nTO JOIN';
+const joinText = () => t(touchQuery.matches ? 'TAP THIS\nSIDE TO JOIN' : 'PRESS TAP\nTO JOIN');
 function setCard(i) {
   const c = $('card' + (i + 1)), p = players[i], ch = charOf(p), locked = !isOwned(ch);
   pads[i].classList.toggle('idle', (G.state === 'play' || G.state === 'over') && !p.joined);
@@ -4476,9 +4845,9 @@ function setCard(i) {
   c.style.visibility = G.state === 'play' || G.state === 'over' ? 'hidden' : 'visible';
   if (p.shownChar !== ch.key) { drawPix($('pic' + (i + 1)), PIX[ch.key]); p.shownChar = ch.key; }
   const head = c.querySelector('.head'), st = c.querySelector('.state');
-  if (p.joined) { head.textContent = 'READY!'; st.textContent = 'PLAYER ' + (i + 1); }
-  else if (locked) { head.textContent = G.bank >= ch.price ? 'TAP TO BUY' : 'NEED ' + ch.price + ' COINS'; st.textContent = ch.name + ' · ' + ch.price + ' COINS'; }
-  else { head.textContent = joinText(); st.textContent = ch.name; }
+  if (p.joined) { head.textContent = t('READY!'); st.textContent = t('PLAYER {n}', { n: i + 1 }); }
+  else if (locked) { head.textContent = G.bank >= ch.price ? t('TAP TO BUY') : t('NEED {n} COINS', { n: ch.price }); st.textContent = t('{name} · {n} COINS', { name: t(ch.name), n: ch.price }); }
+  else { head.textContent = joinText(); st.textContent = t(ch.name); }
   for (const b of c.querySelectorAll('.cyc')) b.disabled = p.joined;
 }
 function cycleChar(i, d) {
@@ -4498,20 +4867,63 @@ function shakeCard(i) {
 const menu = $('menu');
 const setCards = () => { setCard(0); setCard(1); menu.hidden = G.state !== 'attract'; };
 
-// ---------- title menu: game mode and the prize machine ----------
+// ---------- title menu: game mode, room code, prize machine, handicap, language, missions ----------
 const MODE_TEXT = { classic: 'MODE: CLASSIC', race: 'MODE: RACE', daily: 'MODE: DAILY' };
 function setMode(mode) {
   G.mode = mode;
   save(MODE_KEY, mode);
-  $('mode').textContent = MODE_TEXT[mode];
-  if (G.state === 'attract') resetWorld();   // daily mode uses today's seed
+  $('mode').textContent = mode === 'room' ? t('ROOM: {code}', { code: G.room }) : t(MODE_TEXT[mode]);
+  if (G.state === 'attract') resetWorld();   // daily and room modes have their own seeds
 }
-function cycleMode() { sfx.tick(); setMode(MODES[(MODES.indexOf(G.mode) + 1) % MODES.length]); }
+// room mode: two phones that enter the same code play the same world (seed = the code)
+const randomCode = () => Array.from({ length: 4 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ'[Math.floor(Math.random() * 24)]).join('');
+function askRoom() {
+  let code = null;
+  try { code = window.prompt(t('ROOM CODE (4 LETTERS)'), G.room || randomCode()); } catch (e) {}
+  code = code === null ? '' : code.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+  if (!code) return false;
+  G.room = code; save(ROOM_KEY, code);
+  return true;
+}
+function cycleMode() {
+  sfx.tick();
+  let mode = MODES[(MODES.indexOf(G.mode) + 1) % MODES.length];
+  if (mode === 'room' && !askRoom()) mode = MODES[0];
+  setMode(mode);
+}
 function updatePrize() {
   const left = PRIZES.filter(k => !owned.has(k));
   const b = $('prize');
   b.disabled = !left.length;
-  b.textContent = left.length ? 'PRIZE \u00b7 ' + PRIZE_COST + ' COINS' : 'ALL PRIZES WON';
+  b.textContent = left.length ? t('PRIZE · {n} COINS', { n: PRIZE_COST }) : t('ALL PRIZES WON');
+}
+const HANDICAP_TEXT = ['HANDICAP: OFF', 'SHIELD: P1', 'SHIELD: P2'];
+function setHandicap(n) { G.handicap = n; save(HANDICAP_KEY, n); $('handicap').textContent = t(HANDICAP_TEXT[n]); }
+$('handicap').addEventListener('click', () => { audio(); sfx.tick(); setHandicap((G.handicap + 1) % 3); });
+$('lang').addEventListener('click', () => { audio(); sfx.tick(); setLang(nextLang()); refreshTexts(); });
+// missions: three small goals; a done one pays coins and the next one takes its place
+let missions = parseMissions(loadText(MISSIONS_KEY));
+const MISSION_TEXT = { coins: 'COLLECT {n} COINS IN ONE RUN', row: 'REACH ROW {n}', rivers: 'CROSS {n} RIVERS', hops: 'HOP {n} TIMES', logs: 'RIDE {n} LOGS', combo: 'COMBO OF {n}', powers: 'GRAB A POWER-UP', secrets: 'FIND A HIDDEN COIN' };
+const missionText = i => t(MISSION_TEXT[MISSIONS[i].stat], { n: MISSIONS[i].goal });
+function showMissions() {
+  const box = $('missions');
+  box.querySelector('h3').textContent = t('MISSIONS');
+  box.querySelectorAll('li').forEach((li, k) => { li.textContent = missionText(missions.active[k]); });
+}
+function payMissions() {   // at game over: which missions this run finished; returns the note text
+  const done = doneMissions(missions, G.run);
+  if (!done.length) return '';
+  const text = done.map(i => missionText(i)).join(' + ');
+  missions = advanceMissions(missions, done);
+  save(MISSIONS_KEY, missionsText(missions));
+  setBank(G.bank + MISSION_REWARD * done.length);
+  showMissions();
+  return t('MISSION DONE +{n}', { n: MISSION_REWARD * done.length }) + ': ' + text + '. ';
+}
+// everything that shows text in the current language
+function refreshTexts() {
+  setMode(G.mode); updatePrize(); setHandicap(G.handicap); showMissions(); setCards();
+  if (G.state === 'over') $('share').textContent = t('SHARE');
 }
 let menuNote = 0;
 function flashBanner(h, sub, ms) {
@@ -4523,14 +4935,14 @@ function prizeMachine() {
   if (G.state !== 'attract') return;
   const left = PRIZES.filter(k => !owned.has(k));
   if (!left.length) return;
-  if (G.bank < PRIZE_COST) { sfx.nope(); flashBanner('NEED ' + PRIZE_COST + ' COINS', 'COLLECT THEM ON THE ROAD', 1400); return; }
+  if (G.bank < PRIZE_COST) { sfx.nope(); flashBanner(t('NEED {n} COINS', { n: PRIZE_COST }), t('COLLECT THEM ON THE ROAD'), 1400); return; }
   setBank(G.bank - PRIZE_COST);
   const key = left[Math.floor(Math.random() * left.length)];
   owned.add(key); save(OWNED_KEY, [...owned].join(','));
   const idx = CHARACTERS.findIndex(c => c.key === key);
   players[0].charIndex = idx; save(PICK_KEY + 0, key);
   sfx.prize();
-  flashBanner('YOU GOT ' + CHARACTERS[idx].name + '!', 'IT IS NOW PLAYER 1', 2200);
+  flashBanner(t('YOU GOT {name}!', { name: t(CHARACTERS[idx].name) }), t('IT IS NOW PLAYER 1'), 2200);
   updatePrize();
   setCards();
 }
@@ -4538,28 +4950,31 @@ $('mode').addEventListener('click', () => { audio(); cycleMode(); });
 $('prize').addEventListener('click', () => { audio(); prizeMachine(); });
 setMode(G.mode);
 updatePrize();
+setHandicap(G.handicap);
+showMissions();
 
-// ---------- share and confetti ----------
-let shareText = '';
+// ---------- share, replay link and confetti ----------
+let shareText = '', replayText = '';
 // Share sheet where it works, clipboard where it does not, and as a last resort the text itself, selected.
 // Both the share call and the clipboard write must happen in the tap itself (Safari refuses them a moment later),
 // so the clipboard write starts at once and its result is used only if the share sheet is refused.
-function shareScore() {
-  const b = $('share');
+function shareOut(b, text, sheet) {
   let copied;
-  try { copied = navigator.clipboard.writeText(shareText).then(() => true, () => false); }
+  try { copied = navigator.clipboard.writeText(text).then(() => true, () => false); }
   catch (e) { copied = Promise.resolve(false); }
   const finish = async shared => {
-    if (shared) { b.textContent = 'SHARED!'; return; }
-    if (await copied) { b.textContent = 'COPIED!'; return; }
-    const t = $('shareText');                       // nothing automatic works here: let the player copy by hand
-    t.value = shareText; t.hidden = false; t.focus(); t.select();
-    b.textContent = 'SELECT AND COPY';
+    if (shared) { b.textContent = t('SHARED!'); return; }
+    if (await copied) { b.textContent = t(sheet ? 'COPIED!' : 'REPLAY LINK COPIED!'); return; }
+    const box = $('shareText');                     // nothing automatic works here: let the player copy by hand
+    box.value = text; box.hidden = false; box.focus(); box.select();
+    b.textContent = t('SELECT AND COPY');
   };
-  if (navigator.share) navigator.share({ text: shareText }).then(() => finish(true), e => { if (!e || e.name !== 'AbortError') finish(false); });
+  if (sheet && navigator.share) navigator.share({ text }).then(() => finish(true), e => { if (!e || e.name !== 'AbortError') finish(false); });
   else finish(false);
 }
+const shareScore = () => shareOut($('share'), shareText, true);
 $('share').addEventListener('click', shareScore);
+$('replayBtn').addEventListener('click', () => shareOut($('replayBtn'), replayText, false));
 const confettiBox = $('confetti');
 function confetti() {
   if (reduceMotion) return;
@@ -4583,9 +4998,12 @@ function toAttract() {
   refreshBests();
   resultsEl.hidden = true; $('logo').hidden = false;
   $('score1').hidden = $('score2').hidden = true;
-  $('share').textContent = 'SHARE';
+  $('share').textContent = t('SHARE');
+  $('replayBtn').textContent = t('COPY REPLAY LINK');
+  $('replayBtn').hidden = true;
   $('shareText').hidden = true;
   $('resBest').hidden = true;
+  $('replayTag').hidden = !G.replay;
   setBanner('');
   setCards();
 }
@@ -4593,6 +5011,10 @@ function toAttract() {
 const wipe = $('wipe');
 function restart(joinPlayer) {
   if (G.restarting) return;
+  if (G.replay) {   // the replay has played: the next game is a normal one
+    G.replay = null;
+    try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+  }
   G.restarting = true;
   wipe.classList.add('on');
   setTimeout(() => {
@@ -4605,7 +5027,7 @@ function join(i) {
   const p = players[i];
   if (p.joined) return;
   const ch = charOf(p);
-  if (!isOwned(ch)) {                                   // a locked character: buy it with coins, or no join
+  if (!isOwned(ch) && !G.replay) {                      // a locked character: buy it with coins, or no join
     if (G.bank < ch.price) { sfx.nope(); shakeCard(i); return; }
     setBank(G.bank - ch.price);
     owned.add(ch.key); save(OWNED_KEY, [...owned].join(','));
@@ -4620,11 +5042,13 @@ function join(i) {
   setCards();
 }
 function startPlay() {
-  G.state = 'play'; G.playT = 0; G.goT = GO_TIME; sfx.go();
+  G.state = 'play'; G.playT = 0; G.playTick = 0; G.goT = GO_TIME; sfx.go();
+  G.run = emptyStats(); G.record = [];
+  if (G.replay) G.replay.i = 0;
   $('app').classList.add('playing');
   resetFrameWatch();
   keepAwake(true);
-  setBanner('GO!');
+  setBanner(t('GO!'));
   players.forEach((p, i) => { $('score' + (i + 1)).hidden = !p.joined; });
   setCards();
 }
@@ -4641,37 +5065,46 @@ function checkOver() {
   setBanner('');
   const top = Math.max(p1.joined ? p1.score : 0, p2.joined ? p2.score : 0);
   let note = '';
-  if (top > G.bestAll) { G.bestAll = top; save(BEST_KEY, top); note = 'NEW ALL TIME BEST!'; }
-  if (top > load(dayKey())) { save(dayKey(), top); note = note || 'NEW BEST TODAY!'; }
-  if (G.mode === 'daily') {
-    const k = DAILY_KEY + dayKey();
-    if (top > load(k)) { save(k, top); note = 'NEW DAILY CHALLENGE BEST!'; }
-    else note = 'DAILY CHALLENGE BEST ' + load(k) + '. ' + note;
+  const replay = !!G.replay;   // a replay changes no records and pays nothing
+  if (!replay) {
+    if (top > G.bestAll) { G.bestAll = top; save(BEST_KEY, top); note = 'NEW ALL TIME BEST!'; }
+    if (top > load(dayKey())) { save(dayKey(), top); note = note || 'NEW BEST TODAY!'; }
+    if (G.mode === 'daily') {
+      const k = DAILY_KEY + dayKey();
+      if (top > load(k)) { save(k, top); note = 'NEW DAILY CHALLENGE BEST!'; }
+      else note = t('DAILY CHALLENGE BEST {n}.', { n: load(k) }) + ' ' + note;
+    }
   }
   refreshBests();
   // who wins: in a race the one still standing (or the higher score), otherwise the higher score
   let winner = null;
   if (both) winner = race && (p1.alive !== p2.alive) ? (p1.alive ? p1 : p2) : p1.score === p2.score ? null : (p1.score > p2.score ? p1 : p2);
-  $('resTitle').textContent = !both ? 'GAME OVER' : !winner ? 'TIE GAME!' : charOf(winner).name + ' WINS!';
-  if (race && winner) note = 'BY ' + Math.abs(p1.score - p2.score) + ' ROWS. ' + note;
+  $('resTitle').textContent = replay ? t('REPLAY OVER') : !both ? t('GAME OVER') : !winner ? t('TIE GAME!') : t('{name} WINS!', { name: t(charOf(winner).name) });
+  if (race && winner) note = t('BY {n} ROWS.', { n: Math.abs(p1.score - p2.score) }) + ' ' + note;
   const hero = winner || (p1.joined ? p1 : p2);
-  shareText = 'I scored ' + top + ' in Hop Lanes as ' + charOf(hero).name + '! ' + location.origin + location.pathname;
+  const page = location.origin + location.pathname;
+  shareText = t('I scored {n} in Hop Lanes as {name}!', { n: top, name: t(charOf(hero).name) }) + (G.mode === 'room' ? ' ' + t('Room {code}', { code: G.room }) + '.' : '') + ' ' + page;
+  // the replay link: the seed, the animals and every hop of this run
+  const canReplay = !replay && G.record.length && location.protocol !== 'file:';
+  if (canReplay) replayText = page + '#replay-' + encodeReplay({ seed: getSeed(), mode: G.mode, chars: [charOf(p1).key, charOf(p2).key], joined: [p1.joined, p2.joined], events: G.record });
+  $('replayBtn').hidden = !canReplay;
   // a new best gets its own big line, a jingle and (all time) confetti
   const best = top >= 1 && /^NEW .*BEST!/.exec(note.replace(/^.*\. /, ''));
   $('resBest').hidden = !best;
   if (best) {
-    $('resBest').textContent = best[0];
+    $('resBest').textContent = t(best[0]);
     note = note.replace(best[0], '').replace(/^ +| +$/g, '');
     if (best[0].includes('ALL TIME')) { confetti(); sfx.best(); } else sfx.cheer();
-  }
+  } else sfx.over();
+  if (!replay) note = payMissions() + note;
   $('res1').hidden = !p1.joined; $('res2').hidden = !p2.joined;
   $('res1').querySelector('span').textContent = charOf(p1).name;
   $('res2').querySelector('span').textContent = charOf(p2).name;
   $('world').hidden = true;
-  postScore(charOf(hero).name, top);
+  if (!replay) postScore(charOf(hero).name, top);
   $('res1').querySelector('b').textContent = p1.score;
   $('res2').querySelector('b').textContent = p2.score;
-  $('resNote').textContent = (note ? note + ' ' : '') + 'PRESS TAP TO PLAY AGAIN';
+  $('resNote').textContent = (note ? note + ' ' : '') + t('PRESS TAP TO PLAY AGAIN');
 }
 
 // optional online score list: silent when no server is set or it can not be reached
@@ -4680,14 +5113,17 @@ async function postScore(name, score) {
   try {
     const ctrl = new AbortController();
     setTimeout(() => ctrl.abort(), 4000);
+    const daily = G.mode === 'daily';
     const res = await fetch(SCORES_URL, {
       method: 'POST', headers: { 'Content-Type': 'application/json', ...(SCORES_TOKEN ? { 'X-Hop-Token': SCORES_TOKEN } : {}) },
-      body: JSON.stringify({ name, score }), signal: ctrl.signal
+      body: JSON.stringify({ name, score, day: dayKey(), mode: G.mode }), signal: ctrl.signal
     });
     if (!res.ok) return;
-    const top = (await res.json()).top;
+    let top = (await res.json()).top;
+    // daily mode compares with everyone who played today's world
+    if (daily) top = (await (await fetch(SCORES_URL + '?day=' + dayKey() + '&mode=daily', { signal: ctrl.signal })).json()).top;
     if (Array.isArray(top) && top.length && G.state === 'over') {
-      $('world').textContent = 'WORLD BEST ' + top[0].score + ' \u00b7 ' + top[0].name;
+      $('world').textContent = t(daily ? 'TODAY TOP {n} · {name}' : 'WORLD BEST {n} · {name}', { n: top[0].score, name: top[0].name });
       $('world').hidden = false;
     }
   } catch (e) { /* offline, blocked by the page policy, or no server: nothing to show */ }
@@ -4699,7 +5135,7 @@ function pauseGame() {
   if (G.state !== 'play' && G.state !== 'countdown') return;
   pausedFrom = G.state; G.state = 'paused';
   keepAwake(false);
-  setBanner('PAUSED', touchQuery.matches ? 'TAP TO CONTINUE' : 'PRESS ANY KEY');
+  setBanner(t('PAUSED'), t(touchQuery.matches ? 'TAP TO CONTINUE' : 'PRESS ANY KEY'));
 }
 function resumeGame() {
   if (G.state !== 'paused') return;
@@ -4729,16 +5165,16 @@ if (iosSafari && canHint()) installBtn.hidden = false;
 installBtn.addEventListener('click', () => {
   sfx.tick();
   if (installEvent) { installEvent.prompt(); installEvent = null; hintDone(); return; }
-  flashBanner('ADD TO HOME SCREEN', 'TAP SHARE IN SAFARI, THEN "ADD TO HOME SCREEN"', 4000);
+  flashBanner(t('ADD TO HOME SCREEN'), t('TAP SHARE IN SAFARI, THEN "ADD TO HOME SCREEN"'), 4000);
   hintDone();
 });
 
 // ---------- first-run help ----------
 const howto = $('howto');
 function showHowto() {
-  howto.querySelector('p').textContent = touchQuery.matches
+  howto.querySelector('p').textContent = t(touchQuery.matches
     ? 'Tap the game to hop forward.\nSwipe to move left, right or back.\nCollect coins to unlock animals.\nStand still too long and the eagle gets you!'
-    : 'Player 1: W A S D.  Player 2: arrow keys.\nCollect coins to unlock animals.\nStand still too long and the eagle gets you!';
+    : 'Player 1: W A S D.  Player 2: arrow keys.\nCollect coins to unlock animals.\nStand still too long and the eagle gets you!');
   howto.hidden = false;
 }
 function hideHowto() {
@@ -4756,7 +5192,7 @@ function press(i, dx, dr) {
   if (G.restarting || hideHowto()) return;
   if (G.state === 'paused') { resumeGame(); return; }
   if (G.state === 'attract' || G.state === 'countdown') join(i);
-  else if (G.state === 'play') { if (players[i].joined) tryMove(players[i], dx, dr); }
+  else if (G.state === 'play') { if (players[i].joined) queueMove(i, dx, dr); }
   else if (canRestart()) restart(i);
 }
 function pressStart() {
@@ -4849,6 +5285,35 @@ function endTouch(e) {
 }
 stage.addEventListener('pointerup', endTouch);
 stage.addEventListener('pointercancel', endTouch);
+// gamepads (standard mapping): pad 0 drives player 1, pad 1 player 2; polled every frame, edge-triggered
+const padPrev = new Map();
+function padEdge(key, on) {
+  const was = padPrev.get(key) || false;
+  padPrev.set(key, on);
+  return on && !was;
+}
+function pollGamepads() {
+  let pads;
+  try { pads = navigator.getGamepads ? navigator.getGamepads() : []; } catch (e) { return; }
+  if (!pads) return;
+  for (let n = 0; n < pads.length && n < 2; n++) {
+    const g = pads[n];
+    if (!g || !g.buttons) continue;
+    const b = k => !!(g.buttons[k] && g.buttons[k].pressed);
+    const ax = g.axes[0] || 0, ay = g.axes[1] || 0;
+    // sticks use hysteresis: pressed past 0.5, released under 0.3
+    const st = (k, v, dir) => padPrev.get(k) ? v * dir > 0.3 : v * dir > 0.5;
+    const sl = st(n + 'l', ax, -1), sr = st(n + 'r', ax, 1), su = st(n + 'u', ay, -1), sd = st(n + 'd', ay, 1);
+    try {
+      if (padEdge(n + 'u', b(12) || su || b(0))) press(n, 0, 1);
+      if (padEdge(n + 'd', b(13) || sd)) press(n, 0, -1);
+      if (padEdge(n + 'l', b(14) || sl)) press(n, -1, 0);
+      if (padEdge(n + 'r', b(15) || sr)) press(n, 1, 0);
+      if (padEdge(n + 's', b(9) || b(8))) pressStart();
+      if (padEdge(n + 'p', b(1) || b(2))) { if (G.state === 'paused') resumeGame(); else pauseGame(); }
+    } catch (e) {}
+  }
+}
 $('app').addEventListener('contextmenu', e => e.preventDefault());
 // The game loop and boot. main.js loads this once Three.js is present.
 // ---------- loop ----------
@@ -4859,8 +5324,8 @@ function updateCountdown(dt) {
   if (n !== before && n > 0) sfx.tick();
   if (G.countdown <= 0) { startPlay(); return; }
   // setBanner only touches the DOM when the text changes
-  setBanner(String(n), (players.every(p => p.joined) ? 'FROG VS FOX' : 'OTHER PLAYER: TAP TO JOIN')
-    + (touchQuery.matches ? '\nTAP TO HOP · SWIPE TO TURN' : ''));
+  setBanner(String(n), (G.replay ? t('REPLAY') : players.every(p => p.joined) ? t('FROG VS FOX') : t('OTHER PLAYER: TAP TO JOIN'))
+    + (touchQuery.matches && !G.replay ? '\n' + t('TAP TO HOP · SWIPE TO TURN') : ''));
 }
 function updateCamera(dt) {
   G.playT += dt;
@@ -4877,31 +5342,40 @@ function placeCamera() {
   camera.lookAt(focus);
   sun.position.set(focus.x - 6, 14, focus.z + 6);
   sun.target.position.copy(focus);
-  setNight(G.camRow);
+  G.weather = weatherAt(Math.round(G.camRow + G.camLead));
+  setNight(G.camRow, G.weather);
   const focusRow = G.camRow + G.camLead;
   for (const lane of lanes.values()) lane.group.visible = Math.abs(lane.r - focusRow) < G.visRows;
 }
 
-const DRAW_INTERVAL = 1000 / 60;
-let lastT = performance.now(), nextDraw = 0, lastDraw = 0;
+// one fixed step of the game: the same hops on the same ticks give the same run (replays)
+function step(dt) {
+  G.tick++; G.stateT += dt;
+  if (G.state === 'countdown') updateCountdown(dt);
+  else if (G.state === 'play') { G.playTick++; applyMoves(); updateCamera(dt); }
+  else if (G.state === 'over' && G.stateT > RESULTS_DELAY && resultsEl.hidden) resultsEl.hidden = false;
+  ensureLanes();
+  updateLanes(dt, G.tick * STEP * 1000);
+  for (const p of players) updatePlayer(p, dt);
+  updateParts(dt);
+}
+const DRAW_INTERVAL = 1000 / 60, MAX_STEPS = 6;   // after a long stall, time is dropped rather than caught up
+let lastT = performance.now(), nextDraw = 0, lastDraw = 0, acc = 0;
 function frame(now) {
   const rawDt = (now - lastT) / 1000;
   const dt = Math.max(0, Math.min(0.05, rawDt));
-  lastT = now; G.stateT += dt;
+  lastT = now;
+  pollGamepads();
 
   if (G.state === 'paused') {                       // nothing moves; draw now and then so the screen stays fresh
     if ((G.frameN++ & 3) === 0) renderer.render(scene, camera);
     requestAnimationFrame(frame);
     return;
   }
-  if (G.state === 'countdown') updateCountdown(dt);
-  else if (G.state === 'play') updateCamera(dt);
-  else if (G.state === 'over' && G.stateT > RESULTS_DELAY && resultsEl.hidden) resultsEl.hidden = false;
-
-  ensureLanes();
-  updateLanes(dt, now);
-  for (const p of players) updatePlayer(p, dt);
-  updateParts(dt);
+  acc += dt;
+  let steps = 0;
+  while (acc >= STEP && steps < MAX_STEPS) { step(STEP); acc -= STEP; steps++; }
+  if (steps === MAX_STEPS) acc = 0;
   for (const m of coinMeshes) m.rotation.y = now / 300;
   placeCamera();
 
@@ -4936,10 +5410,24 @@ if (DEBUG) {
     get muted() { return isMuted(); },
     get owned() { return [...owned]; },
     get mode() { return G.mode; },
-    get dailySeed() { return dailySeed(); }
+    get dailySeed() { return dailySeed(); },
+    get run() { return G.run; },
+    get record() { return G.record.slice(); },
+    get replay() { return G.replay; },
+    get weather() { return G.weather; }
   };
 }
+// a replay link: the same world, the same animals, the same hops
+if (REPLAY_CODE) {
+  const rp = decodeReplay(REPLAY_CODE);
+  if (rp) {
+    G.replay = { ...rp, i: 0 };
+    G.mode = rp.mode;
+    rp.chars.forEach((key, i) => { const k = CHARACTERS.findIndex(c => c.key === key); if (k >= 0) players[i].charIndex = k; });
+  }
+}
 toAttract();
+if (G.replay) G.replay.joined.forEach((on, i) => { if (on) join(i); });
 if (loadText(HOWTO_KEY) !== '1') showHowto();
 // build the plain shader (rail lights, particles) now; built mid-game, it stutters on the first train or death
 const warm = new THREE.Mesh(partGeo, splashMat);

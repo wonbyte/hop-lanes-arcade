@@ -1,7 +1,7 @@
 import { audio, muted, setMuted } from './audio.js';
 import { $, G, RESULTS_DELAY } from './core.js';
 import { stage } from './gfx.js';
-import { players, tryMove } from './players.js';
+import { players, queueMove } from './players.js';
 import { cycleChar, hideHowto, join, pauseGame, restart, resumeGame } from './screens.js';
 
 // Input: keyboard, the on-screen buttons, and taps and swipes on the field.
@@ -12,7 +12,7 @@ function press(i, dx, dr) {
   if (G.restarting || hideHowto()) return;
   if (G.state === 'paused') { resumeGame(); return; }
   if (G.state === 'attract' || G.state === 'countdown') join(i);
-  else if (G.state === 'play') { if (players[i].joined) tryMove(players[i], dx, dr); }
+  else if (G.state === 'play') { if (players[i].joined) queueMove(i, dx, dr); }
   else if (canRestart()) restart(i);
 }
 function pressStart() {
@@ -105,6 +105,35 @@ function endTouch(e) {
 }
 stage.addEventListener('pointerup', endTouch);
 stage.addEventListener('pointercancel', endTouch);
+// gamepads (standard mapping): pad 0 drives player 1, pad 1 player 2; polled every frame, edge-triggered
+const padPrev = new Map();
+function padEdge(key, on) {
+  const was = padPrev.get(key) || false;
+  padPrev.set(key, on);
+  return on && !was;
+}
+function pollGamepads() {
+  let pads;
+  try { pads = navigator.getGamepads ? navigator.getGamepads() : []; } catch (e) { return; }
+  if (!pads) return;
+  for (let n = 0; n < pads.length && n < 2; n++) {
+    const g = pads[n];
+    if (!g || !g.buttons) continue;
+    const b = k => !!(g.buttons[k] && g.buttons[k].pressed);
+    const ax = g.axes[0] || 0, ay = g.axes[1] || 0;
+    // sticks use hysteresis: pressed past 0.5, released under 0.3
+    const st = (k, v, dir) => padPrev.get(k) ? v * dir > 0.3 : v * dir > 0.5;
+    const sl = st(n + 'l', ax, -1), sr = st(n + 'r', ax, 1), su = st(n + 'u', ay, -1), sd = st(n + 'd', ay, 1);
+    try {
+      if (padEdge(n + 'u', b(12) || su || b(0))) press(n, 0, 1);
+      if (padEdge(n + 'd', b(13) || sd)) press(n, 0, -1);
+      if (padEdge(n + 'l', b(14) || sl)) press(n, -1, 0);
+      if (padEdge(n + 'r', b(15) || sr)) press(n, 1, 0);
+      if (padEdge(n + 's', b(9) || b(8))) pressStart();
+      if (padEdge(n + 'p', b(1) || b(2))) { if (G.state === 'paused') resumeGame(); else pauseGame(); }
+    } catch (e) {}
+  }
+}
 $('app').addEventListener('contextmenu', e => e.preventDefault());
 
-export { KEYS, SWIPE_MIN, canRestart, endTouch, fieldPlayer, pointers, press, pressStart, touchRing };
+export { KEYS, SWIPE_MIN, canRestart, endTouch, fieldPlayer, pointers, pollGamepads, press, pressStart, touchRing };

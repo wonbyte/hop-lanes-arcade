@@ -1,4 +1,5 @@
 import { $ } from './core.js';
+import { t } from './i18n.js';
 import { MUTE_KEY, loadText } from './storage.js';
 
 // Sound effects made with the Web Audio API, and the mute switch.
@@ -15,7 +16,7 @@ function setMuted(on) {
   try { localStorage.setItem(MUTE_KEY, on ? '1' : '0'); } catch (e) {}
   const b = $('mute');
   b.setAttribute('aria-pressed', String(on));
-  b.textContent = on ? 'SOUND OFF' : 'SOUND ON';
+  b.textContent = t(on ? 'SOUND OFF' : 'SOUND ON');
 }
 function beep(freq, dur, type = 'square', vol = 0.06, slide = 0) {
   if (!actx || muted) return;
@@ -46,12 +47,17 @@ const sfx = {
   nope: () => beep(140, 0.2, 'sawtooth', 0.06),
   eagle: () => { beep(1500, 0.18, 'sawtooth', 0.05, -500); setTimeout(() => beep(1300, 0.25, 'sawtooth', 0.05, -600), 180); },
   best: () => [523, 659, 784, 1047, 784, 1047, 1319].forEach((f, i) => setTimeout(() => beep(f, i === 6 ? 0.4 : 0.12, 'square', 0.05), i * 90)),
+  over: () => [659, 587, 523, 392].forEach((f, i) => setTimeout(() => beep(f, i === 3 ? 0.5 : 0.14, 'triangle', 0.06), i * 140)),
   prize: () => [392, 523, 659, 784, 1047].forEach((f, i) => setTimeout(() => beep(f, 0.14, 'triangle', 0.06), i * 70))
 };
 
 // ---------- the title tune: a short chip loop while the title screen shows ----------
 // (browsers allow sound only after a touch or key, so it starts after the first input)
-const TUNE = [523, 659, 784, 659, 523, 392, 440, 494, 523, 659, 784, 1047, 784, 659, 587, 523];
+// 32 steps of [lead, bass]: C - G - A - F, eight steps each (bass on every other step)
+const LEAD = [523, 659, 784, 659, 523, 659, 784, 1047, 988, 784, 587, 784, 988, 784, 587, 784,
+  880, 1047, 880, 659, 523, 659, 880, 659, 698, 880, 1047, 880, 698, 784, 659, 523];
+const ROOTS = [131, 98, 110, 87];
+const TUNE = LEAD.map((f, i) => [f, i % 2 ? 0 : ROOTS[i >> 3]]);
 const TUNE_STEP = 170, TUNE_LOOPS = 2;
 let tuneTimer = 0, tuneStep = 0;
 function startTune() {
@@ -59,7 +65,9 @@ function startTune() {
   tuneStep = 0;
   const next = () => {
     if (tuneStep >= TUNE.length * TUNE_LOOPS || muted) { tuneTimer = 0; return; }
-    beep(TUNE[tuneStep % TUNE.length], 0.13, tuneStep % 4 === 0 ? 'square' : 'triangle', 0.035);
+    const [lead, bass] = TUNE[tuneStep % TUNE.length];
+    beep(lead, 0.13, 'square', 0.035);
+    if (bass) beep(bass, 0.15, 'triangle', 0.025);
     tuneStep++;
     tuneTimer = setTimeout(next, TUNE_STEP);
   };

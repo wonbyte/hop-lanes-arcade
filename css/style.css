@@ -111,12 +111,39 @@ body {
   position: absolute; z-index: 4; left: 16px; right: 16px; top: calc(var(--marquee-h, 74px) + 150px);
   display: flex; justify-content: center; gap: 8px; flex-wrap: wrap;
 }
-#menu button, #share {
+#menu { pointer-events: none; }   /* taps between the buttons reach the field */
+#menu button { pointer-events: auto; }
+#menu button, #share, #replayBtn {
   font-family: var(--font-pixel); font-size: 8px; min-height: 36px; padding: 8px 12px; border-radius: 10px;
   background: rgba(10,12,20,.6); color: var(--gold); box-shadow: 0 3px 0 rgba(0,0,0,.5); white-space: nowrap;
 }
 #menu button:disabled { opacity: .45; }
-#share { margin-top: 4px; }
+#menu::after { content: ''; flex-basis: 100%; height: 0; order: 1; }   /* a line break: the missions sit under the buttons */
+#missions {
+  order: 2; width: min(100%, 360px); margin-top: 2px; padding: 8px 12px; border-radius: 10px; background: rgba(10,12,20,.55);
+  font-family: var(--font-pixel); font-size: 8px; line-height: 1.9; color: #fff; text-align: center;
+}
+#missions h3 { margin: 0 0 2px; font-size: 8px; color: var(--gold); letter-spacing: .1em; }
+#missions ul { margin: 0; padding: 0; list-style: none; }
+#missions ul li::before { content: '\25C6 '; color: var(--gold); }
+#replayTag {
+  position: absolute; z-index: 5; left: 50%; transform: translateX(-50%); top: calc(var(--marquee-h, 74px) + 8px);
+  padding: 4px 10px; border-radius: 8px; background: rgba(216,58,58,.85); color: #fff; font-family: var(--font-pixel); font-size: 9px; letter-spacing: .1em;
+}
+/* weather: rain streaks and snow flakes drawn with gradients, no images */
+#weather { position: absolute; inset: 0; z-index: 2; pointer-events: none; opacity: 0; transition: opacity 1s; }
+#weather.rain {
+  opacity: .5; background: repeating-linear-gradient(100deg, transparent 0 14px, rgba(220,235,255,.45) 14px 15px, transparent 15px 26px);
+  background-size: 60px 140px; animation: rain .5s linear infinite;
+}
+#weather.snow {
+  opacity: .8; background: radial-gradient(circle, #fff 1.5px, transparent 2px) 0 0 / 46px 46px, radial-gradient(circle, #fff 1px, transparent 1.6px) 23px 23px / 70px 70px;
+  animation: snow 6s linear infinite;
+}
+@keyframes rain { to { background-position: -40px 140px; } }
+@keyframes snow { to { background-position: 20px 46px, 43px 93px; } }
+@media (prefers-reduced-motion: reduce) { #weather.rain, #weather.snow { animation: none; } }
+#share, #replayBtn { margin-top: 4px; }
 #shareText {
   width: 100%; box-sizing: border-box; margin-top: 8px; padding: 8px; border: 0; border-radius: 8px; resize: none;
   font-family: var(--font-pixel); font-size: 8px; line-height: 1.8; color: var(--ink); background: rgba(0,0,0,.45);

@@ -1,10 +1,14 @@
 import { idleAudio, isMuted, muted, sfx, startTune } from './audio.js';
-import { DEBUG, G, RESULTS_DELAY } from './core.js';
+import { DEBUG, G, REPLAY_CODE, RESULTS_DELAY, STEP } from './core.js';
+import { pollGamepads } from './input.js';
+import { decodeReplay } from './replay.js';
+import { CHARACTERS } from './models.js';
 import { CAM_OFF, camera, focus, getPixelRatio, pixelRatio, renderer, scene, setNight, sun, touchQuery, watchFrameTime } from './gfx.js';
-import { partGeo, players, splashMat, updateParts, updatePlayer } from './players.js';
-import { resultsEl, setBanner, showHowto, startPlay, toAttract } from './screens.js';
+import { applyMoves, partGeo, players, splashMat, updateParts, updatePlayer } from './players.js';
+import { join, resultsEl, setBanner, showHowto, startPlay, toAttract } from './screens.js';
 import { HOWTO_KEY, dailySeed, loadText, owned } from './storage.js';
-import { coinMeshes, ensureLanes, getSeed, laneCoins, laneKinds, lanes, updateLanes } from './world.js';
+import { coinMeshes, ensureLanes, getSeed, laneCoins, laneKinds, lanes, updateLanes, weatherAt } from './world.js';
+import { t } from './i18n.js';
 import './input.js';   // only adds event listeners, so nothing else imports it
 
 // The game loop and boot. main.js loads this once Three.js is present.
@@ -16,8 +20,8 @@ function updateCountdown(dt) {
   if (n !== before && n > 0) sfx.tick();
   if (G.countdown <= 0) { startPlay(); return; }
   // setBanner only touches the DOM when the text changes
-  setBanner(String(n), (players.every(p => p.joined) ? 'FROG VS FOX' : 'OTHER PLAYER: TAP TO JOIN')
-    + (touchQuery.matches ? '\nTAP TO HOP · SWIPE TO TURN' : ''));
+  setBanner(String(n), (G.replay ? t('REPLAY') : players.every(p => p.joined) ? t('FROG VS FOX') : t('OTHER PLAYER: TAP TO JOIN'))
+    + (touchQuery.matches && !G.replay ? '\n' + t('TAP TO HOP · SWIPE TO TURN') : ''));
 }
 function updateCamera(dt) {
   G.playT += dt;
@@ -34,31 +38,40 @@ function placeCamera() {
   camera.lookAt(focus);
   sun.position.set(focus.x - 6, 14, focus.z + 6);
   sun.target.position.copy(focus);
-  setNight(G.camRow);
+  G.weather = weatherAt(Math.round(G.camRow + G.camLead));
+  setNight(G.camRow, G.weather);
   const focusRow = G.camRow + G.camLead;
   for (const lane of lanes.values()) lane.group.visible = Math.abs(lane.r - focusRow) < G.visRows;
 }
 
-const DRAW_INTERVAL = 1000 / 60;
-let lastT = performance.now(), nextDraw = 0, lastDraw = 0;
+// one fixed step of the game: the same hops on the same ticks give the same run (replays)
+function step(dt) {
+  G.tick++; G.stateT += dt;
+  if (G.state === 'countdown') updateCountdown(dt);
+  else if (G.state === 'play') { G.playTick++; applyMoves(); updateCamera(dt); }
+  else if (G.state === 'over' && G.stateT > RESULTS_DELAY && resultsEl.hidden) resultsEl.hidden = false;
+  ensureLanes();
+  updateLanes(dt, G.tick * STEP * 1000);
+  for (const p of players) updatePlayer(p, dt);
+  updateParts(dt);
+}
+const DRAW_INTERVAL = 1000 / 60, MAX_STEPS = 6;   // after a long stall, time is dropped rather than caught up
+let lastT = performance.now(), nextDraw = 0, lastDraw = 0, acc = 0;
 function frame(now) {
   const rawDt = (now - lastT) / 1000;
   const dt = Math.max(0, Math.min(0.05, rawDt));
-  lastT = now; G.stateT += dt;
+  lastT = now;
+  pollGamepads();
 
   if (G.state === 'paused') {                       // nothing moves; draw now and then so the screen stays fresh
     if ((G.frameN++ & 3) === 0) renderer.render(scene, camera);
     requestAnimationFrame(frame);
     return;
   }
-  if (G.state === 'countdown') updateCountdown(dt);
-  else if (G.state === 'play') updateCamera(dt);
-  else if (G.state === 'over' && G.stateT > RESULTS_DELAY && resultsEl.hidden) resultsEl.hidden = false;
-
-  ensureLanes();
-  updateLanes(dt, now);
-  for (const p of players) updatePlayer(p, dt);
-  updateParts(dt);
+  acc += dt;
+  let steps = 0;
+  while (acc >= STEP && steps < MAX_STEPS) { step(STEP); acc -= STEP; steps++; }
+  if (steps === MAX_STEPS) acc = 0;
   for (const m of coinMeshes) m.rotation.y = now / 300;
   placeCamera();
 
@@ -93,10 +106,24 @@ if (DEBUG) {
     get muted() { return isMuted(); },
     get owned() { return [...owned]; },
     get mode() { return G.mode; },
-    get dailySeed() { return dailySeed(); }
+    get dailySeed() { return dailySeed(); },
+    get run() { return G.run; },
+    get record() { return G.record.slice(); },
+    get replay() { return G.replay; },
+    get weather() { return G.weather; }
   };
 }
+// a replay link: the same world, the same animals, the same hops
+if (REPLAY_CODE) {
+  const rp = decodeReplay(REPLAY_CODE);
+  if (rp) {
+    G.replay = { ...rp, i: 0 };
+    G.mode = rp.mode;
+    rp.chars.forEach((key, i) => { const k = CHARACTERS.findIndex(c => c.key === key); if (k >= 0) players[i].charIndex = k; });
+  }
+}
 toAttract();
+if (G.replay) G.replay.joined.forEach((on, i) => { if (on) join(i); });
 if (loadText(HOWTO_KEY) !== '1') showHowto();
 // build the plain shader (rail lights, particles) now; built mid-game, it stutters on the first train or death
 const warm = new THREE.Mesh(partGeo, splashMat);

@@ -10,7 +10,7 @@ except the small offline build script. Keep it that way.
 | `npm install` | Installs Playwright and Three.js (test and build only; the game itself has no dependencies) |
 | `npm test` | Syntax check, `tests/rules.test.mjs` (pure rules, instant), then the browser tests `smoke`, `layout`, `ui` and `scores-server` (~5 min) |
 | `npm run check` | Syntax check only (fast) |
-| `npm run build` | Regenerates `hop-lanes-standalone.html` (python3, no network). Fails over 700 KB. CI fails if this file is stale |
+| `npm run build` | Regenerates `hop-lanes-standalone.html` (python3, no network). Fails over 800 KB. CI fails if this file is stale |
 | `npm run build:three` | Regenerates `vendor/three.min.js` with esbuild from `tools/three-entry.js` (the Three.js names the game uses). CI fails if stale |
 | `npm run icons` | Regenerates `icons/` from the frog pixel art (needs Pillow) |
 | `npm run scores` | Starts the optional score server (`server/`) |
@@ -26,6 +26,9 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
 | `css/style.css` | All styles. Media queries: `max-width: 520px` (phones), `max-width: 340px` (tiny phones), `orientation: landscape` (phone held sideways) |
 | `js/main.js` | Entry. Checks `window.THREE`, then `import('./app.js')` |
 | `js/rules.js` | Pure rules with no DOM or Three.js: seeded RNG, `nextLaneKind`, `hopTarget`, `hopTime` (mud). Tested by node directly: put logic here when it needs no scene |
+| `js/missions.js` | Pure: the mission list and the done/advance logic (`tests/replay.test.mjs`) |
+| `js/replay.js` | Pure: `encodeReplay` / `decodeReplay` for `#replay-<code>` links |
+| `js/i18n.js` | `t(key, args)`: English keys, Spanish and German tables; `data-i18n` for static markup; `#lang` cycles |
 | `js/core.js` | Tuning constants, the shared state object `G`, `fail()`, `#debug` / `#seed-N` hash parsing |
 | `js/storage.js` | localStorage: best scores, coins (`G.bank`), owned characters, picks. Always best effort (try/catch) |
 | `js/audio.js` | Web Audio beeps (`sfx.*`), mute |
@@ -34,10 +37,10 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
 | `js/models.js` | Colors, pixel portraits (`PIX`), box lists for every model, `CHARACTERS` (name, price) |
 | `js/gfx.js` | Renderer, camera, light, `resize()`, the adaptive quality ladder (`watchFrameTime`) |
 | `js/world.js` | Lanes: `LANE_BUILDERS` per kind, traffic, trains, coins, the instanced fleet (`Inst`). Lanes are a `Map` by row |
-| `js/players.js` | Spawn, `tryMove`, hop/land/stand, hazards, deaths, coin pickup, the eagle |
-| `js/screens.js` | Join cards and shop, title menu (modes, prize machine), countdown, results (share, confetti), restart, pause, first-run help, online score post |
-| `js/input.js` | Keyboard, on-screen buttons, taps and swipes on the field. Side-effect only (imported by `app.js` for that) |
-| `js/app.js` | The frame loop, the `window.hopLanes` test hook, boot |
+| `js/players.js` | Spawn, queued moves (`queueMove` / `applyMoves`, the replay feed), `tryMove`, hop/land/stand, hazards, deaths, coins, combo, shield and magnet power-ups, the eagle |
+| `js/screens.js` | Join cards and shop, title menu (modes incl. room code, prize machine, handicap, language, missions), countdown, results (share, replay link, confetti), restart, pause, first-run help, online score post |
+| `js/input.js` | Keyboard, on-screen buttons, taps and swipes on the field, `pollGamepads()`. Side-effect only (imported by `app.js` for that) |
+| `js/app.js` | The frame loop (fixed `STEP` of 1/120 s), the `window.hopLanes` test hook, replay boot |
 | `tools/build-standalone.sh` | Inlines CSS, the modules (in `tools/bundle-order.json` order), `vendor/three.min.js` and fonts into one offline HTML with a hash-based CSP |
 | `.github/workflows/deploy.yml` | Deploys `main` to GitHub Pages after the tests pass (Settings → Pages → Source: GitHub Actions, once) |
 | `tests/serve.mjs` | Tiny static server for the tests: browsers refuse ES modules from `file://` |
@@ -48,6 +51,9 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
 - Shared mutable state goes in `G` (`js/core.js`). Modules never assign to an imported binding.
 - Every model is a list of `[w, h, d, color, x, y, z]` boxes (y = bottom). Characters face `-z` (forward).
 - World generation uses `worldRng` (seeded). Effects use `fxRand` / `Math.random`, so seeds stay stable.
+- The game steps at a fixed rate (`STEP`) and hops are queued to step boundaries, so replays are exact. Anything that
+  changes the outcome of a run must be deterministic: seeded (`worldRng`, per-lane `lane.rng` for trains) or step-driven.
+- User-facing text goes through `t()` (keys are the English strings). Add new strings to the ES and DE tables in `js/i18n.js`.
 - New module names must be unique across all modules: the offline build concatenates them into one scope.
   A module with only side effects must be imported explicitly in `js/app.js`.
 - No inline `style=` or `on*=` attributes in `index.html` (CSP). Set styles through classes or `el.style`.
@@ -57,7 +63,8 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
 
 ## Testing hooks
 
-- `index.html#debug` exposes `window.hopLanes` (`players`, `state`, `camRow` (settable: jump the view to a far row), `seed`, `bank`, `muted`, `drawCalls`, `laneCoins(r)`, `laneKinds()`).
+- `index.html#debug` exposes `window.hopLanes` (`players`, `state`, `camRow` (settable: jump the view to a far row), `seed`, `bank`, `muted`, `drawCalls`, `run` (mission stats), `record` (this run's hops), `replay`, `weather`, `laneCoins(r)`, `laneKinds()`).
+- `#replay-<code>` (or `#debug-replay-<code>`) plays a run back; smoke test 5c checks the replay ends where the run did.
 - `#seed-42` or `#debug-seed-42` makes the world deterministic.
 - Tests set `localStorage['hoplanes.howto'] = '1'` before load so the first-run help does not swallow the first tap.
 - Headless runs use SwiftShader; it is slow. Wait on state with `waitForFunction`, not fixed sleeps.
@@ -65,6 +72,7 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
 - `tests/ui.test.mjs` drives the shop, prize machine, modes, share and confetti through the real DOM (ids: `#mode`, `#prize`, `#share`, `#card1 .cyc`, `#tap1`).
 - Lane kinds: grass, road (police variant past difficulty 0.3), river, lily (pads; water kills), mud (from row 13; a hop out of it is slow), rail. Night fades in from row 90.
 - The eagle warns (`sfx.warn`) 1.5 s before it swoops; a new best shows in `#resBest`; the install hint `#install` shows only on the served page, once.
+- Power-ups: `lane.power` (shield or magnet) on grass, road and mud past row 10. A hidden coin column is `lane.secret` on grass. The boss train is `lane.boss` (first rail past each 100 rows). Weather is `weatherAt(r)` per 40-row chunk (rain; snow in December).
 
 ## Gotchas
 

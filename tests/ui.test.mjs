@@ -114,6 +114,31 @@ test('1b. shop: cannot afford BUNNY, does not join, card shakes', async () => {
   } finally { await context.close(); }
 });
 
+test('1c. missions show on the title; the language button switches the texts', async () => {
+  const { context, page, errors } = await open(INDEX);
+  try {
+    await waitState(page, 'attract');
+    const lines = await page.locator('#missions li').allTextContents();
+    assert.equal(lines.length, 3);
+    assert.match(lines[0], /COLLECT 10 COINS/);
+    assert.match(await page.locator('#mode').textContent(), /^MODE: /);
+    await page.click('#lang');
+    assert.equal(await page.locator('#lang').textContent(), 'ES');
+    assert.match(await page.locator('#mode').textContent(), /^MODO: /);
+    assert.match(await page.locator('#missions h3').textContent(), /MISIONES/);
+    assert.match(await page.locator('#start').textContent(), /INICIO/);
+    await page.click('#lang');
+    assert.equal(await page.locator('#lang').textContent(), 'DE');
+    await page.click('#lang');
+    assert.equal(await page.locator('#lang').textContent(), 'EN');
+    assert.match(await page.locator('#mode').textContent(), /^MODE: /);
+    // the handicap button cycles and is saved
+    await page.click('#handicap');
+    assert.equal(await page.locator('#handicap').textContent(), 'SHIELD: P1');
+    assert.deepEqual(errors, []);
+  } finally { await context.close(); }
+});
+
 test('2a. prize machine: buy a prize with 120 coins', async () => {
   const POOL = ['pig', 'penguin', 'turtle'];
   const { context, page, errors } = await open(INDEX, { storage: { 'hoplanes.coins': '120' } });

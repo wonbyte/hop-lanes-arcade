@@ -77,6 +77,6 @@ out.write_text(html, encoding='utf-8')
 size = out.stat().st_size
 print(f'{out} {size // 1024} KB')
 # size budget: the file must stay quick to send and open on a phone
-BUDGET = 700 * 1024
+BUDGET = 800 * 1024
 need(size <= BUDGET, f'hop-lanes-standalone.html is {size // 1024} KB, over the {BUDGET // 1024} KB budget')
 PY

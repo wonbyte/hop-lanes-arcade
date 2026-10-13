@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
 import { serve } from './serve.mjs';
+import { encodeReplay } from '../js/replay.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let INDEX = '';   // served over http (set in before): module scripts do not load from file://
@@ -221,6 +222,35 @@ test('5b. draw calls stay low far into the world (instanced traffic)', async () 
     assert.ok(calls > 10 && calls < 60, `draw calls per frame: ${calls} (one per lane plus one per vehicle model)`);
     assert.deepEqual(errors, []);
   } finally { await context.close(); }
+});
+
+test('5c. a replay link plays the same run again', async () => {
+  const { context, page, errors } = await open({}, `${INDEX}#debug-seed-42`);
+  let first, code;
+  try {
+    await waitState(page, 'attract');
+    await page.keyboard.press('KeyW');
+    await waitState(page, 'play');
+    // a few hops (a tree may block one: then step aside), then the eagle ends the run
+    for (const key of ['KeyW', 'KeyD', 'KeyW', 'KeyA', 'KeyW']) { await page.keyboard.press(key); await page.waitForTimeout(400); }
+    await page.waitForFunction(() => window.hopLanes.state === 'over', null, { timeout: 90000 });
+    first = await page.evaluate(() => { const p = window.hopLanes.players[0]; return { row: p.row, score: p.score, cause: p.cause, x: p.x, seed: window.hopLanes.seed }; });
+    const record = await page.evaluate(() => window.hopLanes.record);
+    assert.equal(record.length, 5, 'every press is recorded');
+    assert.ok(first.row >= 1, 'the player moved');
+    code = encodeReplay({ seed: first.seed, mode: 'classic', chars: ['frog', 'fox'], joined: [true, false], events: record });
+    assert.deepEqual(errors, []);
+  } finally { await context.close(); }
+  const again = await open({}, `${INDEX}#debug-replay-${code}`);
+  try {
+    await again.page.waitForFunction(() => window.hopLanes && window.hopLanes.state === 'countdown', null, { timeout: T });
+    assert.equal(await again.page.evaluate(() => !!window.hopLanes.replay), true, 'the replay is loaded');
+    await again.page.waitForFunction(() => window.hopLanes.state === 'over', null, { timeout: 120000 });
+    const second = await again.page.evaluate(() => { const p = window.hopLanes.players[0]; return { row: p.row, score: p.score, cause: p.cause, x: p.x, seed: window.hopLanes.seed }; });
+    assert.deepEqual(second, first, 'the replay ends where the run ended');
+    assert.match(await again.page.locator('#resTitle').textContent(), /REPLAY OVER/);
+    assert.deepEqual(again.errors, []);
+  } finally { await again.context.close(); }
 });
 
 test('6. standalone works fully offline', async () => {

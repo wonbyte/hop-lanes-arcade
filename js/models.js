@@ -314,19 +314,24 @@ const logBoxes = len => [
 ];
 const TRAIN_CARS = 4, TRAIN_CAR_LEN = 3, TRAIN_GAP = 0.15;
 const TRAIN_LEN = TRAIN_CARS * TRAIN_CAR_LEN + (TRAIN_CARS - 1) * TRAIN_GAP;
-function trainBoxes(dir) {
-  const b = [];
-  for (let i = 0; i < TRAIN_CARS; i++) {
-    const x = -TRAIN_LEN / 2 + TRAIN_CAR_LEN / 2 + i * (TRAIN_CAR_LEN + TRAIN_GAP);
-    const front = dir > 0 ? i === TRAIN_CARS - 1 : i === 0;
-    b.push([TRAIN_CAR_LEN, 0.9, 0.84, front ? 0xd83a3a : 0x3a6fd8, x, 0.12, 0],
-           [TRAIN_CAR_LEN - 0.3, 0.2, 0.86, 0xdde6ff, x, 0.62, 0]);
+const trainLen = cars => cars * TRAIN_CAR_LEN + (cars - 1) * TRAIN_GAP;
+function trainBoxes(dir, cars = TRAIN_CARS) {
+  const b = [], len = trainLen(cars), boss = cars > TRAIN_CARS;
+  for (let i = 0; i < cars; i++) {
+    const x = -len / 2 + TRAIN_CAR_LEN / 2 + i * (TRAIN_CAR_LEN + TRAIN_GAP);
+    const front = dir > 0 ? i === cars - 1 : i === 0;
+    b.push([TRAIN_CAR_LEN, boss ? 1.1 : 0.9, 0.84, front ? 0xd83a3a : boss ? 0x2a2f3a : 0x3a6fd8, x, 0.12, 0],
+           [TRAIN_CAR_LEN - 0.3, 0.2, 0.86, boss ? 0xffd84a : 0xdde6ff, x, boss ? 0.82 : 0.62, 0]);
   }
-  const wheels = TRAIN_CARS * 2;
+  const wheels = cars * 2;
   for (let i = 0; i < wheels; i++)
-    b.push([0.4, 0.15, 0.9, 0x222222, -TRAIN_LEN / 2 + 0.6 + i * (TRAIN_LEN - 1.2) / (wheels - 1), 0, 0]);
+    b.push([0.4, 0.15, 0.9, 0x222222, -len / 2 + 0.6 + i * (len - 1.2) / (wheels - 1), 0, 0]);
   return b;
 }
+// power-ups: a blue shield gem and a red magnet
+const shieldBoxes = () => [[0.5, 0.5, 0.5, 0x4fb8ff, 0, 0.3, 0], [0.3, 0.3, 0.3, 0xeaf6ff, 0, 0.4, 0]];
+const magnetBoxes = () => [[0.16, 0.5, 0.16, 0xe8513a, -0.2, 0.25, 0], [0.16, 0.5, 0.16, 0xe8513a, 0.2, 0.25, 0],
+  [0.56, 0.16, 0.16, 0xe8513a, 0, 0.2, 0], [0.16, 0.14, 0.16, 0xeeeeee, -0.2, 0.61, 0], [0.16, 0.14, 0.16, 0xeeeeee, 0.2, 0.61, 0]];
 function makeCharacter(boxesFn, key) {
   const g = new THREE.Group();
   const body = voxelMesh(cachedGeo(key, boxesFn));
@@ -339,4 +344,4 @@ const LIGHT_OFF = new THREE.MeshLambertMaterial({ color: 0x331111 });
 const LIGHT_ON = new THREE.MeshLambertMaterial({ color: 0x331111, emissive: 0xff2222 });
 const lightGeo = new THREE.BoxGeometry(0.38, 0.2, 0.14);
 
-export { CAR_COLORS, CHARACTERS, COLORS, LIGHT_OFF, LIGHT_ON, PIX, POLICE_BLUE, POLICE_RED, PRIZES, TRAIN_CARS, TRAIN_CAR_LEN, TRAIN_GAP, TRAIN_LEN, bunnyBoxes, catBoxes, coinBoxes, css, drawPix, eagleBoxes, foxBoxes, frogBoxes, isOwned, lightGeo, logBoxes, makeCharacter, penguinBoxes, pigBoxes, policeBoxes, robotBoxes, trainBoxes, turtleBoxes, vehicleBoxes };
+export { CAR_COLORS, CHARACTERS, COLORS, LIGHT_OFF, LIGHT_ON, PIX, POLICE_BLUE, POLICE_RED, PRIZES, TRAIN_CARS, TRAIN_CAR_LEN, TRAIN_GAP, TRAIN_LEN, bunnyBoxes, catBoxes, coinBoxes, css, drawPix, eagleBoxes, foxBoxes, frogBoxes, isOwned, lightGeo, logBoxes, magnetBoxes, makeCharacter, penguinBoxes, pigBoxes, policeBoxes, robotBoxes, shieldBoxes, trainBoxes, trainLen, turtleBoxes, vehicleBoxes };

@@ -25,9 +25,9 @@
   <p class="sr-only">Two-player road crossing game. Player 1 moves with W, A, S and D. Player 2 moves with the arrow keys. Space starts. On a touch screen, tap the game to hop and swipe to move.</p>
   <div id="stage">
     <div id="marquee">
-      <div class="hs"><small>BEST</small><b id="best">0</b></div>
-      <div class="hs"><small>TODAY</small><b id="daily">0</b></div>
-      <div class="hs"><small>COINS</small><b id="bank">0</b></div>
+      <div class="hs"><small data-i18n="BEST">BEST</small><b id="best">0</b></div>
+      <div class="hs"><small data-i18n="TODAY">TODAY</small><b id="daily">0</b></div>
+      <div class="hs"><small data-i18n="COINS">COINS</small><b id="bank">0</b></div>
       <button type="button" id="mute" aria-pressed="false">SOUND ON</button>
     </div>
     <div id="score1" class="score" hidden><span>P1 FROG</span><b>0</b></div>
@@ -36,15 +36,20 @@
     <div id="menu">
       <button type="button" id="mode">MODE: CLASSIC</button>
       <button type="button" id="prize">PRIZE &#183; 50 COINS</button>
-      <button type="button" id="install" hidden>ADD TO HOME SCREEN</button>
+      <button type="button" id="handicap">HANDICAP: OFF</button>
+      <button type="button" id="lang" aria-label="Language">EN</button>
+      <button type="button" id="install" hidden data-i18n="ADD TO HOME SCREEN">ADD TO HOME SCREEN</button>
+      <div id="missions"><h3>MISSIONS</h3><ul><li></li><li></li><li></li></ul></div>
     </div>
+    <div id="weather" aria-hidden="true"></div>
+    <div id="replayTag" hidden data-i18n="REPLAY">REPLAY</div>
     <div id="confetti" aria-hidden="true"></div>
     <div id="banner" hidden aria-live="polite"><h2></h2><p></p></div>
     <div id="howto" hidden>
       <div class="box">
-        <h2>HOW TO PLAY</h2>
+        <h2 data-i18n="HOW TO PLAY">HOW TO PLAY</h2>
         <p></p>
-        <button type="button" id="gotit">GOT IT</button>
+        <button type="button" id="gotit" data-i18n="GOT IT">GOT IT</button>
       </div>
     </div>
     <div id="wipe" aria-hidden="true"></div>
@@ -58,6 +63,7 @@
       <p id="world" hidden></p>
       <p id="resNote"></p>
       <button type="button" id="share">SHARE</button>
+      <button type="button" id="replayBtn" hidden>COPY REPLAY LINK</button>
       <textarea id="shareText" hidden readonly rows="2" aria-label="Score text to copy"></textarea>
     </div>
     <div id="cards">
@@ -84,16 +90,16 @@
   <div id="deck">
     <div class="pad p1">
       <button type="button" class="side" data-p="0" data-dx="-1" aria-label="Player 1 left">&#9664;</button>
-      <div class="pad-col"><button type="button" class="tap" id="tap1" data-p="0" aria-label="Player 1 hop forward">TAP</button><span class="lbl">PLAYER 1</span></div>
+      <div class="pad-col"><button type="button" class="tap" id="tap1" data-p="0" aria-label="Player 1 hop forward" data-i18n="TAP">TAP</button><span class="lbl" data-i18n="PLAYER 1">PLAYER 1</span></div>
       <button type="button" class="side" data-p="0" data-dx="1" aria-label="Player 1 right">&#9654;</button>
     </div>
     <div class="pad-col">
-      <button type="button" id="start">START</button>
-      <div id="keys">P1 W A S D<br>P2 ARROWS<br>SPACE START</div>
+      <button type="button" id="start" data-i18n="START">START</button>
+      <div id="keys"><span data-i18n="P1 W A S D">P1 W A S D</span><br><span data-i18n="P2 ARROWS">P2 ARROWS</span><br><span data-i18n="SPACE START">SPACE START</span></div>
     </div>
     <div class="pad p2">
       <button type="button" class="side" data-p="1" data-dx="-1" aria-label="Player 2 left">&#9664;</button>
-      <div class="pad-col"><button type="button" class="tap" id="tap2" data-p="1" aria-label="Player 2 hop forward">TAP</button><span class="lbl">PLAYER 2</span></div>
+      <div class="pad-col"><button type="button" class="tap" id="tap2" data-p="1" aria-label="Player 2 hop forward" data-i18n="TAP">TAP</button><span class="lbl" data-i18n="PLAYER 2">PLAYER 2</span></div>
       <button type="button" class="side" data-p="1" data-dx="1" aria-label="Player 2 right">&#9654;</button>
     </div>
   </div>
