@@ -8,7 +8,7 @@ import { CHARACTERS, COLORS, eagleBoxes, makeCharacter } from './models.js';
 import { checkOver } from './screens.js';
 import { PICK_KEY, loadText, setBank } from './storage.js';
 import { cachedGeo, voxelMesh } from './voxel.js';
-import { coinMeshes, fxRand, lanes } from './world.js';
+import { Inst, dropSpinner, fxRand, lanes } from './world.js';
 
 // The two players: spawning, hopping, riding logs, coins, deaths and the eagle.
 // ---------- players ----------
@@ -17,6 +17,8 @@ function pickIndex(i, fallback) {
   const k = CHARACTERS.findIndex(c => c.key === loadText(PICK_KEY + i));
   return k >= 0 ? k : fallback;
 }
+// a replay picks its own animals; after it each slot goes back to its saved pick
+function restorePicks() { players.forEach((p, i) => { p.charIndex = pickIndex(i, i); }); }
 const players = [
   { id: 0, charIndex: pickIndex(0, 0), startX: -2, joined: false, scoreEl: $('score1').querySelector('b') },
   { id: 1, charIndex: pickIndex(1, 1), startX: 2, joined: false, scoreEl: $('score2').querySelector('b') }
@@ -28,14 +30,14 @@ function spawn(p) {
   p.mesh = makeCharacter(ch.boxes, ch.key);
   scene.add(p.mesh);
   Object.assign(p, {
-    x: p.startX, row: 0, alive: true, hop: null, queue: null, score: 0, coins: 0, idleT: 0, warned: false, eagle: null, breath: p.id * 1.7,
+    x: p.startX, row: 0, alive: true, hop: null, queue: null, score: 0, idleT: 0, warned: false, eagle: null, breath: p.id * 1.7,
     facing: 0, cause: '', log: null, logOff: 0, trainDir: 0,
     combo: 0, lastHop: -9, shield: false, safeT: 0, magnetT: 0, label: ''
   });
   p.mesh.position.set(p.x, 0, 0);
   p.scoreEl.textContent = '0';
   setLabel(p);
-  if (G.handicap === p.id + 1 && !G.replay) giveShield(p);   // the handicap: a shield to start with
+  if ((G.replay ? G.replay.handicap : G.handicap) === p.id + 1) giveShield(p);   // the handicap: a shield to start with
 }
 // the name over the score, plus the combo and the magnet while they last
 function setLabel(p) {
@@ -53,28 +55,30 @@ function giveShield(p) {
 function pickPower(p, lane) {
   const pw = lane.power;
   lane.power = null;
-  lane.group.remove(pw.mesh);
-  coinMeshes.delete(pw.mesh);
+  dropSpinner(pw.s);
   if (pw.kind === 'shield') giveShield(p); else p.magnetT = MAGNET_TIME;
   if (G.run) G.run.powers++;
   sfx.prize(); buzz(20);
-  burst(p.x, -p.row, pw.kind === 'shield' ? splashMat : coinMat, 8);
+  burst(p.x, -p.row, pw.kind === 'shield' ? SPLASH : COIN_FX, 8);
 }
-// the shield takes one hit: the player hops back to the last safe row and can not be hit for a moment
+// the shield takes one hit: the player hops back to the nearest solid row behind and can not be hit for a moment.
+// Returns false (the hit kills after all) when there is no solid row behind.
 function rescue(p) {
+  let r = null;
+  for (let k = p.row - 1; k >= G.camRow - BEHIND_LIMIT; k--) {
+    const l = lanes.get(k);
+    if (l && l.kind !== 'river' && l.kind !== 'lily') { r = k; break; }
+  }
+  if (r === null) return false;
   p.shield = false;
   p.mesh.userData.bubble.visible = false;
   p.safeT = SHIELD_TIME;
   sfx.eagle(); buzz(40);
-  burst(p.mesh.position.x, p.mesh.position.z, splashMat, 10);
-  let r = p.row - 1;
-  for (let k = p.row - 1; k >= p.row - 3; k--) {   // the nearest row behind with solid ground
-    const l = lanes.get(k);
-    if (l && l.kind !== 'river' && l.kind !== 'lily') { r = k; break; }
-  }
+  burst(p.mesh.position.x, p.mesh.position.z, SPLASH, 10);
   const tx = Math.max(-PLAY_HALF, Math.min(PLAY_HALF, Math.round(p.x)));
   p.hop = { t: 0, dur: HOP_TIME * 2, fromRow: p.row, fx: p.x, fz: p.mesh.position.z, tx, tz: -r, carry: null, carryX0: 0, span: 0 };
   p.queue = null; p.log = null; p.row = r;
+  return true;
 }
 function updateMagnet(p, dt) {
   p.magnetT = Math.max(0, p.magnetT - dt);
@@ -154,7 +158,7 @@ function tryMove(p, dx, dr) {
   p.combo = G.playT - p.lastHop < COMBO_GAP ? p.combo + 1 : 1;
   p.lastHop = G.playT;
   if (G.run) G.run.combo = Math.max(G.run.combo, p.combo);
-  if (p.combo >= COMBO_EVERY && p.combo % COMBO_EVERY === 0) { p.coins++; setBank(G.bank + 1); sfx.coin(); burst(p.x, -p.row, coinMat, 4); }
+  if (p.combo >= COMBO_EVERY && p.combo % COMBO_EVERY === 0) { addCoins(1); sfx.coin(); burst(p.x, -p.row, COIN_FX, 4); }
   setLabel(p);
   if (p.hop.dur > HOP_TIME) sfx.mud(); else sfx.hop(p.id);
   buzz(8);
@@ -163,42 +167,50 @@ function tryMove(p, dx, dr) {
 const DEATH_SOUND = { splash: sfx.splash, slow: sfx.fall, eagle: sfx.fall };
 function kill(p, cause) {
   if (!p.alive) return;
-  const hit = cause === 'squash' || cause === 'train' || cause === 'splash';
-  if (hit && p.safeT > 0) return;
-  if (hit && p.shield) { rescue(p); return; }
+  // just after a rescue cars and trains pass through you, but water still does not hold you up
+  if ((cause === 'squash' || cause === 'train') && p.safeT > 0) return;
+  if ((cause === 'squash' || cause === 'train' || cause === 'splash') && p.shield && rescue(p)) return;
   p.alive = false; p.cause = cause; p.hop = null;
   buzz(70);
   (DEATH_SOUND[cause] || sfx.squash)();
   const { x, z } = p.mesh.position;
   if (cause === 'squash') { p.mesh.position.y = 0; p.mesh.userData.body.scale.set(1.35, 0.15, 1.35); }
-  else if (cause === 'splash') burst(x, z, splashMat, 12);
-  else if (cause === 'slow') burst(x, z, dustMat, 8);
+  else if (cause === 'splash') burst(x, z, SPLASH, 12);
+  else if (cause === 'slow') burst(x, z, DUST, 8);
   checkOver();
 }
 
 // small particle bursts: water for splashes, dust when a player is left behind
 // the meshes are pooled: a death makes no garbage, so no collector pause
+// Every particle is an instance of one small white box, tinted per particle: one draw call for all of them.
+// The handles are pooled, so a burst makes no garbage.
 const parts = [], partPool = [];
-const partGeo = new THREE.BoxGeometry(0.14, 0.14, 0.14);
-const splashMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
-const dustMat = new THREE.MeshLambertMaterial({ color: 0xd8d2c4 });
-const coinMat = new THREE.MeshLambertMaterial({ color: COLORS.coin.face });
-function burst(x, z, material, count) {
+const SPLASH = 0xffffff, DUST = 0xd8d2c4, COIN_FX = COLORS.coin.face;
+const partBoxes = () => [[0.14, 0.14, 0.14, 0xffffff, 0, -0.07, 0]];
+function burst(x, z, color, count) {
   for (let i = 0; i < count; i++) {
-    const m = partPool.pop() || Object.assign(new THREE.Mesh(partGeo, material), { userData: { v: new THREE.Vector3() } });
-    m.material = material;
-    m.position.set(x, 0.1, z);
-    m.userData.v.set(fxRand(-2, 2), fxRand(3, 5), fxRand(-2, 2));
-    scene.add(m); parts.push(m);
+    const q = partPool.pop() || { inst: new Inst('part', partBoxes, false), x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0 };
+    q.inst.paint(color);
+    q.x = x; q.y = 0.1; q.z = z;
+    q.vx = fxRand(-2, 2); q.vy = fxRand(3, 5); q.vz = fxRand(-2, 2);
+    q.inst.set(x, 0.1, z);
+    parts.push(q);
   }
 }
+// effects only: runs once per drawn frame, not per game step
 function updateParts(dt) {
   for (let i = parts.length - 1; i >= 0; i--) {
-    const m = parts[i];
-    m.userData.v.y -= 14 * dt;
-    m.position.addScaledVector(m.userData.v, dt);
-    if (m.position.y < -1) { scene.remove(m); parts[i] = parts[parts.length - 1]; parts.pop(); partPool.push(m); }
+    const q = parts[i];
+    q.vy -= 14 * dt;
+    q.x += q.vx * dt; q.y += q.vy * dt; q.z += q.vz * dt;
+    if (q.y < -1) { q.inst.set(0, 0, 0, 0, false); parts[i] = parts[parts.length - 1]; parts.pop(); partPool.push(q); }
+    else q.inst.move(q.x, q.y, q.z);
   }
+}
+// coins from play go to the bank (saved at game over); a replay pays nothing
+function addCoins(n) {
+  if (G.run) G.run.coins += n;
+  if (!G.replay) setBank(G.bank + n, true);
 }
 
 function turnToward(m, target, dt) {
@@ -218,17 +230,14 @@ function animateDeath(p, dt) {
   }
 }
 function collectCoin(p, lane, x, coin) {
-  lane.group.remove(coin);
   lane.coins.delete(x);
-  coinMeshes.delete(coin);
+  dropSpinner(coin);
   const secret = lane.secret === x;
-  const value = secret ? 3 : 1;
-  p.coins += value;
-  setBank(G.bank + value);
-  if (G.run) { G.run.coins += value; if (secret) G.run.secrets++; }
+  addCoins(secret ? 3 : 1);
+  if (secret && G.run) G.run.secrets++;
   sfx.coin();
   buzz(15);
-  burst(x, -lane.r, coinMat, secret ? 14 : 6);
+  burst(x, -lane.r, COIN_FX, secret ? 14 : 6);
 }
 // returns false if the landing killed the player
 function land(p, lane) {
@@ -311,4 +320,4 @@ function updatePlayer(p, dt) {
   if (p.eagle) updateEagle(p, dt);
 }
 
-export { DEATH_SOUND, animateDeath, applyMoves, burst, charOf, checkHazards, coinMat, collectCoin, despawn, dustMat, giveShield, kill, land, moveQ, partGeo, parts, pickIndex, pickPower, players, queueMove, rescue, sendEagle, setLabel, spawn, splashMat, stand, stepHop, tryMove, turnToward, updateEagle, updateMagnet, updateParts, updatePlayer };
+export { charOf, despawn, restorePicks, giveShield, kill, players, queueMove, applyMoves, spawn, tryMove, updateParts, updatePlayer };

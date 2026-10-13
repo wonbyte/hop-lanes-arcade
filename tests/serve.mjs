@@ -12,9 +12,12 @@ const TYPES = {
 // serves `root` on 127.0.0.1 at a free port; returns { url, close }
 export function serve(root) {
   const server = http.createServer((req, res) => {
-    const rel = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+    let rel;
+    try { rel = decodeURIComponent(new URL(req.url, 'http://x').pathname); } catch { res.writeHead(400); res.end(); return; }
     const file = path.join(root, rel === '/' ? 'index.html' : rel);
-    if (!file.startsWith(root) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) { res.writeHead(404); res.end(); return; }
+    const out = path.relative(root, file);
+    if (out.startsWith('..') || path.isAbsolute(out)) { res.writeHead(403); res.end(); return; }
+    if ( !fs.existsSync(file) || fs.statSync(file).isDirectory()) { res.writeHead(404); res.end(); return; }
     res.writeHead(200, { 'Content-Type': TYPES[path.extname(file)] || 'application/octet-stream' });
     fs.createReadStream(file).pipe(res);
   });

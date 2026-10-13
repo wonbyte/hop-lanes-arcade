@@ -5,7 +5,7 @@ import { decodeReplay, encodeReplay } from '../js/replay.js';
 import { MISSIONS, advanceMissions, doneMissions, emptyStats, missionsText, parseMissions } from '../js/missions.js';
 
 test('replay: encode then decode gives the run back', () => {
-  const run = { seed: 4022250974, mode: 'daily', chars: ['frog', 'robot'], joined: [true, true],
+  const run = { seed: 4022250974, mode: 'daily', chars: ['frog', 'robot'], joined: [true, true], handicap: 2, startTick: 1234,
     events: [[12, 0, 0, 1], [12, 1, 0, 1], [40, 0, -1, 0], [41, 0, 1, 0], [300, 1, 0, -1]] };
   const code = encodeReplay(run);
   assert.match(code, /^[\w-]+$/, 'url safe');
@@ -15,9 +15,14 @@ test('replay: encode then decode gives the run back', () => {
 test('replay: bad input is null, not a crash', () => {
   assert.equal(decodeReplay('***'), null);
   assert.equal(decodeReplay(''), null);
-  assert.equal(decodeReplay(btoa('9|1|classic|frog,fox|1|')), null, 'wrong version');
-  assert.equal(decodeReplay(btoa('1|x|classic|frog,fox|1|')), null, 'bad seed');
-  assert.equal(decodeReplay(btoa('1|1|classic|frog,fox|1|zzzzzzzz')), null, 'junk events');
+  assert.equal(decodeReplay(btoa('9|1|classic|frog,fox|1|0|0|')), null, 'wrong version');
+  assert.equal(decodeReplay(btoa('2|x|classic|frog,fox|1|0|0|')), null, 'bad seed');
+  assert.equal(decodeReplay(btoa('2|1|classic|frog,fox|1|0|0|zzzzzzzz')), null, 'junk events');
+  assert.equal(decodeReplay(btoa('2|1|zzz|frog,fox|1|0|0|')), null, 'unknown mode');
+  assert.equal(decodeReplay(btoa('2|1|classic|frog,fox|0|0|0|')), null, 'nobody joined');
+  assert.equal(decodeReplay(btoa('2|1|classic|frog,fox|1|7|0|')), null, 'bad handicap');
+  assert.equal(decodeReplay(btoa('2|1|classic|frog,fox|1|0|0|999999999aU')), null, 'tick past an hour');
+  assert.deepEqual(decodeReplay(btoa('2|1|race|frog,fox|3|1|50|5aU')).events, [[5, 0, 0, 1]]);
 });
 
 test('missions: parse, done, advance, never repeat an active one', () => {

@@ -43,7 +43,7 @@ test('empty list, CORS, 404, preflight', async () => {
 test('valid scores are ordered; invalid are rejected', async () => {
   for (const [name, score] of [['Ann', 50], ['  Bob 2  ', 90], ['Cy', 70]]) assert.equal((await post({ name, score })).status, 200);
   const bad = [{ name: '', score: 1 }, { name: 'x'.repeat(17), score: 1 }, { name: 'a!b', score: 1 },
-    { name: 'Ok', score: -1 }, { name: 'Ok', score: 1.5 }, { name: 'Ok', score: '5' }, { name: 'Ok', score: 100001 }, { name: 5, score: 1 }];
+    { name: 'Ok', score: -1 }, { name: 'Ok', score: 1.5 }, { name: 'Ok', score: '5' }, { name: 'Ok', score: 5001 }, { name: 5, score: 1 }];
   for (const b of bad) assert.equal((await post(b)).status, 400, JSON.stringify(b));
   assert.equal((await post(null, 'not json')).status, 400);
   assert.equal((await post({ name: 'Big', score: 1, pad: 'x'.repeat(2000) })).status, 400, 'body limit');
@@ -96,4 +96,42 @@ test('POST_TOKEN: required on POST only, allowed in preflight', async () => {
   const o = await fetch(url, { method: 'OPTIONS' });
   assert.equal(o.status, 204);
   assert.match(o.headers.get('access-control-allow-headers'), /X-Hop-Token/);
+});
+
+test('one entry per name per bucket: lower post ignored, higher replaces; 5001 rejected', async () => {
+  const srv = await start({ RATE_MAX: '1000' });
+  const sp = b => fetch(srv.base + '/scores', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
+  const names = async q => (await (await fetch(srv.base + '/scores' + q)).json()).top.map(e => [e.name, e.score]);
+  assert.equal((await sp({ name: 'Dup', score: 100 })).status, 200);
+  assert.equal((await sp({ name: 'Dup', score: 50 })).status, 200);
+  assert.deepEqual(await names(''), [['Dup', 100]]);
+  assert.equal((await sp({ name: 'Dup', score: 150 })).status, 200);
+  assert.deepEqual(await names(''), [['Dup', 150]]);
+  assert.equal((await sp({ name: 'Dup', score: 10, mode: 'race' })).status, 200, 'other bucket is separate');
+  assert.equal((await names('')).length, 2);
+  assert.equal((await sp({ name: 'Max', score: 5000 })).status, 200);
+  assert.equal((await sp({ name: 'Max', score: 5001 })).status, 400);
+});
+
+test('old flat scores.json loads; day buckets older than 14 days expire', async () => {
+  const file = path.join(dir, 'old.json');
+  fs.writeFileSync(file, JSON.stringify([{ name: 'Old', score: 9, at: 'x' }]));
+  const srv = await start({ RATE_MAX: '1000', DATA_FILE: file });
+  const sp = b => fetch(srv.base + '/scores', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
+  assert.equal((await (await fetch(srv.base + '/scores')).json()).top[0].name, 'Old');
+  await sp({ name: 'A', score: 1, day: '2026-01-01' });
+  await sp({ name: 'B', score: 1, day: '2026-01-20' });
+  const all = (await (await fetch(srv.base + '/scores')).json()).top.map(e => e.name).sort();
+  assert.deepEqual(all, ['B', 'Old']);
+});
+
+test('tests/serve.mjs: bad escape gives 400, traversal is not served', async () => {
+  const { serve } = await import('./serve.mjs');
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const s = await serve(root);
+  try {
+    assert.equal((await fetch(s.url + '/%E0%A4%A')).status, 400);
+    assert.equal((await fetch(s.url + '/package.json')).status, 200);
+    assert.ok([403, 404].includes((await fetch(s.url + '/%2e%2e/%2e%2e/etc/passwd')).status));
+  } finally { await s.close(); }
 });

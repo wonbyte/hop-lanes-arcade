@@ -7,9 +7,10 @@ Dependency-free Node 20 server for an online top-10 list.
 | Env | Default | Meaning |
 |-----|---------|---------|
 | `PORT` | `8787` | listen port |
-| `DATA_FILE` | `server/scores.json` | JSON store (max 1000 entries) |
+| `DATA_FILE` | `server/scores.json` | JSON store (see limits below) |
 | `ALLOW_ORIGIN` | `*` | CORS `Access-Control-Allow-Origin`; set it to the game origin in production |
 | `POST_TOKEN` | empty | when set, POSTs must send it in the `X-Hop-Token` header |
+| `MAX_SCORE` | `5000` | highest accepted score (override is meant for tests) |
 
 ## Endpoints
 
@@ -24,7 +25,14 @@ Per-day boards: POST may also carry `day` (string `YYYY-MM-DD`) and `mode` (`cla
     curl 'http://localhost:8787/scores?day=2026-01-01&mode=daily'
     # {"top":[{"name":"Ann","score":120,"at":"2026-01-01T00:00:00.000Z","day":"2026-01-01","mode":"daily"}]}
 
-POST rules: name 1-16 chars (letters, digits, spaces), score integer 0..100000, body at most 1 KB, 10 POSTs/min per IP (429 after that). If `POST_TOKEN` is set, POST must carry the header `X-Hop-Token` with that value, else 401 `{"error":"bad token"}` (checked before the rate limit, so junk posts do not use up the budget); GET is unaffected. Bad input returns 400, other paths 404.
+POST rules: name 1-16 chars (letters, digits, spaces), score integer 0..5000 (`MAX_SCORE`; 5001 gets 400), `day` no later than tomorrow (UTC), body at most 1 KB, 10 POSTs/min per IP (429 after that). If `POST_TOKEN` is set, POST must carry the header `X-Hop-Token` with that value, else 401 `{"error":"bad token"}` (checked before the rate limit, so junk posts do not use up the budget); GET is unaffected. Bad input returns 400, other paths 404.
+
+Storage limits, so a flood of fake scores cannot wipe the board:
+
+- A bucket is `mode|day` (day empty when absent). Each bucket keeps at most 200 entries (the highest); other buckets are untouched.
+- One entry per name per bucket. A new post for an existing name replaces it only if its score is higher; otherwise it is ignored (still 200).
+- Day buckets more than 14 days older than the newest day seen are dropped, so the file cannot grow forever. Buckets without a day never expire.
+- An old `scores.json` (flat array) loads as is and is compacted by these rules on start.
 
 ## Wiring the game
 

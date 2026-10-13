@@ -8,7 +8,7 @@ except the small offline build script. Keep it that way.
 | Command | What it does |
 |---|---|
 | `npm install` | Installs Playwright and Three.js (test and build only; the game itself has no dependencies) |
-| `npm test` | Syntax check, `tests/rules.test.mjs` (pure rules, instant), then the browser tests `smoke`, `layout`, `ui` and `scores-server` (~5 min) |
+| `npm test` | Syntax check, `tests/rules.test.mjs` and `tests/replay.test.mjs` (pure code, instant), then the browser tests `smoke`, `layout`, `ui` and `scores-server` (~6 min) |
 | `npm run check` | Syntax check only (fast) |
 | `npm run build` | Regenerates `hop-lanes-standalone.html` (python3, no network). Fails over 800 KB. CI fails if this file is stale |
 | `npm run build:three` | Regenerates `vendor/three.min.js` with esbuild from `tools/three-entry.js` (the Three.js names the game uses). CI fails if stale |
@@ -21,7 +21,7 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
 
 | Path | Role |
 |---|---|
-| `index.html` | Markup only. The Content-Security-Policy meta is strict: `script-src 'self'`, no inline scripts or styles |
+| `index.html` | Markup only. The Content-Security-Policy meta is strict: `script-src 'self'`, no inline scripts or styles. A `modulepreload` link per module (add one for a new module) |
 | `vendor/three.min.js` | Generated: a tree-shaken Three.js r128 (501 KB) exposing only the names the game uses as `window.THREE`. Add a name to `tools/three-entry.js` before using a new THREE class |
 | `css/style.css` | All styles. Media queries: `max-width: 520px` (phones), `max-width: 340px` (tiny phones), `orientation: landscape` (phone held sideways) |
 | `js/main.js` | Entry. Checks `window.THREE`, then `import('./app.js')` |
@@ -53,6 +53,11 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
 - World generation uses `worldRng` (seeded). Effects use `fxRand` / `Math.random`, so seeds stay stable.
 - The game steps at a fixed rate (`STEP`) and hops are queued to step boundaries, so replays are exact. Anything that
   changes the outcome of a run must be deterministic: seeded (`worldRng`, per-lane `lane.rng` for trains) or step-driven.
+  Traffic and trains are a function of the world clock `G.worldTick` (reset when the world is built), never of frames
+  or build time; a replay stores `startTick` (the world tick play began on) and the handicap.
+- A replay pays no coins, sets no records and takes no input except restart (`G.replay` checks in players, screens, input).
+- Coins during play go through `setBank(n, true)` and are saved at game over or when the tab hides (`flushBank`).
+- Per-frame (not per-step) work: `placeCamera`, `spinAll` (coins), `updateParts` (particles). Gameplay never goes there.
 - User-facing text goes through `t()` (keys are the English strings). Add new strings to the ES and DE tables in `js/i18n.js`.
 - New module names must be unique across all modules: the offline build concatenates them into one scope.
   A module with only side effects must be imported explicitly in `js/app.js`.
@@ -64,7 +69,7 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
 ## Testing hooks
 
 - `index.html#debug` exposes `window.hopLanes` (`players`, `state`, `camRow` (settable: jump the view to a far row), `seed`, `bank`, `muted`, `drawCalls`, `run` (mission stats), `record` (this run's hops), `replay`, `weather`, `laneCoins(r)`, `laneKinds()`).
-- `#replay-<code>` (or `#debug-replay-<code>`) plays a run back; smoke test 5c checks the replay ends where the run did.
+- `#replay-<code>` (or `#debug-replay-<code>`) plays a run back; smoke test 5c runs into traffic after waiting on the title, then replays it on a phone-sized screen and checks it ends on the same tick, row and cause. 5d checks the shield and the water rule (`hopLanes.kill`, `hopLanes.giveShield`).
 - `#seed-42` or `#debug-seed-42` makes the world deterministic.
 - Tests set `localStorage['hoplanes.howto'] = '1'` before load so the first-run help does not swallow the first tap.
 - Headless runs use SwiftShader; it is slow. Wait on state with `waitForFunction`, not fixed sleeps.
@@ -72,14 +77,15 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
 - `tests/ui.test.mjs` drives the shop, prize machine, modes, share and confetti through the real DOM (ids: `#mode`, `#prize`, `#share`, `#card1 .cyc`, `#tap1`).
 - Lane kinds: grass, road (police variant past difficulty 0.3), river, lily (pads; water kills), mud (from row 13; a hop out of it is slow), rail. Night fades in from row 90.
 - The eagle warns (`sfx.warn`) 1.5 s before it swoops; a new best shows in `#resBest`; the install hint `#install` shows only on the served page, once.
-- Power-ups: `lane.power` (shield or magnet) on grass, road and mud past row 10. A hidden coin column is `lane.secret` on grass. The boss train is `lane.boss` (first rail past each 100 rows). Weather is `weatherAt(r)` per 40-row chunk (rain; snow in December).
+- Power-ups: `lane.power` (shield or magnet) on grass, road and mud past row 10. A hidden coin column is `lane.secret` on grass. The boss train is `lane.boss` (first rail past each 100 rows). Weather is `weatherAt(r)` per 40-row chunk (rain; snow in December, which only changes the look).
 
 ## Gotchas
 
 - Vehicle and character models face `-x` / `-z`; rotations were inverted once. Check the screenshot, not the math.
 - The draw loop caps at 60 draws/s on fast screens; judge performance from drawn frames only (`watchFrameTime`).
 - The quality ladder must not change `renderer.shadowMap.type`: that rebuilds every shader mid-game (a visible hitch).
-- Vehicles, logs and trains are instanced (`Inst` in `world.js`): one draw call per model. The paint color is a per-instance
+- Vehicles, logs, trains, coins, power-ups and particles are instanced (`Inst` in `world.js`): one draw call per model.
+  `inst.move()` writes only the position; `showLane()` hides a far lane's instances. The paint color is a per-instance
   tint that applies only to pure white (`0xffffff`) boxes, so no other box in an instanced model may be pure white.
   Every fleet mesh carries `instanceColor`: r128 picks the shader per material, so a mesh without it would crash.
 - `near()`, `visRows` and `firstNeededRow()` decide which rows exist and sound; keep them in step with the camera.

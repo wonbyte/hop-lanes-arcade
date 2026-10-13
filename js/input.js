@@ -11,17 +11,19 @@ function press(i, dx, dr) {
   audio();
   if (G.restarting || hideHowto()) return;
   if (G.state === 'paused') { resumeGame(); return; }
-  if (G.state === 'attract' || G.state === 'countdown') join(i);
+  if (canRestart()) restart(i);
+  else if (G.replay) return;   // a replay plays itself: no joins, no hops, until it is over
+  else if (G.state === 'attract' || G.state === 'countdown') join(i);
   else if (G.state === 'play') { if (players[i].joined) queueMove(i, dx, dr); }
-  else if (canRestart()) restart(i);
 }
 function pressStart() {
   audio();
   if (G.restarting || hideHowto()) return;
   if (G.state === 'paused') { resumeGame(); return; }
-  if (G.state === 'attract') join(0);
+  if (canRestart()) restart();
+  else if (G.replay) return;
+  else if (G.state === 'attract') join(0);
   else if (G.state === 'countdown') G.countdown = Math.min(G.countdown, 0.01);
-  else if (canRestart()) restart();
 }
 
 const KEYS = {
@@ -112,7 +114,11 @@ function padEdge(key, on) {
   padPrev.set(key, on);
   return on && !was;
 }
+// nothing to read until a pad has said hello (browsers fire this on its first button press)
+let padSeen = false;
+window.addEventListener('gamepadconnected', () => { padSeen = true; });
 function pollGamepads() {
+  if (!padSeen) return;
   let pads;
   try { pads = navigator.getGamepads ? navigator.getGamepads() : []; } catch (e) { return; }
   if (!pads) return;

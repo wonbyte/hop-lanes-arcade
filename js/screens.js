@@ -1,14 +1,13 @@
-import { audio, sfx, startTune, stopTune } from './audio.js';
+import { audio, isMuted, setMuted, sfx, startTune, stopTune } from './audio.js';
 import { $, COUNTDOWN, G, GO_TIME, MODES, PRIZE_COST, SCORES_TOKEN, SCORES_URL, WIPE_MS } from './core.js';
 import { nextLang, setLang, t } from './i18n.js';
 import { MISSIONS, MISSION_REWARD, advanceMissions, doneMissions, emptyStats, missionsText, parseMissions } from './missions.js';
 import { encodeReplay } from './replay.js';
-import { hashString } from './rules.js';
 import { keepAwake } from './device.js';
 import { reduceMotion, resetFrameWatch, touchQuery } from './gfx.js';
 import { CHARACTERS, PIX, PRIZES, drawPix, isOwned } from './models.js';
-import { charOf, despawn, players, spawn } from './players.js';
-import { BEST_KEY, DAILY_KEY, HANDICAP_KEY, HOWTO_KEY, INSTALL_KEY, MISSIONS_KEY, MODE_KEY, OWNED_KEY, PICK_KEY, ROOM_KEY, dayKey, load, loadText, owned, refreshBests, save, setBank } from './storage.js';
+import { charOf, despawn, players, restorePicks, spawn } from './players.js';
+import { BEST_KEY, DAILY_KEY, HANDICAP_KEY, HOWTO_KEY, INSTALL_KEY, MISSIONS_KEY, MODE_KEY, OWNED_KEY, PICK_KEY, ROOM_KEY, dayKey, flushBank, load, loadText, owned, refreshBests, save, setBank } from './storage.js';
 import { getSeed, resetWorld } from './world.js';
 
 // Screens and flow: join cards and the shop, countdown, results, restart, pause, first-run help, online scores.
@@ -57,12 +56,15 @@ const setCards = () => { setCard(0); setCard(1); menu.hidden = G.state !== 'attr
 
 // ---------- title menu: game mode, room code, prize machine, handicap, language, missions ----------
 const MODE_TEXT = { classic: 'MODE: CLASSIC', race: 'MODE: RACE', daily: 'MODE: DAILY' };
+const setModeLabel = () => { $('mode').textContent = G.mode === 'room' ? t('ROOM: {code}', { code: G.room }) : t(MODE_TEXT[G.mode]); };
 function setMode(mode) {
   G.mode = mode;
   save(MODE_KEY, mode);
-  $('mode').textContent = mode === 'room' ? t('ROOM: {code}', { code: G.room }) : t(MODE_TEXT[mode]);
+  setModeLabel();
   if (G.state === 'attract') resetWorld();   // daily and room modes have their own seeds
 }
+// the saved mode (a replay may have shown another one)
+const savedMode = () => MODES.includes(loadText(MODE_KEY)) && (loadText(MODE_KEY) !== 'room' || G.room) ? loadText(MODE_KEY) : 'classic';
 // room mode: two phones that enter the same code play the same world (seed = the code)
 const randomCode = () => Array.from({ length: 4 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ'[Math.floor(Math.random() * 24)]).join('');
 function askRoom() {
@@ -110,7 +112,7 @@ function payMissions() {   // at game over: which missions this run finished; re
 }
 // everything that shows text in the current language
 function refreshTexts() {
-  setMode(G.mode); updatePrize(); setHandicap(G.handicap); showMissions(); setCards();
+  setModeLabel(); updatePrize(); setHandicap(G.handicap); showMissions(); setCards(); setMuted(isMuted());
   if (G.state === 'over') $('share').textContent = t('SHARE');
 }
 let menuNote = 0;
@@ -136,7 +138,7 @@ function prizeMachine() {
 }
 $('mode').addEventListener('click', () => { audio(); cycleMode(); });
 $('prize').addEventListener('click', () => { audio(); prizeMachine(); });
-setMode(G.mode);
+setModeLabel();   // the world is built once, by toAttract at boot
 updatePrize();
 setHandicap(G.handicap);
 showMissions();
@@ -164,6 +166,7 @@ const shareScore = () => shareOut($('share'), shareText, true);
 $('share').addEventListener('click', shareScore);
 $('replayBtn').addEventListener('click', () => shareOut($('replayBtn'), replayText, false));
 const confettiBox = $('confetti');
+let confettiTimer = 0;
 function confetti() {
   if (reduceMotion) return;
   const colors = ['#ffd84a', '#4fb8ff', '#ff6f5a', '#4cbf3f', '#f7b9c4', '#ffffff'];
@@ -176,7 +179,8 @@ function confetti() {
     el.style.animationDuration = 1.8 + Math.random() * 1.2 + 's';
     confettiBox.appendChild(el);
   }
-  setTimeout(() => { confettiBox.textContent = ''; }, 6000);
+  clearTimeout(confettiTimer);   // a quick second game keeps its own confetti
+  confettiTimer = setTimeout(() => { confettiBox.textContent = ''; }, 6000);
 }
 
 function toAttract() {
@@ -199,9 +203,11 @@ function toAttract() {
 const wipe = $('wipe');
 function restart(joinPlayer) {
   if (G.restarting) return;
-  if (G.replay) {   // the replay has played: the next game is a normal one
+  if (G.replay) {   // the replay has played: the next game is a normal one, in the player's own mode and animals
     G.replay = null;
     try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+    G.mode = savedMode(); setModeLabel();
+    restorePicks();
   }
   G.restarting = true;
   wipe.classList.add('on');
@@ -232,7 +238,9 @@ function join(i) {
 function startPlay() {
   G.state = 'play'; G.playT = 0; G.playTick = 0; G.goT = GO_TIME; sfx.go();
   G.run = emptyStats(); G.record = [];
-  if (G.replay) G.replay.i = 0;
+  // the world clock at the start is part of the run: a replay starts on the same tick
+  if (G.replay) { G.replay.i = 0; G.worldTick = G.replay.startTick; }
+  G.startTick = G.worldTick;
   $('app').classList.add('playing');
   resetFrameWatch();
   keepAwake(true);
@@ -248,6 +256,7 @@ function checkOver() {
   const race = G.mode === 'race' && both && players.some(p => p.joined && !p.alive);
   if (!race && players.some(p => p.joined && p.alive)) return;
   G.state = 'over'; G.stateT = 0;
+  flushBank();
   $('app').classList.remove('playing');
   keepAwake(false);
   setBanner('');
@@ -274,7 +283,7 @@ function checkOver() {
   shareText = t('I scored {n} in Hop Lanes as {name}!', { n: top, name: t(charOf(hero).name) }) + (G.mode === 'room' ? ' ' + t('Room {code}', { code: G.room }) + '.' : '') + ' ' + page;
   // the replay link: the seed, the animals and every hop of this run
   const canReplay = !replay && G.record.length && location.protocol !== 'file:';
-  if (canReplay) replayText = page + '#replay-' + encodeReplay({ seed: getSeed(), mode: G.mode, chars: [charOf(p1).key, charOf(p2).key], joined: [p1.joined, p2.joined], events: G.record });
+  if (canReplay) replayText = page + '#replay-' + encodeReplay({ seed: getSeed(), mode: G.mode, chars: [charOf(p1).key, charOf(p2).key], joined: [p1.joined, p2.joined], handicap: G.handicap, startTick: G.startTick, events: G.record });
   $('replayBtn').hidden = !canReplay;
   // a new best gets its own big line, a jingle and (all time) confetti
   const best = top >= 1 && /^NEW .*BEST!/.exec(note.replace(/^.*\. /, ''));
@@ -286,8 +295,8 @@ function checkOver() {
   } else sfx.over();
   if (!replay) note = payMissions() + note;
   $('res1').hidden = !p1.joined; $('res2').hidden = !p2.joined;
-  $('res1').querySelector('span').textContent = charOf(p1).name;
-  $('res2').querySelector('span').textContent = charOf(p2).name;
+  $('res1').querySelector('span').textContent = t(charOf(p1).name);
+  $('res2').querySelector('span').textContent = t(charOf(p2).name);
   $('world').hidden = true;
   if (!replay) postScore(charOf(hero).name, top);
   $('res1').querySelector('b').textContent = p1.score;
@@ -321,7 +330,7 @@ async function postScore(name, score) {
 let pausedFrom = '';
 function pauseGame() {
   if (G.state !== 'play' && G.state !== 'countdown') return;
-  pausedFrom = G.state; G.state = 'paused';
+  pausedFrom = G.state; G.state = 'paused'; G.redraw = true;
   keepAwake(false);
   setBanner(t('PAUSED'), t(touchQuery.matches ? 'TAP TO CONTINUE' : 'PRESS ANY KEY'));
 }
@@ -373,4 +382,4 @@ function hideHowto() {
 }
 $('gotit').addEventListener('click', hideHowto);
 
-export { askRoom, banner, bannerH, bannerKey, bannerP, checkOver, confetti, cycleChar, cycleMode, hideHowto, howto, join, joinText, menu, pads, pauseGame, pausedFrom, payMissions, postScore, prizeMachine, refreshTexts, restart, resultsEl, resumeGame, setBanner, setCard, setCards, setHandicap, setMode, shakeCard, shareOut, shareScore, showHowto, showMissions, startPlay, toAttract, updatePrize, wipe };
+export { setModeLabel, askRoom, banner, bannerH, bannerKey, bannerP, checkOver, confetti, cycleChar, cycleMode, hideHowto, howto, join, joinText, menu, pads, pauseGame, pausedFrom, payMissions, postScore, prizeMachine, refreshTexts, restart, resultsEl, resumeGame, setBanner, setCard, setCards, setHandicap, setMode, shakeCard, shareOut, shareScore, showHowto, showMissions, startPlay, toAttract, updatePrize, wipe };

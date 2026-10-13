@@ -46,6 +46,9 @@ const G = {
   bank: 0,             // coins collected over all games (set by storage.js)
   bestAll: 0,          // all-time best score (set by storage.js)
   tick: 0,             // fixed steps since boot
+  worldTick: 0,        // fixed steps since the world was built: traffic and trains run on this
+  startTick: 0,        // worldTick when play began (saved in replays)
+  redraw: false,       // paused: draw one frame (the pause banner, a resize)
   playTick: 0,         // fixed steps since play began (replay time base)
   record: [],          // this run's hops: [playTick, player, dx, dr]
   replay: null,        // a decoded replay being played back, or null

@@ -57,7 +57,7 @@ blocks = {'script': [three, game], 'style': [css]}
 html = swap(r'<link rel="stylesheet" href="css/style\.css">', '<style>\n' + css + '</style>', html, 'the css link')
 html = swap(r'<script src="vendor/three\.min\.js"></script>', '<script>\n' + three + '</script>', html, 'the Three.js tag')
 html = swap(r'<script type="module" src="js/main\.js"></script>', '<script>\n' + game + '</script>', html, 'the game script tag')
-html = re.sub(r'<link rel="(?:preconnect|preload|manifest|apple-touch-icon)"[^>]*>\n|<meta name="(?:hop-lanes-scores|hop-lanes-token|mobile-web-app-capable|apple-mobile-web-app-[a-z-]+)"[^>]*>\n|<!--[^>]*-->\n', '', html)
+html = re.sub(r'<link rel="(?:preconnect|preload|modulepreload|manifest|apple-touch-icon)"[^>]*>\n|<meta name="(?:hop-lanes-scores|hop-lanes-token|mobile-web-app-capable|apple-mobile-web-app-[a-z-]+)"[^>]*>\n|<!--[^>]*-->\n', '', html)
 # the icon file can not be reached from a single offline file: inline it
 html = swap(r'<link rel="icon"[^>]*>', '<link rel="icon" type="image/png" href="' + ICON_DATA_URI + '">', html, 'the icon link')
 

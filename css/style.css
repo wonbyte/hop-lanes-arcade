@@ -130,19 +130,24 @@ body {
   position: absolute; z-index: 5; left: 50%; transform: translateX(-50%); top: calc(var(--marquee-h, 74px) + 8px);
   padding: 4px 10px; border-radius: 8px; background: rgba(216,58,58,.85); color: #fff; font-family: var(--font-pixel); font-size: 9px; letter-spacing: .1em;
 }
-/* weather: rain streaks and snow flakes drawn with gradients, no images */
-#weather { position: absolute; inset: 0; z-index: 2; pointer-events: none; opacity: 0; transition: opacity 1s; }
-#weather.rain {
-  opacity: .5; background: repeating-linear-gradient(100deg, transparent 0 14px, rgba(220,235,255,.45) 14px 15px, transparent 15px 26px);
+/* weather: rain streaks and snow flakes drawn with gradients, no images. The pattern sits on an oversized
+   layer that moves with transform (done by the compositor), so the screen is not repainted every frame. */
+#weather { position: absolute; inset: 0; z-index: 2; pointer-events: none; opacity: 0; transition: opacity 1s; overflow: hidden; }
+#weather::before { content: ''; position: absolute; inset: -280px -140px; will-change: transform; }
+#weather.rain { opacity: .5; }
+#weather.rain::before {
+  background: repeating-linear-gradient(100deg, transparent 0 14px, rgba(220,235,255,.45) 14px 15px, transparent 15px 26px);
   background-size: 60px 140px; animation: rain .5s linear infinite;
 }
-#weather.snow {
-  opacity: .8; background: radial-gradient(circle, #fff 1.5px, transparent 2px) 0 0 / 46px 46px, radial-gradient(circle, #fff 1px, transparent 1.6px) 23px 23px / 70px 70px;
-  animation: snow 6s linear infinite;
+#weather.snow { opacity: .8; }
+#weather.snow::before {
+  background: radial-gradient(circle, #fff 1.5px, transparent 2px) 0 0 / 46px 46px, radial-gradient(circle, #fff 1px, transparent 1.6px) 23px 23px / 69px 69px;
+  animation: snow 18s linear infinite;
 }
-@keyframes rain { to { background-position: -40px 140px; } }
-@keyframes snow { to { background-position: 20px 46px, 43px 93px; } }
-@media (prefers-reduced-motion: reduce) { #weather.rain, #weather.snow { animation: none; } }
+/* each loop moves the layer by whole tiles, so it repeats without a jump (rain 60x140; snow 46 and 69: 138 is a multiple of both) */
+@keyframes rain { to { transform: translate(-60px, 140px); } }
+@keyframes snow { to { transform: translate(0, 138px); } }
+@media (prefers-reduced-motion: reduce) { #weather.rain::before, #weather.snow::before { animation: none; } }
 #share, #replayBtn { margin-top: 4px; }
 #shareText {
   width: 100%; box-sizing: border-box; margin-top: 8px; padding: 8px; border: 0; border-radius: 8px; resize: none;
@@ -206,7 +211,7 @@ body {
 #results .row b { font-size: clamp(20px, 6vw, 34px); font-variant-numeric: tabular-nums; }
 #results .r1 { color: var(--p1-glow); } #results .r2 { color: var(--p2-glow); }
 #results p { margin: 0; font-size: clamp(8px, 2.2vw, 11px); line-height: 1.8; }
-#resBest { font-size: clamp(11px, 3.4vw, 18px); color: var(--gold); animation: pop .9s ease-out both, glow 1.2s ease-in-out .9s infinite alternate; }
+#resBest { font-size: clamp(11px, 3.4vw, 18px); color: var(--gold); animation: pop .9s ease-out both, glow 1.2s ease-in-out .9s 4 alternate; }
 @keyframes pop { 0% { transform: scale(.3); opacity: 0; } 60% { transform: scale(1.25); opacity: 1; } 100% { transform: scale(1); } }
 @keyframes glow { from { text-shadow: 0 0 4px rgba(255,216,74,.4); } to { text-shadow: 0 0 16px rgba(255,216,74,.95); } }
 @media (prefers-reduced-motion: reduce) { #resBest { animation: none; } }

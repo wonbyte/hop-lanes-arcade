@@ -74,6 +74,7 @@ function resize() {
   const sc = sun.shadow.camera;
   sc.left = -(halfW + 2); sc.right = halfW + 2;
   sc.updateProjectionMatrix();
+  G.redraw = true;   // a paused game draws one new frame at the new size
 }
 if ('ResizeObserver' in window) {
   // the stage and the top bar both change size when fonts load or the phone turns

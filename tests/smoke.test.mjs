@@ -224,33 +224,64 @@ test('5b. draw calls stay low far into the world (instanced traffic)', async () 
   } finally { await context.close(); }
 });
 
-test('5c. a replay link plays the same run again', async () => {
+test('5c. a replay link plays the same run again, across traffic, on another screen size', async () => {
+  const { context, page, errors } = await open({ viewport: { width: 1280, height: 800 } }, `${INDEX}#debug-seed-42`);
+  const snap = () => page.evaluate(() => { const h = window.hopLanes, p = h.players[0]; return { row: p.row, score: p.score, cause: p.cause, x: Math.round(p.x * 1000), seed: h.seed, tick: h.playTick }; });
+  let first, code, bank;
+  try {
+    await waitState(page, 'attract');
+    await page.waitForTimeout(1500);   // traffic runs on the title screen: the replay must not depend on how long
+    await page.keyboard.press('KeyW');
+    await waitState(page, 'play');
+    // run forward into roads, rivers and rails until something ends the run
+    for (let i = 0; i < 40 && (await page.evaluate(() => window.hopLanes.state)) === 'play'; i++) {
+      await page.keyboard.press(i % 7 === 3 ? 'KeyD' : i % 7 === 6 ? 'KeyA' : 'KeyW');
+      await page.waitForTimeout(220);
+    }
+    await page.waitForFunction(() => window.hopLanes.state === 'over', null, { timeout: 90000 });
+    first = await snap();
+    const run = await page.evaluate(() => ({ record: window.hopLanes.record, startTick: window.hopLanes.startTick }));
+    assert.ok(run.record.length >= 3, 'hops recorded');
+    assert.ok(run.startTick > 0, 'the world ran before play began');
+    assert.ok(first.row >= 4, 'the run left the starting grass: row ' + first.row);
+    code = encodeReplay({ seed: first.seed, mode: 'classic', chars: ['frog', 'fox'], joined: [true, false], handicap: 0, startTick: run.startTick, events: run.record });
+    assert.deepEqual(errors, []);
+  } finally { await context.close(); }
+  // a phone-sized screen builds lanes in another order and at other times: the run must not change
+  const again = await open({ viewport: { width: 390, height: 760 } }, `${INDEX}#debug-replay-${code}`);
+  try {
+    await again.page.waitForFunction(() => window.hopLanes && window.hopLanes.state === 'countdown', null, { timeout: T });
+    bank = await again.page.evaluate(() => window.hopLanes.bank);
+    await again.page.keyboard.press('ArrowUp');   // a key press must not add a player to a replay
+    await again.page.waitForFunction(() => window.hopLanes.state === 'over', null, { timeout: 120000 });
+    const second = await again.page.evaluate(() => { const h = window.hopLanes, p = h.players[0]; return { row: p.row, score: p.score, cause: p.cause, x: Math.round(p.x * 1000), seed: h.seed, tick: h.playTick }; });
+    assert.deepEqual(second, first, 'the replay ends where and when the run ended');
+    assert.equal(await again.page.evaluate(() => window.hopLanes.players[1].joined), false, 'no extra player');
+    assert.equal(await again.page.evaluate(() => window.hopLanes.bank), bank, 'a replay pays no coins');
+    assert.match(await again.page.locator('#resTitle').textContent(), /REPLAY OVER/);
+    assert.deepEqual(again.errors, []);
+  } finally { await again.context.close(); }
+});
+
+test('5d. shield and safe time: one free hit, but water never holds you', async () => {
   const { context, page, errors } = await open({}, `${INDEX}#debug-seed-42`);
-  let first, code;
   try {
     await waitState(page, 'attract');
     await page.keyboard.press('KeyW');
     await waitState(page, 'play');
-    // a few hops (a tree may block one: then step aside), then the eagle ends the run
-    for (const key of ['KeyW', 'KeyD', 'KeyW', 'KeyA', 'KeyW']) { await page.keyboard.press(key); await page.waitForTimeout(400); }
-    await page.waitForFunction(() => window.hopLanes.state === 'over', null, { timeout: 90000 });
-    first = await page.evaluate(() => { const p = window.hopLanes.players[0]; return { row: p.row, score: p.score, cause: p.cause, x: p.x, seed: window.hopLanes.seed }; });
-    const record = await page.evaluate(() => window.hopLanes.record);
-    assert.equal(record.length, 5, 'every press is recorded');
-    assert.ok(first.row >= 1, 'the player moved');
-    code = encodeReplay({ seed: first.seed, mode: 'classic', chars: ['frog', 'fox'], joined: [true, false], events: record });
+    const r = await page.evaluate(() => {
+      const h = window.hopLanes, p = h.players[0];
+      h.giveShield(p);
+      h.kill(p, 'squash');
+      const saved = { alive: p.alive, shield: p.shield, safe: p.safeT > 0 };
+      h.kill(p, 'squash');                    // in the safe time a car passes through
+      const passed = p.alive;
+      h.kill(p, 'splash');                    // but water does not hold you up
+      return { saved, passed, drowned: !p.alive, cause: p.cause };
+    });
+    assert.deepEqual(r, { saved: { alive: true, shield: false, safe: true }, passed: true, drowned: true, cause: 'splash' });
     assert.deepEqual(errors, []);
   } finally { await context.close(); }
-  const again = await open({}, `${INDEX}#debug-replay-${code}`);
-  try {
-    await again.page.waitForFunction(() => window.hopLanes && window.hopLanes.state === 'countdown', null, { timeout: T });
-    assert.equal(await again.page.evaluate(() => !!window.hopLanes.replay), true, 'the replay is loaded');
-    await again.page.waitForFunction(() => window.hopLanes.state === 'over', null, { timeout: 120000 });
-    const second = await again.page.evaluate(() => { const p = window.hopLanes.players[0]; return { row: p.row, score: p.score, cause: p.cause, x: p.x, seed: window.hopLanes.seed }; });
-    assert.deepEqual(second, first, 'the replay ends where the run ended');
-    assert.match(await again.page.locator('#resTitle').textContent(), /REPLAY OVER/);
-    assert.deepEqual(again.errors, []);
-  } finally { await again.context.close(); }
 });
 
 test('6. standalone works fully offline', async () => {
