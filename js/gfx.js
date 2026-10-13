@@ -11,7 +11,8 @@ let renderer;
 // on high-density phone screens edges are already fine, and multisampling costs a lot of fill
 try { renderer = new THREE.WebGLRenderer({ antialias: !(lowGpu && (window.devicePixelRatio || 1) >= 2) }); }
 catch (e) { fail('This browser can not show 3D graphics. Turn on WebGL or try another browser.'); throw new Error('no-webgl'); }
-let pixelRatio = Math.min(lowGpu ? 1.5 : 2, window.devicePixelRatio || 1);
+// 1.5 is enough for voxels on any screen; 2 draws almost twice the pixels for no visible gain
+let pixelRatio = Math.min(1.5, window.devicePixelRatio || 1);
 renderer.setPixelRatio(pixelRatio);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = lowGpu ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
@@ -30,7 +31,7 @@ const hemi = new THREE.HemisphereLight(0xffffff, 0x8899aa, 0.65);
 scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xffffff, 0.6);
 sun.castShadow = true;
-sun.shadow.mapSize.setScalar(lowGpu ? 1024 : 2048);
+sun.shadow.mapSize.setScalar(1024);   // at this camera angle 2048 looks the same and costs 4x the shadow pass
 Object.assign(sun.shadow.camera, { top: 15, bottom: -15, near: 1, far: 50 });   // left/right set in resize()
 scene.add(sun, sun.target);
 

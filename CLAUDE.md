@@ -33,7 +33,7 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
 | `js/voxel.js` | `mergeBoxes`: a list of boxes becomes one vertex-colored mesh (one draw call). `cachedGeo` for repeated models |
 | `js/models.js` | Colors, pixel portraits (`PIX`), box lists for every model, `CHARACTERS` (name, price) |
 | `js/gfx.js` | Renderer, camera, light, `resize()`, the adaptive quality ladder (`watchFrameTime`) |
-| `js/world.js` | Lanes: `LANE_BUILDERS` per kind, traffic, trains, coins, seeded RNG. Lanes are a `Map` by row |
+| `js/world.js` | Lanes: `LANE_BUILDERS` per kind, traffic, trains, coins, the instanced fleet (`Inst`). Lanes are a `Map` by row |
 | `js/players.js` | Spawn, `tryMove`, hop/land/stand, hazards, deaths, coin pickup, the eagle |
 | `js/screens.js` | Join cards and shop, title menu (modes, prize machine), countdown, results (share, confetti), restart, pause, first-run help, online score post |
 | `js/input.js` | Keyboard, on-screen buttons, taps and swipes on the field. Side-effect only (imported by `app.js` for that) |
@@ -57,7 +57,7 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
 
 ## Testing hooks
 
-- `index.html#debug` exposes `window.hopLanes` (`players`, `state`, `camRow`, `seed`, `bank`, `muted`, `laneCoins(r)`, `laneKinds()`).
+- `index.html#debug` exposes `window.hopLanes` (`players`, `state`, `camRow` (settable: jump the view to a far row), `seed`, `bank`, `muted`, `drawCalls`, `laneCoins(r)`, `laneKinds()`).
 - `#seed-42` or `#debug-seed-42` makes the world deterministic.
 - Tests set `localStorage['hoplanes.howto'] = '1'` before load so the first-run help does not swallow the first tap.
 - Headless runs use SwiftShader; it is slow. Wait on state with `waitForFunction`, not fixed sleeps.
@@ -71,5 +71,8 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
 - Vehicle and character models face `-x` / `-z`; rotations were inverted once. Check the screenshot, not the math.
 - The draw loop caps at 60 draws/s on fast screens; judge performance from drawn frames only (`watchFrameTime`).
 - The quality ladder must not change `renderer.shadowMap.type`: that rebuilds every shader mid-game (a visible hitch).
+- Vehicles, logs and trains are instanced (`Inst` in `world.js`): one draw call per model. The paint color is a per-instance
+  tint that applies only to pure white (`0xffffff`) boxes, so no other box in an instanced model may be pure white.
+  Every fleet mesh carries `instanceColor`: r128 picks the shader per material, so a mesh without it would crash.
 - `near()`, `visRows` and `firstNeededRow()` decide which rows exist and sound; keep them in step with the camera.
 - Don't add a service worker: the CSP has `worker-src 'none'` and the PWA installs without one.

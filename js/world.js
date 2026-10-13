@@ -4,7 +4,7 @@ import { mulberry32, nextLaneKind } from './rules.js';
 import { BLINK_STEPS, scene } from './gfx.js';
 import { CAR_COLORS, LIGHT_OFF, LIGHT_ON, POLICE_BLUE, POLICE_RED, TRAIN_LEN, coinBoxes, lightGeo, logBoxes, policeBoxes, trainBoxes, vehicleBoxes } from './models.js';
 import { dailySeed } from './storage.js';
-import { cachedGeo, mergeBoxes, voxelMesh } from './voxel.js';
+import { cachedGeo, mergeBoxes, voxelMat, voxelMesh } from './voxel.js';
 
 // Lanes: building, scrolling, traffic, trains and coins. Seeded, so a seed always gives the same world.
 // ---------- random ----------
@@ -29,6 +29,52 @@ function laneKind(r) {
   return k;
 }
 
+// ---------- the fleet: every car, log and train of one model is one instanced draw call ----------
+// A plain mesh per vehicle meant ~100 draw calls (x2 with the shadow pass). An InstancedMesh draws all
+// vehicles of one model at once; each lane only writes its instances' matrices when they move.
+const fleet = new Map();   // model key -> { mesh, top, free }
+const tmpM = new THREE.Matrix4(), tmpQ = new THREE.Quaternion(), tmpP = new THREE.Vector3(), tmpS = new THREE.Vector3();
+const Y_AXIS = new THREE.Vector3(0, 1, 0);
+function fleetMesh(geo, cap, cast) {
+  const mesh = new THREE.InstancedMesh(geo, voxelMat, cap);
+  // every fleet mesh carries instance colors (white = no tint): r128 picks the shader per material, not per
+  // mesh, so a mesh without them would get a shader that expects them. Sized for cap, not count.
+  mesh.instanceColor = new THREE.BufferAttribute(new Float32Array(cap * 3).fill(1), 3);
+  mesh.castShadow = cast; mesh.receiveShadow = true;
+  mesh.frustumCulled = false;   // instances spread over many rows; the camera decides per vertex
+  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  mesh.count = 0;
+  scene.add(mesh);
+  return mesh;
+}
+// an instance handle: set(x, y, z, rotY, visible) writes its matrix; drop() frees the slot.
+// color (optional) tints the model's pure white boxes for this instance only.
+const tint = new THREE.Color();
+class Inst {
+  constructor(key, build, cast, color) {
+    let f = fleet.get(key);
+    if (!f) { f = { mesh: fleetMesh(cachedGeo(key, build), 32, cast), top: 0, free: [] }; fleet.set(key, f); }
+    if (!f.free.length && f.top === f.mesh.instanceMatrix.count) {   // full: a bigger mesh takes over the slots
+      const big = fleetMesh(f.mesh.geometry, f.top * 2, f.mesh.castShadow);
+      big.instanceMatrix.array.set(f.mesh.instanceMatrix.array);
+      big.instanceColor.array.set(f.mesh.instanceColor.array);
+      scene.remove(f.mesh); f.mesh.dispose();
+      f.mesh = big;
+    }
+    this.f = f;
+    this.i = f.free.length ? f.free.pop() : f.top++;
+    f.mesh.count = f.top;
+    if (color !== undefined) { f.mesh.setColorAt(this.i, tint.setHex(color)); f.mesh.instanceColor.needsUpdate = true; }
+    this.set(0, 0, 0, 0, false);
+  }
+  set(x, y, z, rotY = 0, visible = true) {
+    tmpP.set(x, y, z); tmpQ.setFromAxisAngle(Y_AXIS, rotY); tmpS.setScalar(visible ? 1 : 0);
+    this.f.mesh.setMatrixAt(this.i, tmpM.compose(tmpP, tmpQ, tmpS));
+    this.f.mesh.instanceMatrix.needsUpdate = true;
+  }
+  drop() { this.set(0, 0, 0, 0, false); this.f.free.push(this.i); }
+}
+
 // moving things in a lane share one wrap span so their gaps never drift
 function fillTraffic(lane, count, z, makeObj) {
   const spacing = lane.span / count;
@@ -36,8 +82,9 @@ function fillTraffic(lane, count, z, makeObj) {
   for (let i = 0; i < count; i++) {
     const o = makeObj(spacing);
     o.x = x0 + i * spacing + (o.jitter || 0);
-    o.mesh.position.set(o.x, 0, z);
-    lane.group.add(o.mesh); lane.objs.push(o);
+    o.z = z;
+    o.inst.set(o.x, 0, z, o.rot || 0);
+    lane.objs.push(o);
   }
 }
 
@@ -84,10 +131,9 @@ const LANE_BUILDERS = {
     const rot = lane.dir > 0 ? Math.PI : 0;   // vehicle models face -x; turn them to face where they drive
     fillTraffic(lane, Math.floor(rand(2, 4) + diff * 1.5), z, spacing => {
       const c = pick(CAR_COLORS);
-      const mesh = lane.police ? voxelMesh(cachedGeo('police', policeBoxes)) : voxelMesh(cachedGeo(`car${truck}${c}`, () => vehicleBoxes(truck, c)));
-      mesh.rotation.y = rot;
-      const o = { mesh, len, jitter: rand(0, spacing * 0.35) };
-      if (lane.police) { o.light = new THREE.Mesh(lightGeo, POLICE_RED); o.light.position.set(0.08, 0.98, 0); mesh.add(o.light); }
+      const inst = lane.police ? new Inst('police', policeBoxes, true) : new Inst(truck ? 'truck' : 'car', () => vehicleBoxes(truck), true, c);
+      const o = { inst, rot, len, jitter: rand(0, spacing * 0.35) };
+      if (lane.police) { o.light = new THREE.Mesh(lightGeo, POLICE_RED); o.light.position.set(0, 0.98, z); lane.group.add(o.light); }
       return o;
     });
     if (worldRng() < COIN_CHANCE.road) placeCoin(lane, z, playColumns());
@@ -98,7 +144,7 @@ const LANE_BUILDERS = {
     lane.speed = rand(1.0, 1.9) + diff * 1.0;
     fillTraffic(lane, Math.max(3, Math.floor(rand(4, 6) - diff * 2)), z, () => {
       const len = pick([2, 3, 3, 4]) - (diff > 0.6 && worldRng() < 0.5 ? 1 : 0);
-      return { mesh: voxelMesh(cachedGeo('log' + len, () => logBoxes(len)), false), len };   // flat on the water
+      return { inst: new Inst('log' + len, () => logBoxes(len), false), len };   // flat on the water, no shadow
     });
   },
   // lily pads: still water with pads at a few columns; land on water and you sink
@@ -130,10 +176,7 @@ const LANE_BUILDERS = {
     lane.light.position.set(poleX, 1.2, z + 0.45);
     lane.group.add(lane.light);
     Object.assign(lane, { timer: rand(2, 6), warned: false, lastBell: -1 });
-    lane.train = { mesh: voxelMesh(cachedGeo('train' + lane.dir, () => trainBoxes(lane.dir))), len: TRAIN_LEN, x: 99, active: false };
-    lane.train.mesh.position.set(99, 0, z);
-    lane.train.mesh.visible = false;
-    lane.group.add(lane.train.mesh);
+    lane.train = { inst: new Inst('train' + lane.dir, () => trainBoxes(lane.dir), true), len: TRAIN_LEN, x: 99, active: false };
   }
 };
 
@@ -157,6 +200,8 @@ function addLane(r) {
 
 function dropLane(lane) {
   worldGroup.remove(lane.group);
+  for (const o of lane.objs) o.inst.drop();
+  if (lane.train) lane.train.inst.drop();
   for (const m of lane.coins.values()) coinMeshes.delete(m);
   lane.ground.geometry.dispose();
   lanes.delete(lane.r);
@@ -170,9 +215,8 @@ function moveTraffic(lane, dt, now) {
     o.x += step;
     if (o.x > half) o.x -= lane.span;
     else if (o.x < -half) o.x += lane.span;
-    o.mesh.position.x = o.x;
-    if (river) o.mesh.position.y = Math.sin(now / 400 + o.x) * 0.02;
-    if (o.light) o.light.material = Math.floor(now / 140) % 2 ? POLICE_RED : POLICE_BLUE;
+    o.inst.set(o.x, river ? Math.sin(now / 400 + o.x) * 0.02 : 0, o.z, o.rot || 0);
+    if (o.light) { o.light.position.x = o.x + (lane.dir > 0 ? -0.08 : 0.08); o.light.material = Math.floor(now / 140) % 2 ? POLICE_RED : POLICE_BLUE; }
   }
 }
 function updateRail(lane, dt, now) {
@@ -185,15 +229,15 @@ function updateRail(lane, dt, now) {
     if (lane.timer < TRAIN_WARN && !lane.warned) { lane.warned = true; if (near(lane.r)) sfx.horn(); }
     if (on && blink !== lane.lastBell && near(lane.r)) { lane.lastBell = blink; sfx.bell(); }
     if (lane.timer <= 0) {
-      tr.active = true; tr.mesh.visible = true;
+      tr.active = true;
       tr.x = -lane.dir * (WRAP + tr.len / 2 + 2);
     }
   } else {
     tr.x += lane.dir * TRAIN_SPEED * dt;
-    tr.mesh.position.x = tr.x;
+    tr.inst.set(tr.x, 0, -lane.r);
     on = Math.floor(now * BLINK_STEPS / 1000) % 2 === 1;
     if (Math.abs(tr.x) > WRAP + tr.len / 2 + 3) {
-      tr.active = false; tr.mesh.visible = false; lane.warned = false;
+      tr.active = false; tr.inst.set(0, 0, 0, 0, false); lane.warned = false;
       const diff = difficulty(lane.r);
       lane.timer = fxRand(3.5 - diff * 2, 8 - diff * 4);   // far out, trains come twice as often
     }
@@ -236,4 +280,4 @@ function laneKinds() {   // lane types for rows 0..30 (builds missing rows ahead
   return out;
 }
 
-export { LANE_BUILDERS, addLane, coinMeshes, dropLane, ensureLanes, fillTraffic, firstNeededRow, fxRand, getSeed, laneCoins, laneKind, laneKinds, lanes, lastKind, lastNeededRow, maxRow, moveTraffic, near, pick, placeCoin, playColumns, rand, resetWorld, streak, updateLanes, updateRail, worldGroup, worldRng, worldSeed };
+export { Inst, LANE_BUILDERS, addLane, fleet, coinMeshes, dropLane, ensureLanes, fillTraffic, firstNeededRow, fxRand, getSeed, laneCoins, laneKind, laneKinds, lanes, lastKind, lastNeededRow, maxRow, moveTraffic, near, pick, placeCoin, playColumns, rand, resetWorld, streak, updateLanes, updateRail, worldGroup, worldRng, worldSeed };

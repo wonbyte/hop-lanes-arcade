@@ -3,6 +3,12 @@
 // Every model is a list of boxes [w, h, d, color, x, y, z] (y = bottom of the box).
 // Each list becomes ONE mesh with vertex colors, so a lane or a car is a single draw call.
 const voxelMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+// instanced models (world.js Inst) can carry a color per instance: it tints only the pure white boxes,
+// so one car model serves every paint color while windows and wheels keep their own colors
+voxelMat.onBeforeCompile = shader => {
+  shader.vertexShader = shader.vertexShader.replace('vColor.xyz *= instanceColor.xyz;',
+    'if (color.r > 0.999 && color.g > 0.999 && color.b > 0.999) vColor.xyz *= instanceColor.xyz;');
+};
 const UNIT = new THREE.BoxGeometry(1, 1, 1);
 const UP = UNIT.attributes.position.array, UN = UNIT.attributes.normal.array, UI = UNIT.index.array;
 const UV = UP.length / 3;

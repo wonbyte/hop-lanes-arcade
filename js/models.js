@@ -291,7 +291,8 @@ const CHARACTERS = [
 const PRIZES = CHARACTERS.filter(c => c.prize).map(c => c.key);
 const isOwned = ch => (ch.price === 0 && !ch.prize) || owned.has(ch.key);
 const CAR_COLORS = [0xe8513a, 0x3a8ee8, 0xf2c33a, 0x8f5ae0, 0x3ac27a, 0xf27fb0];
-function vehicleBoxes(truck, c) {
+// the paint (pure white here) is tinted per instance; nothing else may be pure white
+function vehicleBoxes(truck, c = 0xffffff) {
   const len = truck ? 2.4 : 1.4;
   const b = truck ? [
     [1.7, 0.75, 0.8, 0xeeeeee, 0.3, 0.12, 0],
@@ -299,7 +300,7 @@ function vehicleBoxes(truck, c) {
     [0.12, 0.3, 0.66, 0x223344, -1.12, 0.38, 0]
   ] : [
     [1.4, 0.42, 0.78, c, 0, 0.12, 0],
-    [0.75, 0.3, 0.66, 0xffffff, 0.08, 0.54, 0],
+    [0.75, 0.3, 0.66, 0xf4f4f4, 0.08, 0.54, 0],
     [0.06, 0.2, 0.6, 0x223344, -0.3, 0.58, 0]
   ];
   for (const wx of [-len / 2 + 0.3, len / 2 - 0.3]) for (const wz of [-0.38, 0.38])

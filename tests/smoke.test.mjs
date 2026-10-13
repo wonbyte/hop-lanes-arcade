@@ -209,6 +209,20 @@ test('5. seeded worlds are deterministic', async () => {
   assert.notDeepEqual(a.kinds, c.kinds);
 });
 
+test('5b. draw calls stay low far into the world (instanced traffic)', async () => {
+  const { context, page, errors } = await open({ viewport: { width: 1280, height: 800 } }, `${INDEX}#debug-seed-42`);
+  try {
+    await waitState(page, 'attract');
+    await page.evaluate(() => { window.hopLanes.camRow = 120; });   // dense traffic, night
+    await page.waitForFunction(() => window.hopLanes.laneKinds && window.hopLanes.camRow === 120, null, { timeout: T });
+    // lanes build one per frame; wait for a few drawn frames, then read the last frame's count
+    await page.waitForFunction(() => new Promise(r => { let n = 0; const f = () => (++n > 40 ? r(true) : requestAnimationFrame(f)); requestAnimationFrame(f); }), null, { timeout: T });
+    const calls = await page.evaluate(() => window.hopLanes.drawCalls);
+    assert.ok(calls > 10 && calls < 60, `draw calls per frame: ${calls} (one per lane plus one per vehicle model)`);
+    assert.deepEqual(errors, []);
+  } finally { await context.close(); }
+});
+
 test('6. standalone works fully offline', async () => {
   const { context, page, errors, requests } = await open({}, STANDALONE + '#debug', { network: 'offline' });
   try {

@@ -98,16 +98,18 @@ function kill(p, cause) {
 }
 
 // small particle bursts: water for splashes, dust when a player is left behind
-const parts = [];
+// the meshes are pooled: a death makes no garbage, so no collector pause
+const parts = [], partPool = [];
 const partGeo = new THREE.BoxGeometry(0.14, 0.14, 0.14);
 const splashMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
 const dustMat = new THREE.MeshLambertMaterial({ color: 0xd8d2c4 });
 const coinMat = new THREE.MeshLambertMaterial({ color: COLORS.coin.face });
 function burst(x, z, material, count) {
   for (let i = 0; i < count; i++) {
-    const m = new THREE.Mesh(partGeo, material);
+    const m = partPool.pop() || Object.assign(new THREE.Mesh(partGeo, material), { userData: { v: new THREE.Vector3() } });
+    m.material = material;
     m.position.set(x, 0.1, z);
-    m.userData.v = new THREE.Vector3(fxRand(-2, 2), fxRand(3, 5), fxRand(-2, 2));
+    m.userData.v.set(fxRand(-2, 2), fxRand(3, 5), fxRand(-2, 2));
     scene.add(m); parts.push(m);
   }
 }
@@ -116,7 +118,7 @@ function updateParts(dt) {
     const m = parts[i];
     m.userData.v.y -= 14 * dt;
     m.position.addScaledVector(m.userData.v, dt);
-    if (m.position.y < -1) { scene.remove(m); parts.splice(i, 1); }
+    if (m.position.y < -1) { scene.remove(m); parts[i] = parts[parts.length - 1]; parts.pop(); partPool.push(m); }
   }
 }
 

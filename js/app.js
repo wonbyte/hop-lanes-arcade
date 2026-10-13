@@ -85,8 +85,10 @@ if (DEBUG) {
     players, renderer, laneCoins, laneKinds,
     get state() { return G.state; },
     get camRow() { return G.camRow; },
+    set camRow(r) { G.camRow = r; },   // tests: look at a far part of the world without playing there
     get seed() { return getSeed(); },
     get pixelRatio() { return getPixelRatio(); },
+    get drawCalls() { return renderer.info.render.calls; },   // of the last drawn frame
     get bank() { return G.bank; },
     get muted() { return isMuted(); },
     get owned() { return [...owned]; },
