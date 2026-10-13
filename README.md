@@ -22,7 +22,8 @@ A two-player arcade game. Hop across roads, rivers and train tracks. Go too slow
 - Prize machine: 50 coins for a random surprise animal.
 - Modes (button on the title screen): CLASSIC, RACE (two players; the first to die loses) and DAILY (one world
   for everyone each day, with its own best score).
-- Far out the road turns to night, police cars chase, and lily pads cross still water.
+- Far out the road turns to night, police cars chase, lily pads cross still water, and mud makes you slow.
+- Hear the beeps? Move. The eagle is on its way.
 
 ## Develop
 

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-uAdKlBBVl7U2cxr8HKVJsFJyNjspv1BZX3jQuls35wY=' 'sha256-bsRLvX4SAf1GEj+IYy3eUwPdJGqulbybxDsBftJ2Xu4='; style-src 'sha256-DWFxz7EVEY7Pd1X9zIUKUzmmskJdBemgg0aYBQcq5Mw='; font-src data:; img-src data:; connect-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-uAdKlBBVl7U2cxr8HKVJsFJyNjspv1BZX3jQuls35wY=' 'sha256-ipf5mtc7+Tch8MBta4qMjLrJQOWaM2TFLSP3L1xEFjI='; style-src 'sha256-77t9Nxp+hUemiTdyp0/QsW83aYXSmrVHI/MgNO6xv7I='; font-src data:; img-src data:; connect-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Hop Lanes Arcade</title>
 <meta name="description" content="Two-player voxel arcade game: Frog vs Fox hop across roads, rivers and train tracks.">
 <meta name="theme-color" content="#10131c">
@@ -190,6 +190,10 @@ body {
 #results .row b { font-size: clamp(20px, 6vw, 34px); font-variant-numeric: tabular-nums; }
 #results .r1 { color: var(--p1-glow); } #results .r2 { color: var(--p2-glow); }
 #results p { margin: 0; font-size: clamp(8px, 2.2vw, 11px); line-height: 1.8; }
+#resBest { font-size: clamp(11px, 3.4vw, 18px); color: var(--gold); animation: pop .9s ease-out both, glow 1.2s ease-in-out .9s infinite alternate; }
+@keyframes pop { 0% { transform: scale(.3); opacity: 0; } 60% { transform: scale(1.25); opacity: 1; } 100% { transform: scale(1); } }
+@keyframes glow { from { text-shadow: 0 0 4px rgba(255,216,74,.4); } to { text-shadow: 0 0 16px rgba(255,216,74,.95); } }
+@media (prefers-reduced-motion: reduce) { #resBest { animation: none; } }
 
 /* control deck */
 #deck {
@@ -316,6 +320,7 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
     <div id="menu">
       <button type="button" id="mode">MODE: CLASSIC</button>
       <button type="button" id="prize">PRIZE &#183; 50 COINS</button>
+      <button type="button" id="install" hidden>ADD TO HOME SCREEN</button>
     </div>
     <div id="confetti" aria-hidden="true"></div>
     <div id="banner" hidden aria-live="polite"><h2></h2><p></p></div>
@@ -333,6 +338,7 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
         <div class="r1" id="res1"><span>FROG</span><b>0</b></div>
         <div class="r2" id="res2"><span>FOX</span><b>0</b></div>
       </div>
+      <p id="resBest" hidden></p>
       <p id="world" hidden></p>
       <p id="resNote"></p>
       <button type="button" id="share">SHARE</button>
@@ -3214,6 +3220,58 @@ void main() {
 <script>
 (() => {
 'use strict';
+// Pure game rules: no DOM, no Three.js. Node runs tests/rules.test.mjs against this file in milliseconds.
+// ---------- random ----------
+// The world is built from a seeded generator, so a seed always gives the same lanes.
+function mulberry32(seed) {
+  return () => {
+    seed = (seed + 0x6d2b79f5) >>> 0;
+    let t = seed;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+// FNV-1a over a string (the daily seed comes from the date)
+function hashString(s) {
+  let h = 2166136261;
+  for (const ch of s) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0;
+  return h;
+}
+const difficultyAt = (r, rows) => Math.min(1, Math.max(0, r) / rows);
+
+// ---------- lanes ----------
+const LANE_KINDS = ['grass', 'road', 'river', 'lily', 'mud', 'rail'];
+const STREAK_MAX = { road: 4, river: 3, lily: 2, mud: 2, rail: 3 };   // longest run of one kind
+// the kind of row r, given the row before it ({ kind, streak }) and the world generator
+function nextLaneKind(r, diff, prev, rng) {
+  if (r < 4) return 'grass';
+  // keep runs of the same type together, like real roads and rivers
+  if (prev.kind !== 'grass' && prev.streak < STREAK_MAX[prev.kind] && rng() < 0.55) return prev.kind;
+  const w = {
+    grass: 0.32 - diff * 0.12, road: 0.36, river: 0.2 + diff * 0.06,
+    lily: r > 8 ? 0.1 : 0, mud: r > 12 ? 0.07 : 0, rail: 0.12 + diff * 0.06
+  };
+  let x = rng() * (w.grass + w.road + w.river + w.lily + w.mud + w.rail);
+  let k = 'rail';
+  for (const key of ['grass', 'road', 'river', 'lily', 'mud']) { if ((x -= w[key]) < 0) { k = key; break; } }
+  if (k === 'grass' && prev.kind === 'grass') k = rng() < 0.5 ? 'road' : 'river';   // two grass rows in a row are dull
+  return k;
+}
+
+// ---------- hops ----------
+// where a hop from column x by dx lands in `lane`, or null when the move is not allowed
+function hopTarget(lane, x, dx, half) {
+  if (!lane) return null;
+  if (lane.kind === 'river') { const tx = x + dx; return Math.abs(tx) > half + 0.5 ? null : tx; }   // any column: logs decide
+  const tx = Math.round(x + dx);
+  if (Math.abs(tx) > half) return null;
+  if (lane.kind === 'grass' && lane.trees.has(tx)) return null;
+  return tx;
+}
+// mud is sticky: a hop that starts in mud takes longer
+const MUD_SLOW = 2.2;
+const hopTime = (fromKind, base) => fromKind === 'mud' ? base * MUD_SLOW : base;
 // Shared constants, the game state object and the one "can not load" screen.
 // ---------- tuning ----------
 const PLAY_HALF = 4;          // playable columns: -4..4
@@ -3232,12 +3290,13 @@ const GO_TIME = 0.6;
 const WIPE_MS = 130;          // restart fade; the new world is built while the screen is covered
 const EAGLE_IDLE = 6;         // seconds without a hop before the eagle comes for you
 const EAGLE_SWOOP = 0.9;      // seconds the eagle takes to reach the player
-const COIN_CHANCE = { grass: 0.28, road: 0.18, lily: 0.4 };   // chance of a coin on a lane
+const EAGLE_WARN = 1.5;       // seconds before the swoop a warning sounds
+const COIN_CHANCE = { grass: 0.28, road: 0.18, lily: 0.4, mud: 0.3 };   // chance of a coin on a lane
 const PRIZE_COST = 50;        // coins for one turn of the prize machine
 const NIGHT_START = 90, NIGHT_FULL = 150;   // rows over which day turns into night
 const MODES = ['classic', 'race', 'daily'];
 const DIFF_ROWS = 140;        // rows until the game reaches full difficulty
-const difficulty = r => Math.min(1, Math.max(0, r) / DIFF_ROWS);
+const difficulty = r => difficultyAt(r, DIFF_ROWS);
 const TAU = Math.PI * 2;
 const $ = id => document.getElementById(id);
 
@@ -3259,7 +3318,9 @@ const hashMatch = /^#(debug)?(?:-?seed-(\d+))?$/.exec(location.hash) || [];
 const DEBUG = hashMatch[1] === 'debug';
 const FIXED_SEED = hashMatch[2] !== undefined ? Number(hashMatch[2]) >>> 0 : null;
 // optional online score list: <meta name="hop-lanes-scores" content="https://.../scores"> (see server/README.md)
-const SCORES_URL = (document.querySelector('meta[name="hop-lanes-scores"]') || {}).content || '';
+const meta = name => (document.querySelector('meta[name="' + name + '"]') || {}).content || '';
+const SCORES_URL = meta('hop-lanes-scores');
+const SCORES_TOKEN = meta('hop-lanes-token');   // sent as X-Hop-Token when the server asks for one
 
 // show one clear message and hide the controls that would do nothing
 function fail(why) {
@@ -3293,7 +3354,7 @@ function dropOldDays() {
   } catch (e) {}
 }
 const COINS_KEY = 'hoplanes.coins', OWNED_KEY = 'hoplanes.owned', PICK_KEY = 'hoplanes.pick';
-const HOWTO_KEY = 'hoplanes.howto', MUTE_KEY = 'hoplanes.mute', MODE_KEY = 'hoplanes.mode', DAILY_KEY = 'hoplanes.dailychal.';
+const HOWTO_KEY = 'hoplanes.howto', MUTE_KEY = 'hoplanes.mute', MODE_KEY = 'hoplanes.mode', DAILY_KEY = 'hoplanes.dailychal.', INSTALL_KEY = 'hoplanes.install';
 function loadText(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
 G.bank = load(COINS_KEY);   // coins collected over all games
 const owned = new Set(loadText(OWNED_KEY).split(',').filter(Boolean));
@@ -3301,11 +3362,7 @@ function setBank(n) { G.bank = Math.max(0, n); save(COINS_KEY, G.bank); $('bank'
 G.bestAll = load(BEST_KEY);
 G.mode = MODES.includes(loadText(MODE_KEY)) ? loadText(MODE_KEY) : 'classic';
 // the daily challenge: one seed for everyone, made from today's date
-function dailySeed() {
-  let h = 2166136261;
-  for (const ch of dayKey()) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0;
-  return h;
-}
+const dailySeed = () => hashString(dayKey());
 let bestDay = 0, shownDay = '';
 function refreshBests() {
   shownDay = dayKey();
@@ -3346,6 +3403,9 @@ document.addEventListener('visibilitychange', () => {
 });
 const sfx = {
   hop: id => beep(id ? 520 : 440, 0.07, 'square', 0.04, 200),
+  mud: () => beep(180, 0.22, 'triangle', 0.06, 90),
+  warn: () => { beep(1100, 0.07, 'square', 0.05); setTimeout(() => beep(1100, 0.07, 'square', 0.05), 120); setTimeout(() => beep(1400, 0.1, 'square', 0.05), 240); },
+  cheer: () => [659, 784, 1047].forEach((f, i) => setTimeout(() => beep(f, i === 2 ? 0.3 : 0.1, 'square', 0.05), i * 90)),
   squash: () => beep(160, 0.25, 'sawtooth', 0.08, -120),
   splash: () => beep(900, 0.3, 'triangle', 0.06, -800),
   fall: () => beep(300, 0.4, 'triangle', 0.06, -220),
@@ -3905,17 +3965,8 @@ function watchFrameTime(frameT) {
 const getPixelRatio = () => pixelRatio;
 // Lanes: building, scrolling, traffic, trains and coins. Seeded, so a seed always gives the same world.
 // ---------- random ----------
-// The world is built from a seeded generator, so a seed always gives the same lanes.
+// The world is built from a seeded generator (rules.js), so a seed always gives the same lanes.
 // Effects (particles, train timing after the first train) use Math.random and never shift the world.
-function mulberry32(seed) {
-  return () => {
-    seed = (seed + 0x6d2b79f5) >>> 0;
-    let t = seed;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
 let worldSeed = 0, worldRng = Math.random;
 const rand = (a, b, r = worldRng) => a + r() * (b - a);
 const pick = (arr, r = worldRng) => arr[Math.floor(r() * arr.length)];
@@ -3929,18 +3980,7 @@ scene.add(worldGroup);
 let lastKind = 'grass', streak = 0;
 
 function laneKind(r) {
-  if (r < 4) return 'grass';
-  const diff = difficulty(r);
-  let k;
-  // keep runs of the same type together, like real roads and rivers
-  if (lastKind !== 'grass' && streak < (lastKind === 'road' ? 4 : lastKind === 'lily' ? 2 : 3) && worldRng() < 0.55) k = lastKind;
-  else {
-    const w = { grass: 0.32 - diff * 0.12, road: 0.36, river: 0.2 + diff * 0.06, lily: r > 8 ? 0.1 : 0, rail: 0.12 + diff * 0.06 };
-    let x = worldRng() * (w.grass + w.road + w.river + w.lily + w.rail);
-    k = 'rail';
-    for (const key of ['grass', 'road', 'river', 'lily']) { if ((x -= w[key]) < 0) { k = key; break; } }
-    if (k === 'grass' && lastKind === 'grass') k = pick(['road', 'river']);
-  }
+  const k = nextLaneKind(r, difficulty(r), { kind: lastKind, streak }, worldRng);
   streak = k === lastKind ? streak + 1 : 1;
   lastKind = k;
   return k;
@@ -4027,6 +4067,15 @@ const LANE_BUILDERS = {
     while (lane.pads.size < count) lane.pads.add(pick(cols));
     for (const x of lane.pads) ground.push([0.78, 0.08, 0.78, 0x3f9f4a, x, -0.12, z], [0.2, 0.09, 0.2, 0xe66d8c, x + 0.2, -0.12, z - 0.2]);
     if (worldRng() < COIN_CHANCE.lily) placeCoin(lane, z, [...lane.pads]);
+  },
+  // mud: safe, but a hop out of it is slow (rules.js hopTime), so the scroll line catches up
+  mud(lane, { r, z, ground }) {
+    ground.push([40, 0.3, 1, r % 2 ? 0x7a5536 : 0x74502f, 0, -0.3, z]);
+    for (let x = -12; x <= 12; x++) {
+      if (worldRng() < 0.35) ground.push([pick([0.5, 0.7, 0.9]), 0.02, 0.5, 0x5e3f24, x + rand(-0.3, 0.3), 0, z + rand(-0.25, 0.25)]);   // puddles
+      if (Math.abs(x) > PLAY_HALF && worldRng() < 0.5) ground.push([0.3, pick([0.3, 0.5]), 0.3, 0x8a7a3a, x, 0, z]);   // reeds
+    }
+    if (worldRng() < COIN_CHANCE.mud) placeCoin(lane, z, playColumns());
   },
   rail(lane, { z, ground }) {
     ground.push([40, 0.3, 1, 0x7b6f6a, 0, -0.3, z]);
@@ -4161,7 +4210,7 @@ function spawn(p) {
   p.mesh = makeCharacter(ch.boxes, ch.key);
   scene.add(p.mesh);
   Object.assign(p, {
-    x: p.startX, row: 0, alive: true, hop: null, queue: null, score: 0, coins: 0, idleT: 0, eagle: null, breath: p.id * 1.7,
+    x: p.startX, row: 0, alive: true, hop: null, queue: null, score: 0, coins: 0, idleT: 0, warned: false, eagle: null, breath: p.id * 1.7,
     facing: 0, cause: '', log: null, logOff: 0, trainDir: 0
   });
   p.mesh.position.set(p.x, 0, 0);
@@ -4203,24 +4252,18 @@ function tryMove(p, dx, dr) {
   if (p.hop) { p.queue = [dx, dr]; return; }
   // rotation.y: 0 = forward (-z), PI = back, +PI/2 = left, -PI/2 = right
   p.facing = dr > 0 ? 0 : dr < 0 ? Math.PI : (dx > 0 ? -Math.PI / 2 : Math.PI / 2);
-  const lane = lanes.get(p.row + dr);
-  if (!lane) return;
-  let tx = p.x + dx;
-  if (lane.kind === 'river') { if (Math.abs(tx) > PLAY_HALF + 0.5) return; }   // lily pads: any column (water kills on landing)
-  else {
-    tx = Math.round(tx);
-    if (Math.abs(tx) > PLAY_HALF) return;
-    if (lane.kind === 'grass' && lane.trees.has(tx)) return;
-  }
+  const tx = hopTarget(lanes.get(p.row + dr), p.x, dx, PLAY_HALF);
+  if (tx === null) return;
   if (p.row + dr < G.camRow - BEHIND_LIMIT) return;
+  const from = lanes.get(p.row);
   p.hop = {
-    t: 0, fromRow: p.row, fx: p.x, fz: -p.row, tx, tz: -(p.row + dr),
-    carry: p.log, carryX0: p.log ? p.log.x : 0, span: p.log ? lanes.get(p.row).span : 0
+    t: 0, dur: hopTime(from && from.kind, HOP_TIME), fromRow: p.row, fx: p.x, fz: -p.row, tx, tz: -(p.row + dr),
+    carry: p.log, carryX0: p.log ? p.log.x : 0, span: p.log ? from.span : 0
   };
   p.row += dr;
-  p.idleT = 0;
+  p.idleT = 0; p.warned = false;
   if (p.row > p.score) { p.score = p.row; p.scoreEl.textContent = p.score; }
-  sfx.hop(p.id);
+  if (p.hop.dur > HOP_TIME) sfx.mud(); else sfx.hop(p.id);
   buzz(8);
 }
 
@@ -4309,7 +4352,7 @@ function land(p, lane) {
 }
 function stepHop(p, lane, dt) {
   const h = p.hop, m = p.mesh;
-  h.t += dt / HOP_TIME;
+  h.t += dt / h.dur;
   const t = Math.min(1, h.t);
   let drift = 0;
   if (h.carry) {   // a hop that starts on a log moves with the log
@@ -4353,6 +4396,7 @@ function updatePlayer(p, dt) {
   if (ok && p.alive) checkHazards(p, lanes.get(p.row));
   if (!p.alive || G.state !== 'play') return;
   if (!p.hop) p.idleT += dt;
+  if (!p.warned && p.idleT > EAGLE_IDLE - EAGLE_SWOOP - EAGLE_WARN) { p.warned = true; sfx.warn(); }   // move, or the eagle comes
   if (!p.eagle && p.idleT > EAGLE_IDLE - EAGLE_SWOOP) sendEagle(p);
   if (p.eagle) updateEagle(p, dt);
 }
@@ -4487,6 +4531,7 @@ function toAttract() {
   $('score1').hidden = $('score2').hidden = true;
   $('share').textContent = 'SHARE';
   $('shareText').hidden = true;
+  $('resBest').hidden = true;
   setBanner('');
   setCards();
 }
@@ -4557,7 +4602,14 @@ function checkOver() {
   if (race && winner) note = 'BY ' + Math.abs(p1.score - p2.score) + ' ROWS. ' + note;
   const hero = winner || (p1.joined ? p1 : p2);
   shareText = 'I scored ' + top + ' in Hop Lanes as ' + charOf(hero).name + '! ' + location.origin + location.pathname;
-  if (note.includes('ALL TIME') && top >= 1) { confetti(); sfx.best(); }
+  // a new best gets its own big line, a jingle and (all time) confetti
+  const best = top >= 1 && /^NEW .*BEST!/.exec(note.replace(/^.*\. /, ''));
+  $('resBest').hidden = !best;
+  if (best) {
+    $('resBest').textContent = best[0];
+    note = note.replace(best[0], '').replace(/^ +| +$/g, '');
+    if (best[0].includes('ALL TIME')) { confetti(); sfx.best(); } else sfx.cheer();
+  }
   $('res1').hidden = !p1.joined; $('res2').hidden = !p2.joined;
   $('res1').querySelector('span').textContent = charOf(p1).name;
   $('res2').querySelector('span').textContent = charOf(p2).name;
@@ -4575,7 +4627,7 @@ async function postScore(name, score) {
     const ctrl = new AbortController();
     setTimeout(() => ctrl.abort(), 4000);
     const res = await fetch(SCORES_URL, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json', ...(SCORES_TOKEN ? { 'X-Hop-Token': SCORES_TOKEN } : {}) },
       body: JSON.stringify({ name, score }), signal: ctrl.signal
     });
     if (!res.ok) return;
@@ -4602,6 +4654,30 @@ function resumeGame() {
   if (G.state === 'play') keepAwake(true);
 }
 document.addEventListener('visibilitychange', () => { if (document.hidden) pauseGame(); });
+
+// ---------- install hint (home screen) ----------
+// Android fires beforeinstallprompt; iPhone has no event, so Safari gets a one-time text hint instead.
+// Only on the served page (the offline file has no manifest) and not once installed.
+const installBtn = $('install');
+let installEvent = null;
+function canHint() {
+  return !!document.querySelector('link[rel="manifest"]') && !matchMedia('(display-mode: standalone)').matches
+    && !navigator.standalone && loadText(INSTALL_KEY) !== '1';
+}
+function hintDone() { installBtn.hidden = true; save(INSTALL_KEY, 1); }
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  if (!canHint()) return;
+  installEvent = e; installBtn.hidden = false;
+});
+const iosSafari = /iPhone|iPad|iPod/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent) && !/CriOS|FxiOS/.test(navigator.userAgent);
+if (iosSafari && canHint()) installBtn.hidden = false;
+installBtn.addEventListener('click', () => {
+  sfx.tick();
+  if (installEvent) { installEvent.prompt(); installEvent = null; hintDone(); return; }
+  flashBanner('ADD TO HOME SCREEN', 'TAP SHARE IN SAFARI, THEN "ADD TO HOME SCREEN"', 4000);
+  hintDone();
+});
 
 // ---------- first-run help ----------
 const howto = $('howto');

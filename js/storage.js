@@ -1,4 +1,5 @@
 import { $, G, MODES } from './core.js';
+import { hashString } from './rules.js';
 
 // Saved data: best scores, coins, owned characters. Everything is best effort (private mode, blocked storage).
 // ---------- storage (best effort) ----------
@@ -22,7 +23,7 @@ function dropOldDays() {
   } catch (e) {}
 }
 const COINS_KEY = 'hoplanes.coins', OWNED_KEY = 'hoplanes.owned', PICK_KEY = 'hoplanes.pick';
-const HOWTO_KEY = 'hoplanes.howto', MUTE_KEY = 'hoplanes.mute', MODE_KEY = 'hoplanes.mode', DAILY_KEY = 'hoplanes.dailychal.';
+const HOWTO_KEY = 'hoplanes.howto', MUTE_KEY = 'hoplanes.mute', MODE_KEY = 'hoplanes.mode', DAILY_KEY = 'hoplanes.dailychal.', INSTALL_KEY = 'hoplanes.install';
 function loadText(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
 G.bank = load(COINS_KEY);   // coins collected over all games
 const owned = new Set(loadText(OWNED_KEY).split(',').filter(Boolean));
@@ -30,11 +31,7 @@ function setBank(n) { G.bank = Math.max(0, n); save(COINS_KEY, G.bank); $('bank'
 G.bestAll = load(BEST_KEY);
 G.mode = MODES.includes(loadText(MODE_KEY)) ? loadText(MODE_KEY) : 'classic';
 // the daily challenge: one seed for everyone, made from today's date
-function dailySeed() {
-  let h = 2166136261;
-  for (const ch of dayKey()) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0;
-  return h;
-}
+const dailySeed = () => hashString(dayKey());
 let bestDay = 0, shownDay = '';
 function refreshBests() {
   shownDay = dayKey();
@@ -47,4 +44,4 @@ setBank(G.bank);
 // a game left open past midnight starts a new "today"
 setInterval(() => { if (dayKey() !== shownDay) { dropOldDays(); refreshBests(); } }, 60000);
 
-export { BEST_KEY, COINS_KEY, DAILY_KEY, DAY_PREFIX, HOWTO_KEY, MODE_KEY, MUTE_KEY, OWNED_KEY, PICK_KEY, bestDay, dailySeed, dayKey, dropOldDays, load, loadText, owned, refreshBests, save, setBank, shownDay };
+export { BEST_KEY, COINS_KEY, DAILY_KEY, DAY_PREFIX, HOWTO_KEY, INSTALL_KEY, MODE_KEY, MUTE_KEY, OWNED_KEY, PICK_KEY, bestDay, dailySeed, dayKey, dropOldDays, load, loadText, owned, refreshBests, save, setBank, shownDay };

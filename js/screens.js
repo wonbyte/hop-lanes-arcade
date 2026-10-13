@@ -1,10 +1,10 @@
 import { audio, sfx, startTune, stopTune } from './audio.js';
-import { $, COUNTDOWN, G, GO_TIME, MODES, PRIZE_COST, SCORES_URL, WIPE_MS } from './core.js';
+import { $, COUNTDOWN, G, GO_TIME, MODES, PRIZE_COST, SCORES_TOKEN, SCORES_URL, WIPE_MS } from './core.js';
 import { keepAwake } from './device.js';
 import { reduceMotion, resetFrameWatch, touchQuery } from './gfx.js';
 import { CHARACTERS, PIX, PRIZES, drawPix, isOwned } from './models.js';
 import { charOf, despawn, players, spawn } from './players.js';
-import { BEST_KEY, DAILY_KEY, HOWTO_KEY, MODE_KEY, OWNED_KEY, PICK_KEY, dayKey, load, owned, refreshBests, save, setBank } from './storage.js';
+import { BEST_KEY, DAILY_KEY, HOWTO_KEY, INSTALL_KEY, MODE_KEY, OWNED_KEY, PICK_KEY, dayKey, load, loadText, owned, refreshBests, save, setBank } from './storage.js';
 import { resetWorld } from './world.js';
 
 // Screens and flow: join cards and the shop, countdown, results, restart, pause, first-run help, online scores.
@@ -138,6 +138,7 @@ function toAttract() {
   $('score1').hidden = $('score2').hidden = true;
   $('share').textContent = 'SHARE';
   $('shareText').hidden = true;
+  $('resBest').hidden = true;
   setBanner('');
   setCards();
 }
@@ -208,7 +209,14 @@ function checkOver() {
   if (race && winner) note = 'BY ' + Math.abs(p1.score - p2.score) + ' ROWS. ' + note;
   const hero = winner || (p1.joined ? p1 : p2);
   shareText = 'I scored ' + top + ' in Hop Lanes as ' + charOf(hero).name + '! ' + location.origin + location.pathname;
-  if (note.includes('ALL TIME') && top >= 1) { confetti(); sfx.best(); }
+  // a new best gets its own big line, a jingle and (all time) confetti
+  const best = top >= 1 && /^NEW .*BEST!/.exec(note.replace(/^.*\. /, ''));
+  $('resBest').hidden = !best;
+  if (best) {
+    $('resBest').textContent = best[0];
+    note = note.replace(best[0], '').replace(/^ +| +$/g, '');
+    if (best[0].includes('ALL TIME')) { confetti(); sfx.best(); } else sfx.cheer();
+  }
   $('res1').hidden = !p1.joined; $('res2').hidden = !p2.joined;
   $('res1').querySelector('span').textContent = charOf(p1).name;
   $('res2').querySelector('span').textContent = charOf(p2).name;
@@ -226,7 +234,7 @@ async function postScore(name, score) {
     const ctrl = new AbortController();
     setTimeout(() => ctrl.abort(), 4000);
     const res = await fetch(SCORES_URL, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json', ...(SCORES_TOKEN ? { 'X-Hop-Token': SCORES_TOKEN } : {}) },
       body: JSON.stringify({ name, score }), signal: ctrl.signal
     });
     if (!res.ok) return;
@@ -253,6 +261,30 @@ function resumeGame() {
   if (G.state === 'play') keepAwake(true);
 }
 document.addEventListener('visibilitychange', () => { if (document.hidden) pauseGame(); });
+
+// ---------- install hint (home screen) ----------
+// Android fires beforeinstallprompt; iPhone has no event, so Safari gets a one-time text hint instead.
+// Only on the served page (the offline file has no manifest) and not once installed.
+const installBtn = $('install');
+let installEvent = null;
+function canHint() {
+  return !!document.querySelector('link[rel="manifest"]') && !matchMedia('(display-mode: standalone)').matches
+    && !navigator.standalone && loadText(INSTALL_KEY) !== '1';
+}
+function hintDone() { installBtn.hidden = true; save(INSTALL_KEY, 1); }
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  if (!canHint()) return;
+  installEvent = e; installBtn.hidden = false;
+});
+const iosSafari = /iPhone|iPad|iPod/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent) && !/CriOS|FxiOS/.test(navigator.userAgent);
+if (iosSafari && canHint()) installBtn.hidden = false;
+installBtn.addEventListener('click', () => {
+  sfx.tick();
+  if (installEvent) { installEvent.prompt(); installEvent = null; hintDone(); return; }
+  flashBanner('ADD TO HOME SCREEN', 'TAP SHARE IN SAFARI, THEN "ADD TO HOME SCREEN"', 4000);
+  hintDone();
+});
 
 // ---------- first-run help ----------
 const howto = $('howto');

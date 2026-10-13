@@ -63,3 +63,18 @@ test('rate limit: 429 after 10 POSTs per minute', async () => {
   assert.deepEqual(codes, [...Array(10).fill(200), 429, 429]);
   assert.equal((await fetch(srv.base + '/scores')).status, 200, 'GET not limited');
 });
+
+test('POST_TOKEN: required on POST only, allowed in preflight', async () => {
+  const srv = await start({ POST_TOKEN: 'abc', RATE_MAX: '1000' });
+  const url = srv.base + '/scores';
+  const send = headers => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify({ name: 'Tk', score: 5 }) });
+  const none = await send({});
+  assert.equal(none.status, 401);
+  assert.deepEqual(await none.json(), { error: 'bad token' });
+  assert.equal((await send({ 'X-Hop-Token': 'nope' })).status, 401);
+  assert.equal((await send({ 'X-Hop-Token': 'abc' })).status, 200);
+  assert.equal((await fetch(url)).status, 200, 'GET needs no token');
+  const o = await fetch(url, { method: 'OPTIONS' });
+  assert.equal(o.status, 204);
+  assert.match(o.headers.get('access-control-allow-headers'), /X-Hop-Token/);
+});

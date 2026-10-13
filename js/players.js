@@ -1,5 +1,6 @@
 import { sfx } from './audio.js';
-import { $, BEHIND_LIMIT, EAGLE_IDLE, EAGLE_SWOOP, EDGE_DEATH, G, HIT_PAD, HOP_TIME, PLAY_HALF, TAU, TRAIN_SPEED } from './core.js';
+import { $, BEHIND_LIMIT, EAGLE_IDLE, EAGLE_SWOOP, EAGLE_WARN, EDGE_DEATH, G, HIT_PAD, HOP_TIME, PLAY_HALF, TAU, TRAIN_SPEED } from './core.js';
+import { hopTarget, hopTime } from './rules.js';
 import { buzz } from './device.js';
 import { ONE, scene } from './gfx.js';
 import { CHARACTERS, COLORS, eagleBoxes, makeCharacter } from './models.js';
@@ -26,7 +27,7 @@ function spawn(p) {
   p.mesh = makeCharacter(ch.boxes, ch.key);
   scene.add(p.mesh);
   Object.assign(p, {
-    x: p.startX, row: 0, alive: true, hop: null, queue: null, score: 0, coins: 0, idleT: 0, eagle: null, breath: p.id * 1.7,
+    x: p.startX, row: 0, alive: true, hop: null, queue: null, score: 0, coins: 0, idleT: 0, warned: false, eagle: null, breath: p.id * 1.7,
     facing: 0, cause: '', log: null, logOff: 0, trainDir: 0
   });
   p.mesh.position.set(p.x, 0, 0);
@@ -68,24 +69,18 @@ function tryMove(p, dx, dr) {
   if (p.hop) { p.queue = [dx, dr]; return; }
   // rotation.y: 0 = forward (-z), PI = back, +PI/2 = left, -PI/2 = right
   p.facing = dr > 0 ? 0 : dr < 0 ? Math.PI : (dx > 0 ? -Math.PI / 2 : Math.PI / 2);
-  const lane = lanes.get(p.row + dr);
-  if (!lane) return;
-  let tx = p.x + dx;
-  if (lane.kind === 'river') { if (Math.abs(tx) > PLAY_HALF + 0.5) return; }   // lily pads: any column (water kills on landing)
-  else {
-    tx = Math.round(tx);
-    if (Math.abs(tx) > PLAY_HALF) return;
-    if (lane.kind === 'grass' && lane.trees.has(tx)) return;
-  }
+  const tx = hopTarget(lanes.get(p.row + dr), p.x, dx, PLAY_HALF);
+  if (tx === null) return;
   if (p.row + dr < G.camRow - BEHIND_LIMIT) return;
+  const from = lanes.get(p.row);
   p.hop = {
-    t: 0, fromRow: p.row, fx: p.x, fz: -p.row, tx, tz: -(p.row + dr),
-    carry: p.log, carryX0: p.log ? p.log.x : 0, span: p.log ? lanes.get(p.row).span : 0
+    t: 0, dur: hopTime(from && from.kind, HOP_TIME), fromRow: p.row, fx: p.x, fz: -p.row, tx, tz: -(p.row + dr),
+    carry: p.log, carryX0: p.log ? p.log.x : 0, span: p.log ? from.span : 0
   };
   p.row += dr;
-  p.idleT = 0;
+  p.idleT = 0; p.warned = false;
   if (p.row > p.score) { p.score = p.row; p.scoreEl.textContent = p.score; }
-  sfx.hop(p.id);
+  if (p.hop.dur > HOP_TIME) sfx.mud(); else sfx.hop(p.id);
   buzz(8);
 }
 
@@ -174,7 +169,7 @@ function land(p, lane) {
 }
 function stepHop(p, lane, dt) {
   const h = p.hop, m = p.mesh;
-  h.t += dt / HOP_TIME;
+  h.t += dt / h.dur;
   const t = Math.min(1, h.t);
   let drift = 0;
   if (h.carry) {   // a hop that starts on a log moves with the log
@@ -218,6 +213,7 @@ function updatePlayer(p, dt) {
   if (ok && p.alive) checkHazards(p, lanes.get(p.row));
   if (!p.alive || G.state !== 'play') return;
   if (!p.hop) p.idleT += dt;
+  if (!p.warned && p.idleT > EAGLE_IDLE - EAGLE_SWOOP - EAGLE_WARN) { p.warned = true; sfx.warn(); }   // move, or the eagle comes
   if (!p.eagle && p.idleT > EAGLE_IDLE - EAGLE_SWOOP) sendEagle(p);
   if (p.eagle) updateEagle(p, dt);
 }

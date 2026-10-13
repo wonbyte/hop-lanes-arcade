@@ -1,3 +1,5 @@
+import { difficultyAt } from './rules.js';
+
 // Shared constants, the game state object and the one "can not load" screen.
 // ---------- tuning ----------
 const PLAY_HALF = 4;          // playable columns: -4..4
@@ -16,12 +18,13 @@ const GO_TIME = 0.6;
 const WIPE_MS = 130;          // restart fade; the new world is built while the screen is covered
 const EAGLE_IDLE = 6;         // seconds without a hop before the eagle comes for you
 const EAGLE_SWOOP = 0.9;      // seconds the eagle takes to reach the player
-const COIN_CHANCE = { grass: 0.28, road: 0.18, lily: 0.4 };   // chance of a coin on a lane
+const EAGLE_WARN = 1.5;       // seconds before the swoop a warning sounds
+const COIN_CHANCE = { grass: 0.28, road: 0.18, lily: 0.4, mud: 0.3 };   // chance of a coin on a lane
 const PRIZE_COST = 50;        // coins for one turn of the prize machine
 const NIGHT_START = 90, NIGHT_FULL = 150;   // rows over which day turns into night
 const MODES = ['classic', 'race', 'daily'];
 const DIFF_ROWS = 140;        // rows until the game reaches full difficulty
-const difficulty = r => Math.min(1, Math.max(0, r) / DIFF_ROWS);
+const difficulty = r => difficultyAt(r, DIFF_ROWS);
 const TAU = Math.PI * 2;
 const $ = id => document.getElementById(id);
 
@@ -43,7 +46,9 @@ const hashMatch = /^#(debug)?(?:-?seed-(\d+))?$/.exec(location.hash) || [];
 const DEBUG = hashMatch[1] === 'debug';
 const FIXED_SEED = hashMatch[2] !== undefined ? Number(hashMatch[2]) >>> 0 : null;
 // optional online score list: <meta name="hop-lanes-scores" content="https://.../scores"> (see server/README.md)
-const SCORES_URL = (document.querySelector('meta[name="hop-lanes-scores"]') || {}).content || '';
+const meta = name => (document.querySelector('meta[name="' + name + '"]') || {}).content || '';
+const SCORES_URL = meta('hop-lanes-scores');
+const SCORES_TOKEN = meta('hop-lanes-token');   // sent as X-Hop-Token when the server asks for one
 
 // show one clear message and hide the controls that would do nothing
 function fail(why) {
@@ -54,4 +59,4 @@ function fail(why) {
   b.querySelector('p').textContent = why;
 }
 
-export { $, BEHIND_LIMIT, COIN_CHANCE, COUNTDOWN, DEBUG, DIFF_ROWS, EAGLE_IDLE, EAGLE_SWOOP, EDGE_DEATH, FIRST_ROW, FIXED_SEED, G, GO_TIME, HIT_PAD, HOP_TIME, LANES_AHEAD, LANES_BEHIND, MODES, NIGHT_FULL, NIGHT_START, PLAY_HALF, PRIZE_COST, RESULTS_DELAY, SCORES_URL, TAU, TRAIN_SPEED, TRAIN_WARN, WIPE_MS, WRAP, difficulty, fail, hashMatch };
+export { $, BEHIND_LIMIT, COIN_CHANCE, COUNTDOWN, DEBUG, DIFF_ROWS, EAGLE_IDLE, EAGLE_SWOOP, EAGLE_WARN, EDGE_DEATH, FIRST_ROW, FIXED_SEED, G, GO_TIME, HIT_PAD, HOP_TIME, LANES_AHEAD, LANES_BEHIND, MODES, NIGHT_FULL, NIGHT_START, PLAY_HALF, PRIZE_COST, RESULTS_DELAY, SCORES_TOKEN, SCORES_URL, TAU, TRAIN_SPEED, TRAIN_WARN, WIPE_MS, WRAP, difficulty, fail, hashMatch };

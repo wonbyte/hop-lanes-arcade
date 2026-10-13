@@ -30,6 +30,9 @@ document.addEventListener('visibilitychange', () => {
 });
 const sfx = {
   hop: id => beep(id ? 520 : 440, 0.07, 'square', 0.04, 200),
+  mud: () => beep(180, 0.22, 'triangle', 0.06, 90),
+  warn: () => { beep(1100, 0.07, 'square', 0.05); setTimeout(() => beep(1100, 0.07, 'square', 0.05), 120); setTimeout(() => beep(1400, 0.1, 'square', 0.05), 240); },
+  cheer: () => [659, 784, 1047].forEach((f, i) => setTimeout(() => beep(f, i === 2 ? 0.3 : 0.1, 'square', 0.05), i * 90)),
   squash: () => beep(160, 0.25, 'sawtooth', 0.08, -120),
   splash: () => beep(900, 0.3, 'triangle', 0.06, -800),
   fall: () => beep(300, 0.4, 'triangle', 0.06, -220),

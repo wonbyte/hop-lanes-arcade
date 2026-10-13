@@ -261,7 +261,8 @@ test('7. new all-time best shows confetti and a note', async () => {
       const c = document.getElementById('confetti');
       return (c && c.children.length > 0) || document.querySelectorAll('.confetti').length > 0;
     }, null, { timeout: T });
-    assert.match(await page.locator('#resNote').textContent(), /NEW ALL TIME BEST/);
+    assert.match(await page.locator('#resBest').textContent(), /NEW ALL TIME BEST/);
+    assert.equal(await page.locator('#resBest').isVisible(), true, 'the best line shows');
     assert.deepEqual(errors, []);
   } finally { await context.close(); }
 });

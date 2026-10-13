@@ -28,7 +28,8 @@ def module_body(name):
     text = re.sub(r'^export \{[^}]*\};\n', '', text, flags=re.M)
     need('import ' not in text and 'export ' not in text, f'js/{name}.js has an import/export the bundler does not handle')
     return text.strip('\n') + '\n'
-core, rest = module_body(order[0]), ''.join(module_body(n) for n in order[1:])
+head = order.index('core') + 1   # rules.js and core.js define fail() and need no THREE
+core, rest = ''.join(module_body(n) for n in order[:head]), ''.join(module_body(n) for n in order[head:])
 game = ('(() => {\n\'use strict\';\n' + core
         + "if (!window.THREE) { fail('The 3D library did not load. Connect to the internet, or open hop-lanes-standalone.html.'); return; }\n"
         + 'try {\n' + rest + "} catch (e) { if (!e || e.message !== 'no-webgl') throw e; }\n})();\n")
@@ -56,7 +57,7 @@ blocks = {'script': [three, game], 'style': [css]}
 html = swap(r'<link rel="stylesheet" href="css/style\.css">', '<style>\n' + css + '</style>', html, 'the css link')
 html = swap(r'<script src="vendor/three\.min\.js"></script>', '<script>\n' + three + '</script>', html, 'the Three.js tag')
 html = swap(r'<script type="module" src="js/main\.js"></script>', '<script>\n' + game + '</script>', html, 'the game script tag')
-html = re.sub(r'<link rel="(?:preconnect|preload|manifest|apple-touch-icon)"[^>]*>\n|<meta name="(?:hop-lanes-scores|mobile-web-app-capable|apple-mobile-web-app-[a-z-]+)"[^>]*>\n|<!--[^>]*-->\n', '', html)
+html = re.sub(r'<link rel="(?:preconnect|preload|manifest|apple-touch-icon)"[^>]*>\n|<meta name="(?:hop-lanes-scores|hop-lanes-token|mobile-web-app-capable|apple-mobile-web-app-[a-z-]+)"[^>]*>\n|<!--[^>]*-->\n', '', html)
 # the icon file can not be reached from a single offline file: inline it
 html = swap(r'<link rel="icon"[^>]*>', '<link rel="icon" type="image/png" href="' + ICON_DATA_URI + '">', html, 'the icon link')
 
@@ -73,5 +74,9 @@ html = swap(r'<meta http-equiv="Content-Security-Policy" content="[^"]*">',
 
 out = root / 'hop-lanes-standalone.html'
 out.write_text(html, encoding='utf-8')
-print(f'{out} {out.stat().st_size // 1024} KB')
+size = out.stat().st_size
+print(f'{out} {size // 1024} KB')
+# size budget: the file must stay quick to send and open on a phone
+BUDGET = 700 * 1024
+need(size <= BUDGET, f'hop-lanes-standalone.html is {size // 1024} KB, over the {BUDGET // 1024} KB budget')
 PY

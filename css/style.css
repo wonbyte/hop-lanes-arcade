@@ -179,6 +179,10 @@ body {
 #results .row b { font-size: clamp(20px, 6vw, 34px); font-variant-numeric: tabular-nums; }
 #results .r1 { color: var(--p1-glow); } #results .r2 { color: var(--p2-glow); }
 #results p { margin: 0; font-size: clamp(8px, 2.2vw, 11px); line-height: 1.8; }
+#resBest { font-size: clamp(11px, 3.4vw, 18px); color: var(--gold); animation: pop .9s ease-out both, glow 1.2s ease-in-out .9s infinite alternate; }
+@keyframes pop { 0% { transform: scale(.3); opacity: 0; } 60% { transform: scale(1.25); opacity: 1; } 100% { transform: scale(1); } }
+@keyframes glow { from { text-shadow: 0 0 4px rgba(255,216,74,.4); } to { text-shadow: 0 0 16px rgba(255,216,74,.95); } }
+@media (prefers-reduced-motion: reduce) { #resBest { animation: none; } }
 
 /* control deck */
 #deck {

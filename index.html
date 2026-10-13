@@ -16,6 +16,7 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <!-- optional online scores: put your server URL in content, and add its origin to connect-src above (see server/README.md) -->
 <meta name="hop-lanes-scores" content="">
+<meta name="hop-lanes-token" content="">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -35,6 +36,7 @@
     <div id="menu">
       <button type="button" id="mode">MODE: CLASSIC</button>
       <button type="button" id="prize">PRIZE &#183; 50 COINS</button>
+      <button type="button" id="install" hidden>ADD TO HOME SCREEN</button>
     </div>
     <div id="confetti" aria-hidden="true"></div>
     <div id="banner" hidden aria-live="polite"><h2></h2><p></p></div>
@@ -52,6 +54,7 @@
         <div class="r1" id="res1"><span>FROG</span><b>0</b></div>
         <div class="r2" id="res2"><span>FOX</span><b>0</b></div>
       </div>
+      <p id="resBest" hidden></p>
       <p id="world" hidden></p>
       <p id="resNote"></p>
       <button type="button" id="share">SHARE</button>

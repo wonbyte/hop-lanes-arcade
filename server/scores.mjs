@@ -1,6 +1,6 @@
 // Hop Lanes optional online high-score server. Dependency-free, Node 20+.
 // Run: node server/scores.mjs
-// Env: PORT (8787), DATA_FILE (./scores.json next to this script), ALLOW_ORIGIN ('*').
+// Env: PORT (8787), DATA_FILE (./scores.json next to this script), ALLOW_ORIGIN ('*'), POST_TOKEN ('' = none).
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -10,6 +10,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT ?? 8787);
 const DATA_FILE = process.env.DATA_FILE || path.join(HERE, 'scores.json');
 const ALLOW_ORIGIN = process.env.ALLOW_ORIGIN || '*';
+const POST_TOKEN = process.env.POST_TOKEN || ''; // when set, POSTs must send it as X-Hop-Token
 
 const MAX_ENTRIES = 1000;      // entries kept on disk
 const TOP_N = 10;              // entries returned
@@ -69,7 +70,7 @@ function send(res, status, body) {
     'Content-Type': 'application/json; charset=utf-8',
     'Access-Control-Allow-Origin': ALLOW_ORIGIN,
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Headers': 'Content-Type, X-Hop-Token',
     'Access-Control-Max-Age': '86400',
     ...(ALLOW_ORIGIN !== '*' ? { Vary: 'Origin' } : {}),
   });
@@ -111,11 +112,12 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'OPTIONS') { res.writeHead(204, {
       'Access-Control-Allow-Origin': ALLOW_ORIGIN,
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
+      'Access-Control-Allow-Headers': 'Content-Type, X-Hop-Token',
       'Access-Control-Max-Age': '86400',
     }); return res.end(); }
     if (req.method === 'GET') return send(res, 200, { top: top() });
     if (req.method === 'POST') {
+      if (POST_TOKEN && req.headers['x-hop-token'] !== POST_TOKEN) return send(res, 401, { error: 'bad token' });
       if (limited(req.socket.remoteAddress || 'unknown')) return send(res, 429, { error: 'rate limited' });
       let parsed;
       try { parsed = JSON.parse(await readBody(req)); } catch { return send(res, 400, { error: 'bad json' }); }

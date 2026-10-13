@@ -8,9 +8,9 @@ except the small offline build script. Keep it that way.
 | Command | What it does |
 |---|---|
 | `npm install` | Installs Playwright and Three.js (test and build only; the game itself has no dependencies) |
-| `npm test` | Syntax check, then `tests/smoke.test.mjs`, `tests/layout.test.mjs`, `tests/scores-server.test.mjs` (~5 min) |
+| `npm test` | Syntax check, `tests/rules.test.mjs` (pure rules, instant), then the browser tests `smoke`, `layout`, `ui` and `scores-server` (~5 min) |
 | `npm run check` | Syntax check only (fast) |
-| `npm run build` | Regenerates `hop-lanes-standalone.html` (python3, no network). CI fails if this file is stale |
+| `npm run build` | Regenerates `hop-lanes-standalone.html` (python3, no network). Fails over 700 KB. CI fails if this file is stale |
 | `npm run build:three` | Regenerates `vendor/three.min.js` with esbuild from `tools/three-entry.js` (the Three.js names the game uses). CI fails if stale |
 | `npm run icons` | Regenerates `icons/` from the frog pixel art (needs Pillow) |
 | `npm run scores` | Starts the optional score server (`server/`) |
@@ -25,6 +25,7 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
 | `vendor/three.min.js` | Generated: a tree-shaken Three.js r128 (501 KB) exposing only the names the game uses as `window.THREE`. Add a name to `tools/three-entry.js` before using a new THREE class |
 | `css/style.css` | All styles. Media queries: `max-width: 520px` (phones), `max-width: 340px` (tiny phones), `orientation: landscape` (phone held sideways) |
 | `js/main.js` | Entry. Checks `window.THREE`, then `import('./app.js')` |
+| `js/rules.js` | Pure rules with no DOM or Three.js: seeded RNG, `nextLaneKind`, `hopTarget`, `hopTime` (mud). Tested by node directly: put logic here when it needs no scene |
 | `js/core.js` | Tuning constants, the shared state object `G`, `fail()`, `#debug` / `#seed-N` hash parsing |
 | `js/storage.js` | localStorage: best scores, coins (`G.bank`), owned characters, picks. Always best effort (try/catch) |
 | `js/audio.js` | Web Audio beeps (`sfx.*`), mute |
@@ -40,7 +41,7 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
 | `tools/build-standalone.sh` | Inlines CSS, the modules (in `tools/bundle-order.json` order), `vendor/three.min.js` and fonts into one offline HTML with a hash-based CSP |
 | `.github/workflows/deploy.yml` | Deploys `main` to GitHub Pages after the tests pass (Settings → Pages → Source: GitHub Actions, once) |
 | `tests/serve.mjs` | Tiny static server for the tests: browsers refuse ES modules from `file://` |
-| `server/` | Optional dependency-free score server; wired by `<meta name="hop-lanes-scores">` |
+| `server/` | Optional dependency-free score server; wired by `<meta name="hop-lanes-scores">` (and `hop-lanes-token` for its `POST_TOKEN`) |
 
 ## Conventions
 
@@ -62,7 +63,8 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
 - Headless runs use SwiftShader; it is slow. Wait on state with `waitForFunction`, not fixed sleeps.
 - `KeyW` joins / moves Player 1, `ArrowUp` Player 2. Row 1 never has trees.
 - `tests/ui.test.mjs` drives the shop, prize machine, modes, share and confetti through the real DOM (ids: `#mode`, `#prize`, `#share`, `#card1 .cyc`, `#tap1`).
-- Lane kinds: grass, road (police variant past difficulty 0.3), river, lily (pads; water kills), rail. Night fades in from row 90.
+- Lane kinds: grass, road (police variant past difficulty 0.3), river, lily (pads; water kills), mud (from row 13; a hop out of it is slow), rail. Night fades in from row 90.
+- The eagle warns (`sfx.warn`) 1.5 s before it swoops; a new best shows in `#resBest`; the install hint `#install` shows only on the served page, once.
 
 ## Gotchas
 

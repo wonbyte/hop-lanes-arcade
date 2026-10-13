@@ -1,5 +1,6 @@
 import { sfx } from './audio.js';
 import { COIN_CHANCE, FIRST_ROW, FIXED_SEED, G, LANES_AHEAD, LANES_BEHIND, PLAY_HALF, TRAIN_SPEED, TRAIN_WARN, WRAP, difficulty } from './core.js';
+import { mulberry32, nextLaneKind } from './rules.js';
 import { BLINK_STEPS, scene } from './gfx.js';
 import { CAR_COLORS, LIGHT_OFF, LIGHT_ON, POLICE_BLUE, POLICE_RED, TRAIN_LEN, coinBoxes, lightGeo, logBoxes, policeBoxes, trainBoxes, vehicleBoxes } from './models.js';
 import { dailySeed } from './storage.js';
@@ -7,17 +8,8 @@ import { cachedGeo, mergeBoxes, voxelMesh } from './voxel.js';
 
 // Lanes: building, scrolling, traffic, trains and coins. Seeded, so a seed always gives the same world.
 // ---------- random ----------
-// The world is built from a seeded generator, so a seed always gives the same lanes.
+// The world is built from a seeded generator (rules.js), so a seed always gives the same lanes.
 // Effects (particles, train timing after the first train) use Math.random and never shift the world.
-function mulberry32(seed) {
-  return () => {
-    seed = (seed + 0x6d2b79f5) >>> 0;
-    let t = seed;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
 let worldSeed = 0, worldRng = Math.random;
 const rand = (a, b, r = worldRng) => a + r() * (b - a);
 const pick = (arr, r = worldRng) => arr[Math.floor(r() * arr.length)];
@@ -31,18 +23,7 @@ scene.add(worldGroup);
 let lastKind = 'grass', streak = 0;
 
 function laneKind(r) {
-  if (r < 4) return 'grass';
-  const diff = difficulty(r);
-  let k;
-  // keep runs of the same type together, like real roads and rivers
-  if (lastKind !== 'grass' && streak < (lastKind === 'road' ? 4 : lastKind === 'lily' ? 2 : 3) && worldRng() < 0.55) k = lastKind;
-  else {
-    const w = { grass: 0.32 - diff * 0.12, road: 0.36, river: 0.2 + diff * 0.06, lily: r > 8 ? 0.1 : 0, rail: 0.12 + diff * 0.06 };
-    let x = worldRng() * (w.grass + w.road + w.river + w.lily + w.rail);
-    k = 'rail';
-    for (const key of ['grass', 'road', 'river', 'lily']) { if ((x -= w[key]) < 0) { k = key; break; } }
-    if (k === 'grass' && lastKind === 'grass') k = pick(['road', 'river']);
-  }
+  const k = nextLaneKind(r, difficulty(r), { kind: lastKind, streak }, worldRng);
   streak = k === lastKind ? streak + 1 : 1;
   lastKind = k;
   return k;
@@ -129,6 +110,15 @@ const LANE_BUILDERS = {
     while (lane.pads.size < count) lane.pads.add(pick(cols));
     for (const x of lane.pads) ground.push([0.78, 0.08, 0.78, 0x3f9f4a, x, -0.12, z], [0.2, 0.09, 0.2, 0xe66d8c, x + 0.2, -0.12, z - 0.2]);
     if (worldRng() < COIN_CHANCE.lily) placeCoin(lane, z, [...lane.pads]);
+  },
+  // mud: safe, but a hop out of it is slow (rules.js hopTime), so the scroll line catches up
+  mud(lane, { r, z, ground }) {
+    ground.push([40, 0.3, 1, r % 2 ? 0x7a5536 : 0x74502f, 0, -0.3, z]);
+    for (let x = -12; x <= 12; x++) {
+      if (worldRng() < 0.35) ground.push([pick([0.5, 0.7, 0.9]), 0.02, 0.5, 0x5e3f24, x + rand(-0.3, 0.3), 0, z + rand(-0.25, 0.25)]);   // puddles
+      if (Math.abs(x) > PLAY_HALF && worldRng() < 0.5) ground.push([0.3, pick([0.3, 0.5]), 0.3, 0x8a7a3a, x, 0, z]);   // reeds
+    }
+    if (worldRng() < COIN_CHANCE.mud) placeCoin(lane, z, playColumns());
   },
   rail(lane, { z, ground }) {
     ground.push([40, 0.3, 1, 0x7b6f6a, 0, -0.3, z]);
@@ -246,4 +236,4 @@ function laneKinds() {   // lane types for rows 0..30 (builds missing rows ahead
   return out;
 }
 
-export { LANE_BUILDERS, addLane, coinMeshes, dropLane, ensureLanes, fillTraffic, firstNeededRow, fxRand, getSeed, laneCoins, laneKind, laneKinds, lanes, lastKind, lastNeededRow, maxRow, moveTraffic, mulberry32, near, pick, placeCoin, playColumns, rand, resetWorld, streak, updateLanes, updateRail, worldGroup, worldRng, worldSeed };
+export { LANE_BUILDERS, addLane, coinMeshes, dropLane, ensureLanes, fillTraffic, firstNeededRow, fxRand, getSeed, laneCoins, laneKind, laneKinds, lanes, lastKind, lastNeededRow, maxRow, moveTraffic, near, pick, placeCoin, playColumns, rand, resetWorld, streak, updateLanes, updateRail, worldGroup, worldRng, worldSeed };
