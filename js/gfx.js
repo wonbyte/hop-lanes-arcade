@@ -15,7 +15,9 @@ catch (e) { fail('This browser can not show 3D graphics. Turn on WebGL or try an
 let pixelRatio = Math.min(1.5, window.devicePixelRatio || 1);
 renderer.setPixelRatio(pixelRatio);
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = lowGpu ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
+// phones: hard-edged shadows (one shadow-map read per pixel instead of several); they suit the voxel look.
+// Set once at boot: changing the type later rebuilds every shader.
+renderer.shadowMap.type = lowGpu ? THREE.BasicShadowMap : THREE.PCFSoftShadowMap;
 stage.prepend(renderer.domElement);
 renderer.domElement.setAttribute('role', 'img');
 renderer.domElement.setAttribute('aria-label', 'Game view: roads, rivers and train tracks to hop across');

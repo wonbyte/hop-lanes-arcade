@@ -246,9 +246,65 @@ function addLane(r) {
   worldGroup.add(lane.group);
   lanes.set(r, lane);
   maxRow = Math.max(maxRow, r);
+  mergeChunk(Math.floor(r / CHUNK));
+}
+
+// ---------- ground chunks: 8 rows of ground drawn as one mesh (two: one that casts shadows, one that does not) ----------
+// Each lane keeps its own ground mesh; once all 8 rows of a chunk exist their ground is joined into chunk meshes and
+// the lane meshes leave the scene. When a lane of the chunk is dropped the chunk splits back into lane meshes.
+const CHUNK = 8;
+const chunks = new Map();   // chunk index -> { meshes, first }
+function joinGeos(geos) {
+  let verts = 0, idx = 0;
+  for (const g of geos) { verts += g.attributes.position.count; idx += g.index.count; }
+  const pos = new Float32Array(verts * 3), nor = new Float32Array(verts * 3), col = new Float32Array(verts * 3);
+  const index = new (verts > 65535 ? Uint32Array : Uint16Array)(idx);
+  let v = 0, i = 0;
+  for (const g of geos) {
+    pos.set(g.attributes.position.array, v * 3); nor.set(g.attributes.normal.array, v * 3); col.set(g.attributes.color.array, v * 3);
+    const src = g.index.array;
+    for (let k = 0; k < src.length; k++) index[i + k] = src[k] + v;
+    v += g.attributes.position.count; i += src.length;
+  }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  out.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  out.setIndex(new THREE.BufferAttribute(index, 1));
+  return out;
+}
+function mergeChunk(k) {
+  if (chunks.has(k)) return;
+  const rows = [];
+  for (let r = k * CHUNK; r < (k + 1) * CHUNK; r++) { const l = lanes.get(r); if (!l) return; rows.push(l); }
+  const meshes = [];
+  for (const cast of [true, false]) {
+    const part = rows.filter(l => l.ground.castShadow === cast);
+    if (!part.length) continue;
+    const m = voxelMesh(joinGeos(part.map(l => l.ground.geometry)), cast);
+    m.matrixAutoUpdate = false; m.updateMatrix();
+    worldGroup.add(m); meshes.push(m);
+  }
+  for (const l of rows) { l.group.remove(l.ground); l.chunk = k; }
+  chunks.set(k, { meshes, rows });
+  showChunk(k);
+}
+function splitChunk(k) {
+  const c = chunks.get(k);
+  if (!c) return;
+  for (const m of c.meshes) { worldGroup.remove(m); m.geometry.dispose(); }
+  for (const l of c.rows) { l.chunk = null; if (lanes.get(l.r) === l) l.group.add(l.ground); }
+  chunks.delete(k);
+}
+// a chunk is drawn while any of its rows is
+function showChunk(k) {
+  const c = chunks.get(k);
+  const on = c.rows.some(l => l.shown);
+  for (const m of c.meshes) m.visible = on;
 }
 
 function dropLane(lane) {
+  if (lane.chunk != null) splitChunk(lane.chunk);
   worldGroup.remove(lane.group);
   for (const o of lane.objs) o.inst.drop();
   if (lane.train) lane.train.inst.drop();
@@ -307,6 +363,7 @@ function showLane(lane, on) {
   if (lane.shown === on) return;
   lane.shown = on;
   lane.group.visible = on;
+  if (lane.chunk != null) showChunk(lane.chunk);
   for (const o of lane.objs) o.inst.set(o.x, 0, o.z, o.rot || 0, on);
   if (lane.train) lane.train.inst.set(lane.train.x, 0, -lane.r, 0, on && lane.train.active);
   for (const s of lane.coins.values()) s.inst.set(s.x, 0, s.z, 0, on);
@@ -345,4 +402,4 @@ function laneKinds() {   // lane types for rows 0..30 (builds missing rows ahead
   return out;
 }
 
-export { Inst, LANE_BUILDERS, addLane, dropLane, dropSpinner, ensureLanes, fillTraffic, firstNeededRow, fleet, fxRand, getSeed, laneCoins, laneKind, laneKinds, lanes, lastNeededRow, moveTraffic, near, pick, placeCoin, placePower, playColumns, rand, resetWorld, showLane, spinAll, spinners, updateLanes, updateRail, weatherAt, worldGroup };
+export { CHUNK, Inst, LANE_BUILDERS, addLane, chunks, dropLane, dropSpinner, ensureLanes, fillTraffic, firstNeededRow, fleet, fxRand, getSeed, laneCoins, laneKind, laneKinds, lanes, lastNeededRow, moveTraffic, near, pick, placeCoin, placePower, playColumns, rand, resetWorld, showLane, spinAll, spinners, updateLanes, updateRail, weatherAt, worldGroup };

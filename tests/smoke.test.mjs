@@ -219,7 +219,7 @@ test('5b. draw calls stay low far into the world (instanced traffic)', async () 
     // lanes build one per frame; wait for a few drawn frames, then read the last frame's count
     await page.waitForFunction(() => new Promise(r => { let n = 0; const f = () => (++n > 40 ? r(true) : requestAnimationFrame(f)); requestAnimationFrame(f); }), null, { timeout: T });
     const calls = await page.evaluate(() => window.hopLanes.drawCalls);
-    assert.ok(calls > 10 && calls < 60, `draw calls per frame: ${calls} (one per lane plus one per vehicle model)`);
+    assert.ok(calls > 8 && calls < 40, `draw calls per frame: ${calls} (ground in 8-row chunks plus one per instanced model)`);
     assert.deepEqual(errors, []);
   } finally { await context.close(); }
 });

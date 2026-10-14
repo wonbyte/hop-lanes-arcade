@@ -36,7 +36,7 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
 | `js/voxel.js` | `mergeBoxes`: a list of boxes becomes one vertex-colored mesh (one draw call). `cachedGeo` for repeated models |
 | `js/models.js` | Colors, pixel portraits (`PIX`), box lists for every model, `CHARACTERS` (name, price) |
 | `js/gfx.js` | Renderer, camera, light, `resize()`, the adaptive quality ladder (`watchFrameTime`) |
-| `js/world.js` | Lanes: `LANE_BUILDERS` per kind, traffic, trains, coins, the instanced fleet (`Inst`). Lanes are a `Map` by row |
+| `js/world.js` | Lanes: `LANE_BUILDERS` per kind, traffic, trains, coins, the instanced fleet (`Inst`), ground chunks (`mergeChunk`). Lanes are a `Map` by row |
 | `js/players.js` | Spawn, queued moves (`queueMove` / `applyMoves`, the replay feed), `tryMove`, hop/land/stand, hazards, deaths, coins, combo, shield and magnet power-ups, the eagle |
 | `js/screens.js` | Join cards and shop, title menu (modes incl. room code, prize machine, handicap, language, missions), countdown, results (share, replay link, confetti), restart, pause, first-run help, online score post |
 | `js/input.js` | Keyboard, on-screen buttons, taps and swipes on the field, `pollGamepads()`. Side-effect only (imported by `app.js` for that) |
@@ -88,5 +88,9 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
   `inst.move()` writes only the position; `showLane()` hides a far lane's instances. The paint color is a per-instance
   tint that applies only to pure white (`0xffffff`) boxes, so no other box in an instanced model may be pure white.
   Every fleet mesh carries `instanceColor`: r128 picks the shader per material, so a mesh without it would crash.
+- Lane ground is joined into 8-row chunks (`CHUNK`) once all 8 rows exist: one mesh that casts shadows, one that does not.
+  The lane keeps its own ground mesh (out of the scene while merged); dropping any row splits the chunk back.
+  Anything added to `lane.ground` after the lane is built will not show while the chunk is merged.
+- Phones use `BasicShadowMap` (hard edges, one shadow read per pixel); desktops `PCFSoftShadowMap`. Chosen once at boot.
 - `near()`, `visRows` and `firstNeededRow()` decide which rows exist and sound; keep them in step with the camera.
 - Don't add a service worker: the CSP has `worker-src 'none'` and the PWA installs without one.
