@@ -54,8 +54,9 @@ function placeCamera() {
 const hintEl = $('hint');
 const hintPos = new THREE.Vector3();
 function placeHint() {
+  if (!G.hint) { if (!hintEl.hidden) hintEl.hidden = true; return; }
   const p = players.find(q => q.joined && q.alive);
-  if (!G.hint || G.state !== 'play' || !p || !p.mesh) { hintEl.hidden = true; return; }
+  if (G.state !== 'play' || !p || !p.mesh) { hintEl.hidden = true; return; }
   if (p.score >= 5) { G.hint = false; save(HINT_KEY, 1); hintEl.hidden = true; return; }
   hintPos.set(p.x, 1.5, p.mesh.position.z).project(camera);
   const r = renderer.domElement.getBoundingClientRect();

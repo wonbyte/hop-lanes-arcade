@@ -13,7 +13,7 @@ function resetPlayer(p) {
   Object.assign(p, {
     x: START_X[p.id], row: 0, alive: true, hop: null, queue: null, score: 0, idleT: 0, warned: false, eagle: null,
     facing: 0, cause: '', log: null, logOff: 0, trainDir: 0, combo: 0, lastHop: -9, shield: false, safeT: 0, magnetT: 0,
-    coins: 0, lives: p.trait.lives || 0, nearLast: null
+    coins: 0, lives: p.trait.lives || 0, nearSeen: new Set(), nearRow: null
   });
 }
 // the camera's scroll line: it creeps forward on its own, and catches up fast to a player who runs ahead.
@@ -120,7 +120,7 @@ function makeRules(W) {
   }
   // a car or boulder that passes just short of a hit: +1 combo (coins only; the run itself is the same)
   function nearMiss(p, o) {
-    p.nearLast = o;
+    p.nearSeen.add(o);
     p.combo = Math.max(1, p.combo) + 1;
     p.lastHop = G.playT;
     if (G.run) G.run.nears++;
@@ -199,11 +199,12 @@ function makeRules(W) {
     // until mid-hop the player is still over the row they left
     const hz = p.hop && p.hop.t < 0.5 ? W.lane(p.hop.fromRow) : lane;
     if (hz && hz.kind === 'bridge' && (!p.hop || p.hop.t < 0.5) && plankState(hz, Math.round(p.x), G.worldTick) === 'down') { kill(p, 'splash'); return; }
+    if (hz && hz.r !== p.nearRow) { p.nearRow = hz.r; p.nearSeen.clear(); }   // a new row under the player: its cars can each count once
     if (hz && (hz.kind === 'road' || hz.kind === 'rocks')) {
       for (const o of hz.objs) {
         const gap = Math.abs(o.x - p.x) - o.len / 2 - HIT_PAD;
         if (gap < 0) { kill(p, 'squash'); return; }
-        if (gap < NEAR_MISS && p.nearLast !== o) nearMiss(p, o);
+        if (gap < NEAR_MISS && !p.nearSeen.has(o)) nearMiss(p, o);
       }
     } else if (hz && hz.kind === 'rail' && hz.train.active) {
       if (Math.abs(hz.train.x - p.x) < hz.train.len / 2 + HIT_PAD) { p.trainDir = hz.dir; kill(p, 'train'); return; }
@@ -259,6 +260,8 @@ function createSim(rp) {
     if (!l) { l = gen.lane(r); lanes.set(r, l); }
     return l;
   };
+  // forget the rows nobody can reach any more (a long ghost run would keep every row it saw)
+  const prune = () => { for (const r of lanes.keys()) if (r < S.camRow - BEHIND_LIMIT - 2) lanes.delete(r); };
   // the browser starts the world clock so the countdown ends on the recorded tick (startPlay then sets it exactly)
   const S = { state: 'countdown', countdown: COUNTDOWN, mode: rp.mode, camRow: 0, playT: 0, run: null, worldTick: Math.max(0, rp.startTick - Math.ceil(COUNTDOWN / STEP)) };
   let playTick = 0, end = null;
@@ -298,7 +301,7 @@ function createSim(rp) {
     return S.state !== 'over';
   }
   return {
-    step, players, lane,
+    step, players, lane, prune,
     get tick() { return playTick; }, get worldTick() { return S.worldTick; }, get state() { return S.state; },
     get camRow() { return S.camRow; }, get end() { return end; }
   };

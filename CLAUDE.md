@@ -39,7 +39,7 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
 | `js/models.js` | Colors, pixel portraits (`PIX`), box lists for every model, `CHARACTERS` (name, price), `hatBoxes` (`makeCharacter(boxes, key, hat)` draws the hat the all-time best unlocked) |
 | `js/gfx.js` | Renderer, camera, light, `resize()`, the adaptive quality ladder (`watchFrameTime`) |
 | `js/world.js` | Lanes: `LANE_BUILDERS` per kind, traffic, trains, coins, the instanced fleet (`Inst`), ground chunks (`mergeChunk`). Lanes are a `Map` by row |
-| `js/players.js` | Spawn, queued moves (`queueMove` / `applyMoves`, the replay feed), `tryMove`, hop/land/stand, hazards, deaths, coins, combo, shield and magnet power-ups, the eagle |
+| `js/players.js` | Spawn, queued moves (`queueMove` / `applyMoves`, the replay feed), and the effect hooks `makeRules` calls (meshes, sounds, particles) for hops, landings, hazards, deaths, coins, combos, power-ups and the eagle |
 | `js/ghost.js` | The ghost: in daily and room modes the best run on this world (`hoplanes.ghost.<seed>`: score, hero, time, replay code; newest 6 worlds kept) is replayed by `createSim` one step per game step and drawn see-through (`ghostMat`); `saveGhost` at game over, `startGhost` at play, `stopGhost` on the title |
 | `js/screens.js` | Join cards and shop, title menu (modes incl. room code, prize machine, handicap, language, missions), countdown, results (share, replay link, confetti), restart, pause, first-run help, online score post |
 | `js/panels.js` | The dialogs (`.dialog` in CSS, one open at a time: `openDialog`/`closeDialog`, Escape closes): SETTINGS (sound, vibration `hoplanes.buzz`, language, handicap, less motion `hoplanes.motion`, read at boot by `gfx.js`), the pause menu (`#pauseBox`, shown by `pauseGame`), TOP 10 (`#board`, only with a score server; `#boardScope` cycles all time / today / this week, a `.watch` button reloads the page as that entry's replay), photo mode (`#snapBtn` in the pause menu: the field with the score drawn on it, shared as a file or downloaded as `hop-lanes.png`), and the screen-reader announcer (`#live`, `announceFrame` per frame). Listens for `hoplanes:lang` and `hoplanes:pause` events from screens.js |
@@ -54,14 +54,14 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
 
 - Game rules live in rules/gen/sim; world.js and players.js only render them. Anything that changes the outcome of a
   run goes there (tested by node), so the score server's `simulate()` and the browser can never disagree. Smoke test 5c
-  checks a browser replay against `simulate()`; `tests/sim.test.mjs` holds runs the browser played. (app.js
-  `updateCamera` still repeats `creepCamera` from sim.js.)
+  checks a browser replay against `simulate()`; `tests/sim.test.mjs` holds runs the browser played.
 - Shared mutable state goes in `G` (`js/core.js`). Modules never assign to an imported binding.
 - Every model is a list of `[w, h, d, color, x, y, z]` boxes (y = bottom). Characters face `-z` (forward).
-- World generation uses `worldRng`, reseeded per row from the world seed and the row number in `addLane`, so a row
-  is the same whatever rows were built before it. Effects use `fxRand` / `Math.random`, so seeds stay stable.
+- World generation uses `rowRng` (gen.js), seeded from the world seed and the row number, so a row is the same
+  whatever rows were built before it (only the chain state of the row before feeds in). Effects use `fxRand` /
+  `Math.random`, so seeds stay stable.
 - The game steps at a fixed rate (`STEP`) and hops are queued to step boundaries, so replays are exact. Anything that
-  changes the outcome of a run must be deterministic: seeded (`worldRng`, per-lane `lane.rng` for trains) or step-driven.
+  changes the outcome of a run must be deterministic: seeded (`rowRng`, per-lane `lane.rng` for trains) or step-driven.
   Traffic and trains are a function of the world clock `G.worldTick` (reset when the world is built), never of frames
   or build time; a replay stores `startTick` (the world tick play began on) and the handicap.
 - `updateLanes(players)` steps only the lanes a player can touch (row ±1 and the hop's `fromRow`); the other lanes
@@ -88,8 +88,8 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
 - `KeyW` joins / moves Player 1, `ArrowUp` Player 2. Row 1 never has trees.
 - `tests/ui.test.mjs` drives the shop, prize machine, modes, share and confetti through the real DOM (ids: `#mode`, `#prize`, `#share`, `#card1 .cyc`, `#tap1`).
 - Modes (`MODES`): classic, race (first to die loses), coinwar (most coins wins; `p.coins` per player), tag (the player behind hops `TAG_BOOST` faster), daily, room. `winnerOf` in sim.js decides the results screen.
-- Traits (`TRAITS`, shown on the join card): fox longer combos, bunny faster hops, cat one extra life in water (`p.lives`), robot 3 s more before the eagle, pig longer magnet, penguin no ice slide, turtle one more row behind the scroll line. A replay stores the animals, so `simulate()` applies them (`p.trait` is set before `resetPlayer`). The frog has none: the saved test runs use frog and fox.
-- A near miss (a car or boulder whose edge passes within `NEAR_MISS` of a hit, once per car) adds one combo, a whoosh, a view nudge and counts in `G.run.nears` (mission `nears3`).
+- Traits (`TRAITS`, each with a `text` key for the join card): fox longer combos, bunny faster hops, cat one extra life in water (`p.lives`), robot 3 s more before the eagle, pig longer magnet, penguin no ice slide, turtle one more row behind the scroll line. A replay stores the animals, so `simulate()` applies them (`p.trait` is set before `resetPlayer`). The frog has none: the saved test runs use frog and fox.
+- A near miss (a car or boulder whose edge passes within `NEAR_MISS` of a hit, once per car per visit of the row: `p.nearSeen`) adds one combo, a whoosh, a view nudge and counts in `G.run.nears` (mission `nears3`).
 - Hats (`HATS`): cap at an all-time best of 100, crown at 250, halo at 500, drawn on both animals from the next spawn. The daily streak (`hoplanes.streak`, `YYYY-MM-DD|n`) counts daily-mode runs on days in a row and shows in the marquee (`#streakBox`) while it is alive.
 - `hopLanes.hint` (the floating TAP hint shows), `hopLanes.playLoop` (the play loop runs), `hopLanes.streak`.
 - Lane kinds: grass, road (police variant past difficulty 0.3), river, lily (pads; water kills; no diagonal hops, so gen.js `connectRow` lines pads up with the row before), mud (from row 13; a hop out of it is slow), rail, ice (from row 25: a sideways hop that lands on ice slides one more column the same way, unless a tree or the edge is there), bridge (from row 40: planks over water; a plank breaks 0.6 s after a landing and is back 3 s later, `plankState`), rocks (from row 55: slow boulders, a hit is a squash). Night fades in from row 90.

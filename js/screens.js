@@ -4,7 +4,7 @@ import { nextLang, setLang, t } from './i18n.js';
 import { MISSIONS, MISSION_REWARD, advanceMissions, doneMissions, emptyStats, missionsText, parseMissions } from './missions.js';
 import { encodeReplay } from './replay.js';
 import { dayBefore, hatFor, streakAfter, traitOf } from './rules.js';
-import { winnerOf } from './sim.js';
+import { runOver, topScore, winnerOf } from './sim.js';
 import { keepAwake } from './device.js';
 import { reduceMotion, resetFrameWatch, touchQuery } from './gfx.js';
 import { CHARACTERS, PIX, PRIZES, drawPix, isOwned } from './models.js';
@@ -37,7 +37,7 @@ function setCard(i) {
   const head = c.querySelector('.head'), st = c.querySelector('.state');
   if (p.joined) { head.textContent = t('READY!'); st.textContent = t('PLAYER {n}', { n: i + 1 }); }
   else if (locked) { head.textContent = G.bank >= ch.price ? t('TAP TO BUY') : t('NEED {n} COINS', { n: ch.price }); st.textContent = t('{name} · {n} COINS', { name: t(ch.name), n: ch.price }); }
-  else { head.textContent = joinText(); st.textContent = t(ch.name) + ' \u00b7 ' + t(TRAIT_TEXT[ch.key] || 'BALANCED'); }
+  else { head.textContent = joinText(); st.textContent = t(ch.name) + ' \u00b7 ' + t(traitOf(ch.key).text || 'BALANCED'); }
   for (const b of c.querySelectorAll('.cyc')) b.disabled = p.joined;
 }
 function cycleChar(i, d) {
@@ -59,8 +59,6 @@ const setCards = () => { setCard(0); setCard(1); menu.hidden = G.state !== 'attr
 
 // ---------- title menu: game mode, room code, prize machine, handicap, language, missions ----------
 const MODE_TEXT = { classic: 'MODE: CLASSIC', race: 'MODE: RACE', coinwar: 'MODE: COIN WAR', tag: 'MODE: TAG', daily: 'MODE: DAILY' };
-// what each animal is good at (rules.js TRAITS), on the join card
-const TRAIT_TEXT = { frog: 'BALANCED', fox: 'LONG COMBOS', bunny: 'FAST HOPS', cat: 'ONE EXTRA LIFE', robot: 'PATIENT EAGLE', pig: 'LONG MAGNET', penguin: 'NO ICE SLIDE', turtle: 'MORE SLACK' };
 const setModeLabel = () => { $('mode').textContent = G.mode === 'room' ? t('ROOM: {code}', { code: G.room }) : t(MODE_TEXT[G.mode]); };
 function setMode(mode) {
   G.mode = mode;
@@ -256,13 +254,13 @@ function startPlay() {
   players.forEach((p, i) => { $('score' + (i + 1)).hidden = !p.joined; });
   setCards();
 }
+// this run as a replay code: the seed, the mode, the animals, the handicap, the start tick and every hop
+const runCode = () => encodeReplay({ seed: getSeed(), mode: G.mode, chars: players.map(q => charOf(q).key), joined: players.map(q => q.joined), handicap: G.handicap, startTick: G.startTick, events: G.record });
 function checkOver() {
   if (G.state !== 'play') return;
   const [p1, p2] = players;
-  const both = p1.joined && p2.joined;
-  // race: the first to die loses, at once; otherwise the game ends when nobody is left
-  const race = G.mode === 'race' && both && players.some(p => p.joined && !p.alive);
-  if (!race && players.some(p => p.joined && p.alive)) return;
+  const both = p1.joined && p2.joined, race = G.mode === 'race';
+  if (!runOver(players, G.mode)) return;   // sim.js: a race ends at the first death, otherwise when nobody is left
   G.state = 'over'; G.stateT = 0;
   flushBank();
   stopPlayLoop();
@@ -270,7 +268,7 @@ function checkOver() {
   $('app').classList.remove('playing');
   keepAwake(false);
   setBanner('');
-  const top = Math.max(p1.joined ? p1.score : 0, p2.joined ? p2.score : 0);
+  const top = topScore(players);
   let note = '';
   const replay = !!G.replay;   // a replay changes no records and pays nothing
   const hatBefore = hatFor(G.bestAll);
@@ -294,7 +292,7 @@ function checkOver() {
   const page = location.origin + location.pathname;
   shareText = t('I scored {n} in Hop Lanes as {name}!', { n: top, name: t(charOf(hero).name) }) + (G.mode === 'room' ? ' ' + t('Room {code}', { code: G.room }) + '.' : '') + ' ' + page;
   // the replay link: the seed, the animals and every hop of this run
-  const code = !replay && G.record.length ? encodeReplay({ seed: getSeed(), mode: G.mode, chars: [charOf(p1).key, charOf(p2).key], joined: [p1.joined, p2.joined], handicap: G.handicap, startTick: G.startTick, events: G.record }) : '';
+  const code = !replay && G.record.length ? runCode() : '';
   const canReplay = !!code && location.protocol !== 'file:';
   if (canReplay) replayText = page + '#replay-' + code;
   saveGhost(code, top, hero.id);   // daily and room worlds: the best run comes back as a ghost
@@ -330,7 +328,7 @@ async function postScore(name, score) {
     const res = await fetch(SCORES_URL, {
       method: 'POST', headers: { 'Content-Type': 'application/json', ...(SCORES_TOKEN ? { 'X-Hop-Token': SCORES_TOKEN } : {}) },
       // the run's replay code (the one in the replay link): a server with VERIFY=1 plays it again to check the score
-      body: JSON.stringify({ name, score, day: today(), mode: G.mode, replay: encodeReplay({ seed: getSeed(), mode: G.mode, chars: players.map(q => charOf(q).key), joined: players.map(q => q.joined), handicap: G.handicap, startTick: G.startTick, events: G.record }) }), signal: ctrl.signal
+      body: JSON.stringify({ name, score, day: today(), mode: G.mode, replay: runCode() }), signal: ctrl.signal
     });
     if (!res.ok) return;
     let top = (await res.json()).top;

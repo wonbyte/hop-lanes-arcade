@@ -98,17 +98,18 @@ const hopTime = (fromKind, base) => fromKind === 'mud' ? base * MUD_SLOW : base;
 // race: the first to die loses. coinwar: most coins wins. tag: the player behind hops faster.
 const MODES = ['classic', 'race', 'coinwar', 'tag', 'daily', 'room'];
 // each animal has one small edge (a replay stores the animals, so a run stays the same run)
+// text: what the join card says (an i18n key)
 const TRAITS = {
-  frog: {},                      // balanced
-  fox: { comboGap: 1.5 },        // combos stay alive longer (more coins; the run itself is the same)
-  bunny: { hop: 0.8 },           // faster hops
-  cat: { lives: 1 },             // survives one fall into water
-  robot: { idle: 3 },            // the eagle waits 3 s longer
-  pig: { magnet: 1.5 },          // the magnet lasts longer
-  penguin: { noSlide: true },    // at home on ice: no slide
-  turtle: { behind: 1 }          // one more row of slack behind the scroll line
+  frog: { text: 'BALANCED' },
+  fox: { comboGap: 1.5, text: 'LONG COMBOS' },        // combos stay alive longer (more coins; the run itself is the same)
+  bunny: { hop: 0.8, text: 'FAST HOPS' },             // faster hops
+  cat: { lives: 1, text: 'ONE EXTRA LIFE' },          // survives one fall into water
+  robot: { idle: 3, text: 'PATIENT EAGLE' },          // the eagle waits 3 s longer
+  pig: { magnet: 1.5, text: 'LONG MAGNET' },          // the magnet lasts longer
+  penguin: { noSlide: true, text: 'NO ICE SLIDE' },   // at home on ice: no slide
+  turtle: { behind: 1, text: 'MORE SLACK' }           // one more row of slack behind the scroll line
 };
-const traitOf = key => TRAITS[key] || {};
+const traitOf = key => (Object.hasOwn(TRAITS, key) ? TRAITS[key] : {});   // hasOwn: a replay could name 'constructor'
 // hats: unlocked by the all-time best score on this device (the first whose `at` is reached, from the top)
 const HATS = [{ key: 'halo', name: 'HALO', at: 500 }, { key: 'crown', name: 'CROWN', at: 250 }, { key: 'cap', name: 'CAP', at: 100 }];
 const hatFor = best => HATS.find(h => best >= h.at) || null;

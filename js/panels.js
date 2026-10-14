@@ -39,7 +39,6 @@ $('closeSettings').addEventListener('click', () => { sfx.tick(); closeDialog(); 
 $('sound').addEventListener('click', () => { audio(); setMuted(!isMuted()); labelSettings(); });
 $('buzz').addEventListener('click', () => { sfx.tick(); setBuzz(!buzzIsOn()); labelSettings(); });
 $('motion').addEventListener('click', () => { sfx.tick(); save(MOTION_KEY, motionLess() ? 0 : 1); labelSettings(); });
-$('lang').addEventListener('click', labelSettings);   // after screens.js has switched the language
 document.addEventListener('hoplanes:lang', labelSettings);
 
 // ---------- pause menu ----------
@@ -94,11 +93,11 @@ boardBtn.hidden = !SCORES_URL;
 // the list shows all time, today or this week; the button under it cycles the three
 const SCOPES = ['all', 'day', 'week'];
 const SCOPE_TITLE = { all: 'TOP 10', day: 'TODAY TOP 10', week: 'THIS WEEK TOP 10' };
-let scope = 'all';
+let scope = '';   // '' until the first open: daily mode starts on today, the rest on all time
 async function openBoard() {
   audio(); sfx.tick();
   const daily = G.mode === 'daily';
-  if (scope === 'all' && daily) scope = 'day';
+  if (!scope) scope = daily ? 'day' : 'all';
   $('boardBox').querySelector('h2').textContent = t(SCOPE_TITLE[scope]);
   $('boardScope').textContent = t(SCOPE_TITLE[SCOPES[(SCOPES.indexOf(scope) + 1) % SCOPES.length]]);
   $('closeBoard').textContent = t('CLOSE');

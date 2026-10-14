@@ -52,7 +52,7 @@ test('valid scores are ordered; invalid are rejected', async () => {
     { name: 'Ok', score: -1 }, { name: 'Ok', score: 1.5 }, { name: 'Ok', score: '5' }, { name: 'Ok', score: 5001 }, { name: 5, score: 1 }];
   for (const b of bad) assert.equal((await post(b)).status, 400, JSON.stringify(b));
   assert.equal((await post(null, 'not json')).status, 400);
-  assert.equal((await post({ name: 'Big', score: 1, pad: 'x'.repeat(30000) })).status, 400, 'body limit (24 KB)');
+  assert.equal((await post({ name: 'Big', score: 1, pad: 'x'.repeat(45000) })).status, 400, 'body limit (40 KB)');
   const { top } = await (await fetch(base + '/scores')).json();
   assert.deepEqual(top.map(e => [e.name, e.score]), [['Bob 2', 90], ['Cy', 70], ['Ann', 50]]);
   assert.ok(top[0].at);
@@ -202,7 +202,7 @@ test('VERIFY: a posted score must be what its replay plays to', async () => {
   const rp = decodeReplay(CLASSIC_RUN);
   const forged = encodeReplay({ ...rp, events: rp.events.map(([t, p, dx, dr]) => [t, p, 0, 1]) });
   assert.equal(await reject({ name: 'Bob', score: 17, mode: 'classic', replay: forged }, 'forged hops'), 'replay mismatch');
-  assert.equal(await reject({ name: 'Bob', score: 1, mode: 'classic', replay: 'x'.repeat(20000) }, 'replay too long'), 'invalid name, score, day or mode');
+  assert.equal(await reject({ name: 'Bob', score: 1, mode: 'classic', replay: 'x'.repeat(33000) }, 'replay too long'), 'invalid name, score, day or mode');
   assert.equal(await reject({ name: 'Bob', score: 1, mode: 'classic', replay: 'no spaces!' }, 'replay not a code'), 'invalid name, score, day or mode');
   const { top } = await (await fetch(srv.base + '/scores')).json();
   assert.deepEqual(top.map(e => [e.name, e.score]).sort(), [['Ann', 17], ['Dee', 44]].sort());
@@ -223,8 +223,28 @@ test('VERIFY: the verified replay is stored and returned', async () => {
   const srv = await start({ RATE_MAX: '1000', VERIFY: '1' });
   const r = await fetch(srv.base + '/scores', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Ann', score: 17, mode: 'classic', replay: CLASSIC_RUN }) });
   assert.equal(r.status, 200);
-  assert.equal((await r.json()).top[0].replay, CLASSIC_RUN);
   assert.equal((await (await fetch(srv.base + '/scores')).json()).top[0].replay, CLASSIC_RUN);
+});
+
+test('without VERIFY a junk replay is stored as null; the POST reply carries no replays', async () => {
+  const srv = await start({ RATE_MAX: '1000' });
+  const sp = b => fetch(srv.base + '/scores', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
+  const a = await sp({ name: 'Rex', score: 3, mode: 'classic', replay: CLASSIC_RUN });
+  const reply = (await a.json()).top;
+  assert.ok(reply.length && reply.every(e => !('replay' in e) || e.replay == null), 'POST reply has no replay strings');
+  assert.equal((await sp({ name: 'Junk', score: 2, mode: 'classic', replay: 'abcdefgh' })).status, 200);
+  const { top } = await (await fetch(srv.base + '/scores')).json();
+  assert.equal(top.find(e => e.name === 'Rex').replay, CLASSIC_RUN, 'GET keeps it');
+  assert.equal(top.find(e => e.name === 'Junk').replay, null, 'junk stored as null');
+});
+
+test('an entry pushed past rank 10 loses its replay', async () => {
+  const srv = await start({ RATE_MAX: '1000', SAVE_DELAY_MS: '0' });
+  const sp = b => fetch(srv.base + '/scores', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
+  await sp({ name: 'Low', score: 1, mode: 'classic', replay: CLASSIC_RUN });
+  for (let i = 0; i < 10; i++) await sp({ name: 'P' + i, score: 10 + i, mode: 'classic' });
+  const stored = JSON.parse(fs.readFileSync(srv.file, 'utf8'));
+  assert.equal(stored.find(e => e.name === 'Low').replay, null, 'rank 11 has no replay');
 });
 
 test('isoWeek: edges', () => {

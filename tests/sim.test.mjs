@@ -294,3 +294,18 @@ test('gen: every world has a way forward (pads over pads, planks reachable, no t
   assert.deepEqual(standGroups([-4, -3, 0, 1, 2, 4]), [[-4, -3], [0, 1, 2], [4]]);
   assert.deepEqual(standGroups(null), [[-4, -3, -2, -1, 0, 1, 2, 3, 4]]);
 });
+
+test('near miss: a new visit of a row counts its cars again; the same visit does not', () => {
+  const b = benchWith([{ kind: 'grass' }, { kind: 'road', objs: [{ x: 3, len: 1.4 }] }, { kind: 'grass' }], ['frog']);
+  const p = b.players[0];
+  b.G.run = { coins: 0, row: 0, rivers: 0, hops: 0, logs: 0, combo: 0, powers: 0, secrets: 0, nears: 0 };
+  p.x = 0; b.rules.tryMove(p, 0, 1); b.hopTicks(p);
+  b.lanes.get(1).objs[0].x = 0.7 + 0.28 + 0.3;
+  b.run(5);
+  assert.equal(b.G.run.nears, 1, 'one near miss while standing by the car');
+  b.rules.tryMove(p, 0, 1); b.hopTicks(p);    // up (the car is still near while leaving: no second count)
+  assert.equal(b.G.run.nears, 1);
+  b.rules.tryMove(p, 0, -1); b.hopTicks(p);   // and back: a fresh visit, the same car counts again
+  b.run(5);
+  assert.equal(b.G.run.nears, 2, 'the car counts again on the next visit, once');
+});

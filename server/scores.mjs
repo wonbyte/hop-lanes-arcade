@@ -2,7 +2,7 @@
 // Run: node server/scores.mjs
 // Env: PORT (8787), DATA_FILE (./scores.json next to this script), ALLOW_ORIGIN ('*'), POST_TOKEN ('' = none), MAX_SCORE (5000), RATE_MAX (10),
 //      TRUST_PROXY ('1' when a reverse proxy sits in front: the rate limit then keys on the client in X-Forwarded-For),
-//      VERIFY ('1': every POST must carry its replay, and the score must be what the replay plays to; see README.md), VERIFY_MS (1000).
+//      VERIFY ('1': every POST must carry its replay, and the score must be what the replay plays to; see README.md), VERIFY_MS (300).
 import http from 'node:http';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -25,9 +25,11 @@ const MAX_PER_BUCKET = 200;    // entries kept per bucket (mode|day), so a flood
 const MAX_SCORE = Number(process.env.MAX_SCORE ?? 5000); // highest accepted score (env override is for tests)
 const DAY_KEEP = 14;           // day buckets older than this many days behind the newest day are dropped
 const TOP_N = 10;              // entries returned
-const MAX_BODY = 24 * 1024;    // bytes (a replay code is at most MAX_REPLAY)
-const MAX_REPLAY = 16384;      // characters of a replay code: about 3000 hops, far past any real run
-const SIM_MS = Number(process.env.VERIFY_MS ?? 1000); // wall-clock budget for replaying one run (about 1 us per tick once warm: an hour of play is ~0.4 s)
+const MAX_BODY = 40 * 1024;    // bytes (a replay code is at most MAX_REPLAY)
+const MAX_REPLAY = 32768;      // characters of a replay code: about 6000 hops, far past any real run
+const SIM_MS = Number(process.env.VERIFY_MS ?? 300); // wall-clock budget for replaying one run (about 1 us per tick once warm; replaying blocks the event loop, so keep it short)
+const MAX_TICKS = 120 * 60 * 61;  // sim.js default: an hour of play at 120 steps/s
+const TICKS_PER_ROW = 120 * 20;  // a claimed score of n must play out within (n + 10) rows x 20 s
 const RATE_MAX = Number(process.env.RATE_MAX ?? 10); // POSTs per window per IP (env override is for tests)
 const RATE_WINDOW_MS = 60_000;
 
@@ -88,6 +90,8 @@ function compact(list) {
     if (seen.has(who)) continue;
     const c = count.get(b) ?? 0;
     if (c >= MAX_PER_BUCKET) continue;
+    if (c >= TOP_N) e.replay = null; // rank 11+ can never be in a top 10 view: drop its replay
+    if (e.week === undefined) e.week = e.day ? isoWeek(e.day) : null;
     seen.add(who); count.set(b, c + 1); out.push(e);
   }
   return out;
@@ -97,15 +101,15 @@ scores = compact(load());
 
 // Top entries, optionally only those with a given day or ISO week and/or mode. Entries saved before
 // day/mode existed read as day null, mode 'classic'. Each carries its replay code (or null): top entries only,
-// so a response holds at most TOP_N replays.
-function top(day, mode, week) {
+// so a response holds at most TOP_N replays (withReplay false leaves them out: the POST reply).
+function top(day, mode, week, withReplay = true) {
   const out = [];
   for (const e of scores) {
     const d = e.day ?? null, m = e.mode ?? 'classic';
     if (day && d !== day) continue;
-    if (week && (!d || isoWeek(d) !== week)) continue;
+    if (week && e.week !== week) continue;
     if (mode && m !== mode) continue;
-    out.push({ name: e.name, score: e.score, at: e.at, day: d, mode: m, replay: typeof e.replay === 'string' ? e.replay : null });
+    out.push({ name: e.name, score: e.score, at: e.at, day: d, mode: m, ...(withReplay ? { replay: typeof e.replay === 'string' ? e.replay : null } : {}) });
     if (out.length >= TOP_N) break;
   }
   return out;
@@ -116,7 +120,7 @@ function add(name, score, day, mode, replay = null) {
   const old = scores.find(e => e.name === name && bucketOf(e) === bucketOf(probe));
   if (old && old.score >= score) return; // keep the higher score
   if (old) scores.splice(scores.indexOf(old), 1);
-  scores.push({ name, score, at: new Date().toISOString(), day, mode, replay });
+  scores.push({ name, score, at: new Date().toISOString(), day, mode, week: day ? isoWeek(day) : null, replay });
   scores = compact(scores);
   save();
 }
@@ -213,6 +217,7 @@ function validate(obj) {
     if (typeof obj.replay !== 'string' || obj.replay.length > MAX_REPLAY || !/^[\w-]+$/.test(obj.replay)) return null;
     replay = obj.replay;
   }
+  if (replay && !VERIFY && !decodeReplay(replay)) replay = null; // not a replay: do not store the junk
   return { name, score, day, mode, replay };
 }
 
@@ -223,7 +228,7 @@ function replayOk(entry) {
   const rp = decodeReplay(entry.replay);
   if (!rp || rp.mode !== entry.mode) return false;
   if (rp.mode === 'daily' && (!entry.day || rp.seed !== hashString('hoplanes.day.' + entry.day))) return false;
-  const run = simulate(rp, { maxMs: SIM_MS });
+  const run = simulate(rp, { maxMs: SIM_MS, maxTicks: Math.min(MAX_TICKS, (entry.score + 10) * TICKS_PER_ROW) });
   return !!run && run.over && run.score === entry.score;
 }
 
@@ -254,7 +259,7 @@ const server = http.createServer(async (req, res) => {
       if (!entry) return send(res, 400, { error: 'invalid name, score, day or mode' });
       if (VERIFY && !replayOk(entry)) return send(res, 400, { error: 'replay mismatch' });
       add(entry.name, entry.score, entry.day, entry.mode, entry.replay);
-      return send(res, 200, { top: top() });
+      return send(res, 200, { top: top(null, null, null, false) });
     }
     send(res, 404, { error: 'not found' });
   } catch (err) {

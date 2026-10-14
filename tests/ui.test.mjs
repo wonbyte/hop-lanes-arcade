@@ -467,7 +467,10 @@ test('9. daily mode: the best run comes back as a ghost in the next game on the 
     await page.keyboard.press('KeyW');
     await waitState(page, 'play');
     assert.equal(await hop(page, () => window.hopLanes.ghost), null, 'no ghost before a run is saved');
-    for (let i = 0; i < 3; i++) { await page.waitForTimeout(400); await page.keyboard.press('KeyW'); }   // a few rows, so the run scores
+    for (let i = 0; i < 3; i++) {   // a few rows, so the run scores (a hop lands before the next)
+      await page.keyboard.press('KeyW');
+      await page.waitForFunction(() => !window.hopLanes.players[0].hop, null, { timeout: T });
+    }
     await waitState(page, 'over', 90000);
     await resultsVisible(page);
     const first = await hop(page, () => window.hopLanes.players[0].score);
@@ -528,6 +531,23 @@ test('11. daily mode: a finished run starts a streak that shows on the title', {
     assert.match(await page.evaluate(() => localStorage.getItem('hoplanes.streak')), /^\d{4}-\d{2}-\d{2}\|1$/);
     assert.equal(await hop(page, () => window.hopLanes.streak), '1');
     assert.equal(await page.locator('#streakBox').isHidden(), false, 'the streak shows');
+    assert.deepEqual(errors, []);
+  } finally { await context.close(); }
+});
+
+test('12. the cat survives one fall into water in the real game (no shield bubble yet, no crash)', { timeout: SLOW }, async () => {
+  const { context, page, errors } = await open(INDEX + '-seed-42', { storage: { 'hoplanes.owned': 'cat', 'hoplanes.pick0': 'cat' } });   // seed 42: rows 4-6 are river
+  try {
+    await waitState(page, 'attract');
+    assert.match(await page.locator('#card1 .state').textContent(), /CAT · ONE EXTRA LIFE/);
+    await page.keyboard.press('KeyW');
+    await waitState(page, 'play');
+    await hop(page, () => window.hopLanes.kill(window.hopLanes.players[0], 'splash'));   // the first fall: the extra life
+    await page.waitForFunction(() => !window.hopLanes.players[0].hop, null, { timeout: T });
+    assert.equal(await hop(page, () => window.hopLanes.players[0].alive), true, 'still alive');
+    assert.equal(await hop(page, () => window.hopLanes.players[0].lives), 0);
+    await hop(page, () => window.hopLanes.kill(window.hopLanes.players[0], 'splash'));
+    await waitState(page, 'over');
     assert.deepEqual(errors, []);
   } finally { await context.close(); }
 });

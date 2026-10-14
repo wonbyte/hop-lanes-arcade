@@ -48,12 +48,8 @@ jobs:
       - name: Assemble site
         run: |
           mkdir _site
-          rsync -a \
-            --exclude '/_site' --exclude '/.git' --exclude '/.github' --exclude '/node_modules' \
-            --exclude '/tests' --exclude '/server' --exclude '/tools' \
-            --exclude '/package.json' --exclude '/package-lock.json' \
-            --exclude '*.md' --exclude '/LICENSE' --exclude '/.git*' \
-            ./ _site/
+          # only what the page needs (an include list, so a stray new file is never published)
+          cp -r index.html manifest.webmanifest hop-lanes-standalone.html css js vendor fonts icons _site/
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: _site

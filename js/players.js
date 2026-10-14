@@ -183,7 +183,8 @@ const playRules = makeRules({
       else if (cause === 'slow') burst(x, z, DUST, 8);
     },
     rescue(p) {   // the hop back starts where the animal is drawn
-      p.mesh.userData.bubble.visible = false;
+      const bubble = p.mesh.userData.bubble;   // none yet when the cat's extra life saves it
+      if (bubble) bubble.visible = false;
       p.hop.fz = p.mesh.position.z;
       sfx.eagle(); buzz(40);
       burst(p.mesh.position.x, p.mesh.position.z, SPLASH, 10);

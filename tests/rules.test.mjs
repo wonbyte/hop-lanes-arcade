@@ -107,7 +107,8 @@ test('isoWeek, streaks and hats', async () => {
   assert.equal(hatFor(499).key, 'crown');
   assert.equal(hatFor(500).key, 'halo');
   assert.ok(HATS.every((h, i) => !i || h.at < HATS[i - 1].at), 'hats are listed from the top');
-  assert.deepEqual(traitOf('frog'), {});
+  assert.deepEqual(traitOf('frog'), { text: 'BALANCED' });
+  assert.deepEqual(traitOf('constructor'), {}, 'nothing from Object.prototype');
   assert.deepEqual(traitOf('nobody'), {});
   assert.equal(traitOf('bunny').hop, 0.8);
 });

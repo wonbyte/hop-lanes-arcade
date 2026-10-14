@@ -62,6 +62,7 @@ function startGhost() {
 function stepGhost() {
   if (!ghost) return;
   if (!ghost.sim.step() || !ghost.p.alive) { ghost.mesh.visible = false; ghost.done = true; }
+  else if ((ghost.sim.tick & 255) === 0) ghost.sim.prune();
 }
 // per drawn frame (app.js)
 function placeGhost() {

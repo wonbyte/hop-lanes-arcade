@@ -8,6 +8,7 @@ let actx = null;
 function audio() {
   if (!actx) { try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
   if (!actx) return;
+  watchContext();
   // the title tune needs a running context, which needs a gesture: start it with the first one on the title
   const onTitle = () => { if (G.state === 'attract') startTune(); };
   if (actx.state === 'suspended') actx.resume().then(onTitle).catch(() => {}); else onTitle();
@@ -101,6 +102,8 @@ function startPlayLoop() {
   next();
 }
 function stopPlayLoop() { if (playTimer) { clearTimeout(playTimer); playTimer = 0; } }
+// the context may still be waking when play starts (audio() resumes it on the join gesture): start the loop then
+function watchContext() { if (actx && !actx.onstatechange) actx.onstatechange = () => { if (actx.state === 'running' && G.state === 'play') startPlayLoop(); }; }
 const playLoopOn = () => !!playTimer;
 
 const isMuted = () => muted;
