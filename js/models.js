@@ -340,6 +340,11 @@ function trainBoxes(dir, cars = TRAIN_CARS) {
     b.push([0.4, 0.15, 0.9, 0x222222, -len / 2 + 0.6 + i * (len - 1.2) / (wheels - 1), 0, 0]);
   return b;
 }
+// a boulder (rocks rows): a round-ish grey ball of boxes, about 0.9 across
+const boulderBoxes = () => [[0.9, 0.5, 0.62, 0x8b8b86, 0, 0.2, 0], [0.62, 0.9, 0.62, 0x7f7f7a, 0, 0, 0], [0.62, 0.5, 0.9, 0x8b8b86, 0, 0.2, 0],
+  [0.22, 0.2, 0.06, 0x62625d, 0.15, 0.55, -0.46], [0.18, 0.16, 0.06, 0x62625d, -0.2, 0.25, 0.46]];
+// a bridge plank: boards with two darker cross slats (its top sits just under the feet)
+const plankBoxes = () => [[0.9, 0.1, 0.82, 0x9a6a3a, 0, -0.12, 0], [0.08, 0.11, 0.82, 0x6e4826, -0.3, -0.12, 0], [0.08, 0.11, 0.82, 0x6e4826, 0.3, -0.12, 0]];
 // power-ups: a blue shield gem and a red magnet
 const shieldBoxes = () => [[0.5, 0.5, 0.5, 0x4fb8ff, 0, 0.3, 0], [0.3, 0.3, 0.3, 0xeaf6ff, 0, 0.4, 0]];
 const magnetBoxes = () => [[0.16, 0.5, 0.16, 0xe8513a, -0.2, 0.25, 0], [0.16, 0.5, 0.16, 0xe8513a, 0.2, 0.25, 0],
@@ -359,4 +364,4 @@ const LIGHT_TINT = { off: 0x331111, on: 0xff2222, red: 0xff2a2a, blue: 0x3a7bff 
 const LIGHT_OFF = new THREE.MeshLambertMaterial({ color: 0x331111 });
 const lightGeo = new THREE.BoxGeometry(0.38, 0.2, 0.14);
 
-export { CHARACTERS, COLORS, LIGHT_OFF, LIGHT_TINT, PIX, PRIZES, bunnyBoxes, catBoxes, coinBoxes, drawPix, eagleBoxes, foxBoxes, frogBoxes, isOwned, lightBoxes, lightGeo, logBoxes, magnetBoxes, makeCharacter, penguinBoxes, pigBoxes, policeBoxes, robotBoxes, shieldBoxes, trainBoxes, turtleBoxes, vehicleBoxes };
+export { CHARACTERS, COLORS, LIGHT_OFF, LIGHT_TINT, PIX, PRIZES, boulderBoxes, bunnyBoxes, catBoxes, coinBoxes, drawPix, eagleBoxes, foxBoxes, frogBoxes, isOwned, lightBoxes, lightGeo, logBoxes, magnetBoxes, makeCharacter, penguinBoxes, pigBoxes, plankBoxes, policeBoxes, robotBoxes, shieldBoxes, trainBoxes, turtleBoxes, vehicleBoxes };

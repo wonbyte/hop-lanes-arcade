@@ -3,6 +3,7 @@ import { $, COUNTDOWN, DEBUG, G, REPLAY_CODE, RESULTS_DELAY, STEP } from './core
 import { pollGamepads } from './input.js';   // also sets up every input listener
 import { decodeReplay } from './replay.js';
 import { creepCamera } from './sim.js';
+import { ghostInfo, ghostMat, ghostWarmGeo, placeGhost, stepGhost } from './ghost.js';
 import { CHARACTERS, LIGHT_OFF, lightGeo } from './models.js';
 import { CAM_OFF, SUN_OFF, camera, focus, getPixelRatio, renderer, scene, setNight, shadowCadence, sun, touchQuery, viewInfo, watchFrameTime } from './gfx.js';
 import { announceFrame } from './panels.js';   // also sets up the settings, pause and top-10 panels
@@ -53,7 +54,7 @@ function step(dt) {
   if (DEBUG && G.boom) { G.boom = false; throw new Error('test crash'); }   // hopLanes.boom(): the crash notice test
   G.tick++; G.worldTick++; G.stateT += dt;
   if (G.state === 'countdown') updateCountdown(dt);
-  else if (G.state === 'play') { G.playTick++; applyMoves(); updateCamera(dt); }
+  else if (G.state === 'play') { G.playTick++; applyMoves(); updateCamera(dt); stepGhost(); }
   else if (G.state === 'over' && G.stateT > RESULTS_DELAY && resultsEl.hidden) resultsEl.hidden = false;
   ensureLanes();
   updateLanes(players);   // only the lanes a player can touch; the rest move once per drawn frame
@@ -110,6 +111,7 @@ function frameBody(now) {
     spinAll(now);
     updateFarLanes();
     placeCamera();
+    placeGhost();
     announceFrame();
     shadowCadence(idle);
     renderer.render(scene, camera);
@@ -153,6 +155,7 @@ if (DEBUG) {
     get weather() { return G.weather; },
     get view() { return viewInfo(); },
     get tune() { return tuneOn(); },
+    get ghost() { return ghostInfo(); },
     boom() { G.boom = true; },   // throw inside the next step: the crash notice
     ladder: { feed: watchFrameTime, get ratio() { return getPixelRatio(); }, get shadow() { return sun.shadow.mapSize.x; } }
   };
@@ -177,7 +180,7 @@ if (G.replay) {
 if (loadText(HOWTO_KEY) !== '1' && !G.replay) showHowto();
 // build the other shaders now (rail lights; the see-through landing spot and shield bubble): built on the first
 // join or train, each one stutters the game
-const warm = [new THREE.Mesh(lightGeo, LIGHT_OFF), new THREE.Mesh(blobGeo, blobMat), new THREE.Mesh(bubbleGeo, bubbleMat)];
+const warm = [new THREE.Mesh(lightGeo, LIGHT_OFF), new THREE.Mesh(blobGeo, blobMat), new THREE.Mesh(bubbleGeo, bubbleMat), new THREE.Mesh(ghostWarmGeo(), ghostMat)];
 warm.forEach(m => scene.add(m));
 renderer.compile(scene, camera);
 warm.forEach(m => scene.remove(m));

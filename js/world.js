@@ -1,10 +1,10 @@
 import { sfx } from './audio.js';
 import { FIRST_ROW, FIXED_SEED, G, LANES_AHEAD, LANES_BEHIND, PLAY_HALF, STEP, WRAP } from './core.js';
-import { hashString } from './rules.js';
+import { hashString, plankState } from './rules.js';
 import { createWorldGen, railStep, trafficX, wetAt } from './gen.js';
 import { touchRows } from './sim.js';
 import { BLINK_STEPS, scene } from './gfx.js';
-import { LIGHT_TINT, coinBoxes, lightBoxes, logBoxes, magnetBoxes, policeBoxes, shieldBoxes, trainBoxes, vehicleBoxes } from './models.js';
+import { LIGHT_TINT, boulderBoxes, coinBoxes, lightBoxes, logBoxes, magnetBoxes, plankBoxes, policeBoxes, shieldBoxes, trainBoxes, vehicleBoxes } from './models.js';
 import { dailySeed } from './storage.js';
 import { cachedGeo, mergeBoxes, voxelMat, voxelMesh } from './voxel.js';
 
@@ -133,6 +133,9 @@ const LIGHT_Y_CAR = 0.88, LIGHT_Y_RAIL = 1.1, POLE_X = PLAY_HALF + 0.6, POLE_DZ 
 const newLight = tintKey => new Inst('light', lightBoxes, false, LIGHT_TINT[tintKey]);
 const carLightX = (lane, o) => o.x + (lane.dir > 0 ? -0.08 : 0.08);
 
+// thin lines along both edges of a row (looks only, no random draws): road edges, river foam
+const FOAM = 0xeaf8ff;
+function edgeLines(ground, z, color, y) { ground.push([40, 0.02, 0.05, color, 0, y, z - 0.47], [40, 0.02, 0.05, color, 0, y, z + 0.47]); }
 // One builder per lane type: the look of a row gen.js made. Each adds its static boxes to `ground` (merged into one
 // mesh later) and its moving parts to lane.objs. No random draws here: everything random is in the lane data.
 const LANE_BUILDERS = {
@@ -143,6 +146,7 @@ const LANE_BUILDERS = {
   },
   road(lane, { z, ground }) {
     ground.push([40, 0.3, 1, 0x4a4f5c, 0, -0.3, z]);
+    edgeLines(ground, z, 0xdedede, 0);   // a light line on both edges: a road reads as a road without its colour
     if (lane.prevKind === 'road')
       for (let x = -12; x <= 12; x += 2) ground.push([0.8, 0.02, 0.08, 0xe8e8e8, x, 0, z + 0.5]);
     // further out, some roads are police chases: faster, with flashing lights
@@ -155,6 +159,7 @@ const LANE_BUILDERS = {
   },
   river(lane, { z, ground }) {
     ground.push([40, 0.3, 1, 0x5ec8f0, 0, -0.45, z], [40, 0.02, 0.16, 0x74d3f5, 0, -0.16, z + 0.3]);   // a lighter streak: depth
+    edgeLines(ground, z, FOAM, -0.16);   // pale foam on both banks
     placeTraffic(lane, z, o => new Inst('log' + o.len, () => logBoxes(o.len), false));   // flat on the water, no shadow
     // light ripples drift with the current (looks only: placed without the world generator, so seeds stay the same)
     lane.ripples = [0, 1, 2].map(i => {
@@ -166,6 +171,7 @@ const LANE_BUILDERS = {
   // lily pads: still water with pads at a few columns; land on water and you sink
   lily(lane, { z, ground }) {
     ground.push([40, 0.3, 1, 0x5ec8f0, 0, -0.45, z], [40, 0.02, 0.16, 0x74d3f5, 0, -0.16, z + 0.3]);
+    edgeLines(ground, z, FOAM, -0.16);
     for (const x of lane.pads) ground.push([0.78, 0.08, 0.78, 0x3f9f4a, x, -0.12, z], [0.2, 0.09, 0.2, 0xe66d8c, x + 0.2, -0.12, z - 0.2]);
   },
   // mud: safe, but a hop out of it is slow (rules.js hopTime), so the scroll line catches up
@@ -174,6 +180,27 @@ const LANE_BUILDERS = {
     for (const m of lane.mudLooks)
       if (m.reed) ground.push([0.3, m.reed, 0.3, 0x8a7a3a, m.x, 0, z]);   // reeds
       else ground.push([m.w, 0.02, 0.5, 0x5e3f24, m.x, 0, z + m.dz]);      // puddles
+  },
+  // ice: pale blue, with light sheen stripes (so it differs from grass by shape too) and snowy trees
+  ice(lane, { r, z, ground }) {
+    ground.push([40, 0.3, 1, r % 2 ? 0xd3ecf7 : 0xc8e5f3, 0, -0.3, z]);
+    for (let x = -12; x <= 12; x += 2.5) ground.push([1.1, 0.02, 0.07, 0xf6fcff, x + (r % 3) * 0.6, 0, z - 0.22], [0.6, 0.02, 0.07, 0xf6fcff, x + 0.4 + (r % 3) * 0.6, 0, z + 0.12]);
+    for (const [x, h] of lane.treeH) ground.push([0.3, 0.3, 0.3, 0x7a4b2a, x, 0, z], [0.6, h, 0.6, 0xe3f0f5, x, 0.3, z]);
+  },
+  // a bridge: water with a run of planks (instances: a plank drops when it breaks), posts at both ends and rope rails
+  bridge(lane, { z, ground }) {
+    ground.push([40, 0.3, 1, 0x5ec8f0, 0, -0.45, z], [40, 0.02, 0.16, 0x74d3f5, 0, -0.16, z + 0.3]);
+    edgeLines(ground, z, FOAM, -0.16);
+    const cols = [...lane.planks.keys()], a = cols[0] - 0.5, b = cols[cols.length - 1] + 0.5;
+    for (const x of [a, b]) for (const dz of [-0.42, 0.42]) ground.push([0.12, 0.62, 0.12, 0x6e4826, x, -0.3, z + dz]);
+    for (const dz of [-0.42, 0.42]) ground.push([b - a, 0.04, 0.04, 0xc9a77a, (a + b) / 2, 0.26, z + dz]);
+    lane.plankInst = cols.map(x => { const i = new Inst('plank', plankBoxes, false); i.set(x, 0, z); return { x, i, y: 0 }; });
+  },
+  // rocks: dusty ground with pebbles; boulders roll across like slow traffic
+  rocks(lane, { r, z, ground }) {
+    ground.push([40, 0.3, 1, r % 2 ? 0x9b9182 : 0x958b7c, 0, -0.3, z]);
+    for (let x = -12; x <= 12; x += 3) ground.push([0.22, 0.08, 0.18, 0x7a7266, x + (r % 4) * 0.7, 0, z + ((x + r) % 2 ? 0.3 : -0.3)]);
+    placeTraffic(lane, z, () => new Inst('boulder', boulderBoxes, true));
   },
   rail(lane, { z, ground }) {
     ground.push([40, 0.3, 1, 0x7b6f6a, 0, -0.3, z]);
@@ -199,7 +226,7 @@ function addLane(r) {
   LANE_BUILDERS[kind](lane, { r, z: -r, ground });
   placeCoins(lane, -r);
   // unique per lane, disposed with the lane; flat ground does not cast shadows, trees and the rail pole do
-  lane.ground = voxelMesh(mergeBoxes(ground), kind === 'grass' ? lane.trees.size > 0 : kind === 'rail');
+  lane.ground = voxelMesh(mergeBoxes(ground), kind === 'grass' || kind === 'ice' ? lane.trees.size > 0 : kind === 'rail');
   lane.ground.matrixAutoUpdate = false;
   lane.ground.updateMatrix();
   lane.group.add(lane.ground);
@@ -273,6 +300,7 @@ function dropLane(lane) {
   worldGroup.remove(lane.group);
   for (const o of lane.objs) { o.inst.drop(); if (o.light) o.light.drop(); }
   if (lane.ripples) for (const q of lane.ripples) q.inst.drop();
+  if (lane.plankInst) for (const q of lane.plankInst) q.i.drop();
   if (lane.train) lane.train.inst.drop();
   if (lane.light) lane.light.drop();
   if (lane.power) dropSpinner(lane.power.s);
@@ -288,7 +316,7 @@ function moveTraffic(lane, w) {
   const half = lane.span / 2, travel = lane.dir * lane.speed * w, river = lane.kind === 'river', now = w * 1000;
   for (const o of lane.objs) {
     o.x = trafficX(lane, o, w);   // gen.js: the one formula (sim.js reads the same positions)
-    o.inst.move(o.x, river ? Math.sin(now / 400 + o.x) * 0.02 : 0, o.z);
+    o.inst.move(o.x, river ? Math.sin(now / 400 + o.x) * 0.02 : lane.kind === 'rocks' ? Math.abs(Math.sin(o.x * 3)) * 0.06 : 0, o.z);
     if (o.light) {
       o.light.move(carLightX(lane, o), LIGHT_Y_CAR, o.z);
       const red = Math.floor(now / 140) % 2 === 1;
@@ -333,7 +361,16 @@ function paintSignal(lane) {
 }
 function updateLane(lane, w, draw) {
   if (lane.kind === 'rail') updateRail(lane, w, draw);
-  else if (draw && (lane.kind === 'road' || lane.kind === 'river')) moveTraffic(lane, w);
+  else if (draw && (lane.kind === 'road' || lane.kind === 'river' || lane.kind === 'rocks')) moveTraffic(lane, w);
+  else if (draw && lane.kind === 'bridge') placePlanks(lane);
+}
+// planks follow the bridge's state (rules.js plankState, world ticks): shaking while cracking, sunk while down
+function placePlanks(lane) {
+  for (const q of lane.plankInst) {
+    const st = plankState(lane, q.x, G.worldTick);
+    const y = st === 'down' ? -0.7 : st === 'cracking' ? Math.sin(G.worldTick * 1.7) * 0.03 : 0;
+    if (y !== q.y) { q.y = y; q.i.move(q.x, y, -lane.r); }
+  }
 }
 // Every step: only the lanes a player can touch (collisions and landings read o.x and train.x there), so the
 // outcome is exact whatever the screen or the frame rate. The rest of the lanes move once per drawn frame
@@ -361,6 +398,7 @@ function showLane(lane, on) {
   if (on) updateLane(lane, G.worldTick * STEP, true);   // a hidden lane was not moved: catch up before it shows
   for (const o of lane.objs) { o.inst.set(o.x, 0, o.z, o.rot || 0, on); if (o.light) o.light.set(carLightX(lane, o), LIGHT_Y_CAR, o.z, 0, on); }
   if (lane.ripples) for (const q of lane.ripples) q.inst.set(q.x, 0, q.z, 0, on);
+  if (lane.plankInst) for (const q of lane.plankInst) q.i.set(q.x, q.y, -lane.r, 0, on);
   if (lane.train) lane.train.inst.set(lane.train.x, 0, -lane.r, 0, on && lane.train.active);
   if (lane.light) { lane.light.set(POLE_X, LIGHT_Y_RAIL, -lane.r + POLE_DZ, 0, on); paintSignal(lane); }
   for (const s of lane.coins.values()) s.inst.set(s.x, 0, s.z, 0, on);

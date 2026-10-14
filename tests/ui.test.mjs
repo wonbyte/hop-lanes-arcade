@@ -453,3 +453,30 @@ test('8e. a script error shows the crash notice instead of a frozen screen', asy
     assert.match(errors[0], /^console: Error: test crash/);
   } finally { await context.close(); }
 });
+
+test('9. daily mode: the best run comes back as a ghost in the next game on the same world', { timeout: 240000 }, async () => {
+  const { context, page, errors } = await open(INDEX, { storage: { 'hoplanes.mode': 'daily' } });
+  try {
+    await waitState(page, 'attract');
+    assert.equal(await hop(page, () => window.hopLanes.mode), 'daily');
+    await page.keyboard.press('KeyW');
+    await waitState(page, 'play');
+    assert.equal(await hop(page, () => window.hopLanes.ghost), null, 'no ghost before a run is saved');
+    for (let i = 0; i < 3; i++) { await page.waitForTimeout(400); await page.keyboard.press('KeyW'); }   // a few rows, so the run scores
+    await waitState(page, 'over', 90000);
+    await resultsVisible(page);
+    const first = await hop(page, () => window.hopLanes.players[0].score);
+    assert.ok(first >= 1, 'the first run scored');
+    const seed = await hop(page, () => window.hopLanes.seed);
+    assert.match(await page.evaluate(k => localStorage.getItem(k) || '', 'hoplanes.ghost.' + seed), /^\d+\|0\|\d+\|[A-Za-z0-9_-]+$/, 'the run is saved for this world');
+    await page.keyboard.press('Space');
+    await waitState(page, 'attract');
+    await page.keyboard.press('KeyW');
+    await waitState(page, 'play');
+    await page.waitForFunction(() => window.hopLanes.ghost !== null, null, { timeout: T });
+    const g = await hop(page, () => window.hopLanes.ghost);
+    assert.equal(g.score, first, 'the ghost is the saved run');
+    await page.waitForFunction(() => { const g = window.hopLanes.ghost; return g && g.row >= 1; }, null, { timeout: 60000 });   // it hops
+    assert.deepEqual(errors, []);
+  } finally { await context.close(); }
+});

@@ -32,7 +32,7 @@ const COUNTDOWN = 3;
 const EAGLE_IDLE = 6;         // seconds without a hop before the eagle comes for you
 const EAGLE_SWOOP = 0.9;      // seconds the eagle takes to reach the player
 const EAGLE_WARN = 1.5;       // seconds before the swoop a warning sounds
-const COIN_CHANCE = { grass: 0.28, road: 0.18, lily: 0.4, mud: 0.3 };   // chance of a coin on a lane
+const COIN_CHANCE = { grass: 0.28, road: 0.18, lily: 0.4, mud: 0.3, ice: 0.25, bridge: 0.35, rocks: 0.2 };   // chance of a coin on a lane
 const STEP = 1 / 120;         // the game steps at a fixed rate, so a replay plays back the same run
 const POWER_CHANCE = 0.05;    // chance of a power-up (shield or magnet) on a lane past row 10
 const COMBO_GAP = 0.45;       // seconds between hops that keep a combo alive
@@ -44,8 +44,10 @@ const DIFF_ROWS = 140;        // rows until the game reaches full difficulty
 const difficulty = r => difficultyAt(r, DIFF_ROWS);
 
 // ---------- lanes ----------
-const LANE_KINDS = ['grass', 'road', 'river', 'lily', 'mud', 'rail'];
-const STREAK_MAX = { road: 4, river: 3, lily: 2, mud: 2, rail: 3 };   // longest run of one kind
+const LANE_KINDS = ['grass', 'road', 'river', 'lily', 'mud', 'rail', 'ice', 'bridge', 'rocks'];
+const STREAK_MAX = { road: 4, river: 3, lily: 2, mud: 2, rail: 3, ice: 2, bridge: 1, rocks: 2 };   // longest run of one kind
+// the late kinds start at these rows (they draw nothing before, so rows below ICE_FROM are as they always were)
+const ICE_FROM = 25, BRIDGE_FROM = 40, ROCKS_FROM = 55;
 // the kind of row r, given the row before it ({ kind, streak }) and the world generator
 function nextLaneKind(r, diff, prev, rng) {
   if (r < 4) return 'grass';
@@ -53,11 +55,12 @@ function nextLaneKind(r, diff, prev, rng) {
   if (prev.kind !== 'grass' && prev.streak < STREAK_MAX[prev.kind] && rng() < 0.55) return prev.kind;
   const w = {
     grass: 0.32 - diff * 0.12, road: 0.36, river: 0.2 + diff * 0.06,
-    lily: r > 8 ? 0.1 : 0, mud: r > 12 ? 0.07 : 0, rail: 0.12 + diff * 0.06
+    lily: r > 8 ? 0.1 : 0, mud: r > 12 ? 0.07 : 0, rail: 0.12 + diff * 0.06,
+    ice: r >= ICE_FROM ? 0.05 + diff * 0.04 : 0, bridge: r >= BRIDGE_FROM ? 0.04 + diff * 0.04 : 0, rocks: r >= ROCKS_FROM ? 0.04 + diff * 0.06 : 0
   };
-  let x = rng() * (w.grass + w.road + w.river + w.lily + w.mud + w.rail);
+  let x = rng() * (w.grass + w.road + w.river + w.lily + w.mud + w.rail + w.ice + w.bridge + w.rocks);
   let k = 'rail';
-  for (const key of ['grass', 'road', 'river', 'lily', 'mud']) { if ((x -= w[key]) < 0) { k = key; break; } }
+  for (const key of ['grass', 'road', 'river', 'lily', 'mud', 'ice', 'bridge', 'rocks']) { if ((x -= w[key]) < 0) { k = key; break; } }
   if (k === 'grass' && prev.kind === 'grass') k = rng() < 0.5 ? 'road' : 'river';   // two grass rows in a row are dull
   return k;
 }
@@ -70,11 +73,23 @@ function hopTarget(lane, x, dx, half) {
   const tx = Math.round(x + dx);
   if (lane.kind === 'grass' && lane.secret === tx) return tx;   // a hidden column past the edge
   if (Math.abs(tx) > half) return null;
-  if (lane.kind === 'grass' && lane.trees.has(tx)) return null;
+  if (lane.trees && lane.trees.has(tx)) return null;   // grass and ice
   return tx;
 }
 // mud is sticky: a hop that starts in mud takes longer
 const MUD_SLOW = 2.2;
+// ice: a sideways hop that lands on ice slides one more column the same way (stopped by a tree or the edge)
+const SLIDE_TIME = 0.12;
+// bridges: a plank breaks this many steps after a player lands on it, and is back this many steps after that
+const PLANK_BREAK = 72, PLANK_BACK = 360;   // 0.6 s and 3 s at STEP
+// the plank of a bridge row at column x: 'up', 'cracking' (someone stood on it) or 'down' (water), at world tick wt
+function plankState(lane, x, wt) {
+  const pl = lane.planks.get(x);
+  if (!pl) return 'down';
+  return wt < pl.breakAt ? 'cracking' : wt < pl.backAt ? 'down' : 'up';
+}
+// water rows: a hop that lands off a log, pad or plank sinks; a rescue never goes back to one
+const isWater = kind => kind === 'river' || kind === 'lily' || kind === 'bridge';
 const hopTime = (fromKind, base) => fromKind === 'mud' ? base * MUD_SLOW : base;
 
 // the game modes, shared by core.js (the DOM side), replay.js and the score server's own copy
@@ -83,6 +98,7 @@ const MODES = ['classic', 'race', 'daily', 'room'];
 const pad2 = n => String(n).padStart(2, '0');
 const isoDay = (d = new Date()) => d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
 
-export { BEHIND_LIMIT, COIN_CHANCE, COMBO_EVERY, COMBO_GAP, COUNTDOWN, DIFF_ROWS, EAGLE_IDLE, EAGLE_SWOOP, EAGLE_WARN, EDGE_DEATH, FIRST_ROW, HIT_PAD, HOP_TIME,
+export { BRIDGE_FROM, ICE_FROM, PLANK_BACK, PLANK_BREAK, ROCKS_FROM, SLIDE_TIME, isWater, plankState,
+  BEHIND_LIMIT, COIN_CHANCE, COMBO_EVERY, COMBO_GAP, COUNTDOWN, DIFF_ROWS, EAGLE_IDLE, EAGLE_SWOOP, EAGLE_WARN, EDGE_DEATH, FIRST_ROW, HIT_PAD, HOP_TIME,
   LANE_KINDS, MAGNET_REACH, MAGNET_TIME, MODES, MUD_SLOW, PLAY_HALF, POWER_CHANCE, SHIELD_TIME, STEP, STREAK_MAX, TRAIN_SPEED, TRAIN_WARN, WRAP,
   difficulty, difficultyAt, hashString, hopTarget, hopTime, isoDay, mulberry32, nextLaneKind };

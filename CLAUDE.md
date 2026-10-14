@@ -40,7 +40,9 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
 | `js/gfx.js` | Renderer, camera, light, `resize()`, the adaptive quality ladder (`watchFrameTime`) |
 | `js/world.js` | Lanes: `LANE_BUILDERS` per kind, traffic, trains, coins, the instanced fleet (`Inst`), ground chunks (`mergeChunk`). Lanes are a `Map` by row |
 | `js/players.js` | Spawn, queued moves (`queueMove` / `applyMoves`, the replay feed), `tryMove`, hop/land/stand, hazards, deaths, coins, combo, shield and magnet power-ups, the eagle |
+| `js/ghost.js` | The ghost: in daily and room modes the best run on this world (`hoplanes.ghost.<seed>`: score, hero, time, replay code; newest 6 worlds kept) is replayed by `createSim` one step per game step and drawn see-through (`ghostMat`); `saveGhost` at game over, `startGhost` at play, `stopGhost` on the title |
 | `js/screens.js` | Join cards and shop, title menu (modes incl. room code, prize machine, handicap, language, missions), countdown, results (share, replay link, confetti), restart, pause, first-run help, online score post |
+| `js/panels.js` | The dialogs (`.dialog` in CSS, one open at a time: `openDialog`/`closeDialog`, Escape closes): SETTINGS (sound, vibration `hoplanes.buzz`, language, handicap, less motion `hoplanes.motion`, read at boot by `gfx.js`), the pause menu (`#pauseBox`, shown by `pauseGame`), TOP 10 (`#board`, only with a score server), and the screen-reader announcer (`#live`, `announceFrame` per frame). Listens for `hoplanes:lang` and `hoplanes:pause` events from screens.js |
 | `js/input.js` | Keyboard, on-screen buttons, taps and swipes on the field, `pollGamepads()`. Side-effect only (imported by `app.js` for that) |
 | `js/app.js` | The frame loop (fixed `STEP` of 1/120 s), the `window.hopLanes` test hook, replay boot |
 | `tools/build-standalone.sh` | Inlines CSS, the modules (in `tools/bundle-order.json` order), `vendor/three.min.js` and fonts into one offline HTML with a hash-based CSP |
@@ -85,8 +87,9 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
 - Headless runs use SwiftShader; it is slow. Wait on state with `waitForFunction`, not fixed sleeps.
 - `KeyW` joins / moves Player 1, `ArrowUp` Player 2. Row 1 never has trees.
 - `tests/ui.test.mjs` drives the shop, prize machine, modes, share and confetti through the real DOM (ids: `#mode`, `#prize`, `#share`, `#card1 .cyc`, `#tap1`).
-- Lane kinds: grass, road (police variant past difficulty 0.3), river, lily (pads; water kills), mud (from row 13; a hop out of it is slow), rail. Night fades in from row 90.
+- Lane kinds: grass, road (police variant past difficulty 0.3), river, lily (pads; water kills), mud (from row 13; a hop out of it is slow), rail, ice (from row 25: a sideways hop that lands on ice slides one more column the same way, unless a tree or the edge is there), bridge (from row 40: planks over water; a plank breaks 0.6 s after a landing and is back 3 s later, `plankState`), rocks (from row 55: slow boulders, a hit is a squash). Night fades in from row 90.
 - The eagle warns (`sfx.warn`) 1.5 s before it swoops; a new best shows in `#resBest`; the install hint `#install` shows only on the served page, once.
+- A script error in the frame loop (or an uncaught one) shows SOMETHING BROKE / TAP TO RESTART (`crash` in app.js; the next tap or key reloads). `hopLanes.boom()` throws in the next step; `hopLanes.tune` says if the title tune plays; `hopLanes.ladder` feeds frame times to the quality ladder; `hopLanes.ghost` is the ghost's row, x and score.
 - The countdown banner is keyed by `G.countKey`; clear it to force a redraw (resume from pause does). The title tune starts with the first gesture on the title (`audio()`), and the pause keys call `audio()` so a suspended context wakes.
 - Power-ups: `lane.power` (shield or magnet) on grass, road and mud past row 10. A hidden coin column is `lane.secret` on grass. The boss train is `lane.boss` (first rail past each 100 rows). Weather is `weatherAt(r)` per 40-row chunk (rain; snow in December, which only changes the look).
 
@@ -120,4 +123,7 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
 - The window of built rows follows `visRows` (fewer rows on a sideways phone): `rowsBehind()` and the ahead limit in
   `ensureLanes`.
 - `near()`, `visRows` and `firstNeededRow()` decide which rows exist and sound; keep them in step with the camera.
+- Bridge planks keep `breakAt` / `backAt` in world ticks on the lane (rules.js `plankState`), so their state is a function of
+  `G.worldTick` like traffic: never step them per frame. New late kinds must weigh 0 below their first row in `nextLaneKind`, or
+  every existing world (and saved replay) changes.
 - Don't add a service worker: the CSP has `worker-src 'none'` and the PWA installs without one.

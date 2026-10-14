@@ -9,6 +9,7 @@ import { CHARACTERS, PIX, PRIZES, drawPix, isOwned } from './models.js';
 import { charOf, despawn, players, restorePicks, spawn } from './players.js';
 import { BEST_KEY, DAILY_KEY, HANDICAP_KEY, HOWTO_KEY, INSTALL_KEY, MISSIONS_KEY, MODE_KEY, OWNED_KEY, PICK_KEY, ROOM_KEY, dayKey, deviceTag, flushBank, load, loadText, owned, refreshBests, save, savedMode, setBank, today } from './storage.js';
 import { getSeed, resetWorld } from './world.js';
+import { saveGhost, startGhost, stopGhost } from './ghost.js';
 
 // Screens and flow: join cards and the shop, countdown, results, restart, pause, first-run help, online scores.
 // ---------- screens ----------
@@ -185,6 +186,7 @@ function confetti() {
 function toAttract() {
   G.state = 'attract'; G.stateT = 0; G.camRow = 0;
   players.forEach(p => { p.joined = false; despawn(p); });
+  stopGhost();
   resetWorld();
   refreshBests();
   resultsEl.hidden = true; $('logo').hidden = false;
@@ -243,6 +245,7 @@ function startPlay() {
   $('app').classList.add('playing');
   resetFrameWatch();
   keepAwake(true);
+  startGhost();
   setBanner(t('GO!'));
   players.forEach((p, i) => { $('score' + (i + 1)).hidden = !p.joined; });
   setCards();
@@ -281,8 +284,10 @@ function checkOver() {
   const page = location.origin + location.pathname;
   shareText = t('I scored {n} in Hop Lanes as {name}!', { n: top, name: t(charOf(hero).name) }) + (G.mode === 'room' ? ' ' + t('Room {code}', { code: G.room }) + '.' : '') + ' ' + page;
   // the replay link: the seed, the animals and every hop of this run
-  const canReplay = !replay && G.record.length && location.protocol !== 'file:';
-  if (canReplay) replayText = page + '#replay-' + encodeReplay({ seed: getSeed(), mode: G.mode, chars: [charOf(p1).key, charOf(p2).key], joined: [p1.joined, p2.joined], handicap: G.handicap, startTick: G.startTick, events: G.record });
+  const code = !replay && G.record.length ? encodeReplay({ seed: getSeed(), mode: G.mode, chars: [charOf(p1).key, charOf(p2).key], joined: [p1.joined, p2.joined], handicap: G.handicap, startTick: G.startTick, events: G.record }) : '';
+  const canReplay = !!code && location.protocol !== 'file:';
+  if (canReplay) replayText = page + '#replay-' + code;
+  saveGhost(code, top, hero.id);   // daily and room worlds: the best run comes back as a ghost
   $('replayBtn').hidden = !canReplay;
   // a new best gets its own big line, a jingle and (all time) confetti
   const best = top >= 1 && /^NEW .*BEST!/.exec(note.replace(/^.*\. /, ''));

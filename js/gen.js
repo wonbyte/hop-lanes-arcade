@@ -112,6 +112,40 @@ const ROW_BUILDERS = {
     if (rng() < COIN_CHANCE.mud) placeCoin(rng, lane, playColumns());
     placePower(rng, lane, playColumns());
   },
+  // ice (from rules.js ICE_FROM): like grass, fewer (snowy) trees; a sideways hop that lands here slides one more column
+  ice(rng, lane) {
+    const diff = lane.diff;
+    lane.treeH = [];
+    let inPlay = 0;
+    for (let x = -12; x <= 12; x++) {
+      const out = Math.abs(x) > PLAY_HALF;
+      const tree = out ? rng() < 0.6 : x !== 0 && inPlay < 2 && rng() < 0.08 + diff * 0.06;
+      if (!tree) continue;
+      if (!out) inPlay++;
+      lane.trees.add(x);
+      lane.treeH.push([x, genPick(rng, [0.9, 1.2, 1.5])]);
+    }
+    const free = playColumns().filter(x => !lane.trees.has(x));
+    if (rng() < COIN_CHANCE.ice) placeCoin(rng, lane, free);
+    placePower(rng, lane, free);
+  },
+  // a bridge (from BRIDGE_FROM) over water: a run of planks, the only safe columns. A plank breaks PLANK_BREAK steps
+  // after a player lands on it and is back PLANK_BACK steps later (rules.js plankState; breakAt/backAt in world ticks)
+  bridge(rng, lane) {
+    const len = Math.floor(genRand(rng, 3, 7));
+    const start = -PLAY_HALF + Math.floor(rng() * (PLAY_HALF * 2 + 2 - len));
+    lane.planks = new Map();
+    for (let i = 0; i < len; i++) lane.planks.set(start + i, { breakAt: -1, backAt: -1 });
+    if (rng() < COIN_CHANCE.bridge) placeCoin(rng, lane, [...lane.planks.keys()]);
+  },
+  // rocks (from ROCKS_FROM): no cars, but a few slow boulders roll across; a hit squashes like a car
+  rocks(rng, lane) {
+    const diff = lane.diff;
+    lane.speed = (genRand(rng, 0.8, 1.5) + diff * 1.2) * (lane.wet ? 1.1 : 1);
+    fillObjs(rng, lane, Math.floor(genRand(rng, 1, 3) + diff), spacing => ({ len: 0.9, jitter: genRand(rng, 0, spacing * 0.4) }));
+    if (rng() < COIN_CHANCE.rocks) placeCoin(rng, lane, playColumns());
+    placePower(rng, lane, playColumns());
+  },
   rail(rng, lane, seed) {
     // the first rail past each 100 rows carries the boss train: twice as long, faster, more warning (set by the chain)
     lane.cars = lane.boss ? TRAIN_CARS * 2 : TRAIN_CARS;

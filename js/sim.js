@@ -2,7 +2,7 @@
 // No DOM, no Three.js. players.js plays these rules in the browser (makeRules with effect hooks that move meshes and
 // make sounds); simulate() plays a replay with no effects, so the score server can check a posted score.
 // Everything here is step-driven (fixed STEP), so the browser and simulate() give the same run tick for tick.
-import { BEHIND_LIMIT, COMBO_EVERY, COUNTDOWN, COMBO_GAP, EAGLE_IDLE, EAGLE_SWOOP, EAGLE_WARN, EDGE_DEATH, HIT_PAD, HOP_TIME, MAGNET_REACH, MAGNET_TIME, PLAY_HALF, SHIELD_TIME, STEP, hopTarget, hopTime } from './rules.js';
+import { BEHIND_LIMIT, COMBO_EVERY, COUNTDOWN, COMBO_GAP, EAGLE_IDLE, EAGLE_SWOOP, EAGLE_WARN, EDGE_DEATH, HIT_PAD, HOP_TIME, MAGNET_REACH, MAGNET_TIME, PLAY_HALF, SHIELD_TIME, SLIDE_TIME, STEP, PLANK_BACK, PLANK_BREAK, hopTarget, hopTime, isWater, plankState } from './rules.js';
 import { createWorldGen, railStep, trafficX } from './gen.js';
 
 const START_X = [-2, 2];   // the columns the two players start on
@@ -36,7 +36,7 @@ function feedReplay(rp, playTick, move) {
   while (rp.i < rp.events.length && rp.events[rp.i][0] <= playTick) { const [, i, dx, dr] = rp.events[rp.i++]; move(i, dx, dr); }
 }
 
-// The rules of a player. W = { G, lane(r), coins(n), over(), fx }: G holds state, camRow, playT and run (stats or null);
+// The rules of a player. W = { G, lane(r), coins(n), over(), fx }: G holds state, camRow, playT, worldTick and run (stats or null);
 // lane(r) is the lane data of row r (gen.js plus the moving state: o.x, train.x/active, coins, power);
 // fx holds optional effect hooks (meshes, sounds, particles), called at the points where the old code made them.
 function makeRules(W) {
@@ -64,7 +64,7 @@ function makeRules(W) {
     let r = null;
     for (let k = p.row - 1; k >= G.camRow - BEHIND_LIMIT; k--) {
       const l = W.lane(k);
-      if (l && l.kind !== 'river' && l.kind !== 'lily') { r = k; break; }
+      if (l && !isWater(l.kind)) { r = k; break; }
     }
     if (r === null) return false;
     p.shield = false;
@@ -95,7 +95,7 @@ function makeRules(W) {
     const from = W.lane(p.row);
     p.hop = {
       t: 0, dur: hopTime(from && from.kind, HOP_TIME), fromRow: p.row, fx: p.x, fz: -p.row, tx, tz: -(p.row + dr),
-      carry: p.log, carryX0: p.log ? p.log.x : 0, span: p.log ? from.span : 0
+      carry: p.log, carryX0: p.log ? p.log.x : 0, span: p.log ? from.span : 0, dx, dr
     };
     p.row += dr;
     p.idleT = 0; p.warned = false;
@@ -119,7 +119,7 @@ function makeRules(W) {
   }
   // returns false if the landing killed the player
   function land(p, lane) {
-    const from = W.lane(p.hop.fromRow);
+    const h = p.hop, from = W.lane(h.fromRow);
     p.hop = null;
     p.log = null;
     if (lane && lane.kind === 'river') {
@@ -133,12 +133,25 @@ function makeRules(W) {
     } else {
       p.x = Math.round(p.x);
       if (lane && lane.kind === 'lily' && !lane.pads.has(p.x)) { kill(p, 'splash'); return p.alive; }
+      if (lane && lane.kind === 'bridge') {   // a plank holds you for PLANK_BREAK steps, then it drops
+        const st = plankState(lane, p.x, G.worldTick);
+        if (st === 'down') { kill(p, 'splash'); return p.alive; }
+        if (st === 'up') { const pl = lane.planks.get(p.x); pl.breakAt = G.worldTick + PLANK_BREAK; pl.backAt = pl.breakAt + PLANK_BACK; }
+      }
       if (G.run && from && from.kind === 'river' && lane && lane.r > from.r) G.run.rivers++;   // crossed a river
       const coin = lane && lane.coins.get(p.x);
       if (coin) collectCoin(p, lane, p.x, coin);
       if (lane && lane.power && lane.power.x === p.x) pickPower(p, lane);
     }
     fx.land(p, lane);
+    // ice: a sideways hop slides one more column the same way, unless a tree or the edge is there (a queued hop waits)
+    if (lane && lane.kind === 'ice' && h.dr === 0 && h.dx) {
+      const tx = hopTarget(lane, p.x, h.dx, PLAY_HALF);
+      if (tx !== null) {
+        p.hop = { t: 0, dur: SLIDE_TIME, fromRow: p.row, fx: p.x, fz: -p.row, tx, tz: -p.row, carry: null, carryX0: 0, span: 0, dx: 0, dr: 0, slide: true };
+        return true;
+      }
+    }
     if (p.queue) { const [qx, qr] = p.queue; p.queue = null; tryMove(p, qx, qr); }
     return true;
   }
@@ -165,7 +178,8 @@ function makeRules(W) {
   function checkHazards(p, lane) {
     // until mid-hop the player is still over the row they left
     const hz = p.hop && p.hop.t < 0.5 ? W.lane(p.hop.fromRow) : lane;
-    if (hz && hz.kind === 'road') {
+    if (hz && hz.kind === 'bridge' && (!p.hop || p.hop.t < 0.5) && plankState(hz, Math.round(p.x), G.worldTick) === 'down') { kill(p, 'splash'); return; }
+    if (hz && (hz.kind === 'road' || hz.kind === 'rocks')) {
       for (const o of hz.objs) if (Math.abs(o.x - p.x) < o.len / 2 + HIT_PAD) { kill(p, 'squash'); return; }
     } else if (hz && hz.kind === 'rail' && hz.train.active) {
       if (Math.abs(hz.train.x - p.x) < hz.train.len / 2 + HIT_PAD) { p.trainDir = hz.dir; kill(p, 'train'); return; }
@@ -212,9 +226,9 @@ function createSim(rp) {
     if (!l) { l = gen.lane(r); lanes.set(r, l); }
     return l;
   };
-  const S = { state: 'countdown', countdown: COUNTDOWN, camRow: 0, playT: 0, run: null };
   // the browser starts the world clock so the countdown ends on the recorded tick (startPlay then sets it exactly)
-  let worldTick = Math.max(0, rp.startTick - Math.ceil(COUNTDOWN / STEP)), playTick = 0, end = null;
+  const S = { state: 'countdown', countdown: COUNTDOWN, camRow: 0, playT: 0, run: null, worldTick: Math.max(0, rp.startTick - Math.ceil(COUNTDOWN / STEP)) };
+  let playTick = 0, end = null;
   const players = [0, 1].map(id => ({ id, joined: !!rp.joined[id], alive: false, row: 0, x: 0, score: 0, hop: null, cause: '' }));
   const rules = makeRules({
     G: S, lane, coins() {},
@@ -229,10 +243,10 @@ function createSim(rp) {
   const feed = { events: rp.events, i: 0 };
   function step() {
     if (S.state === 'over') return false;
-    worldTick++;
+    S.worldTick++;
     if (S.state === 'countdown') {
       S.countdown -= STEP;
-      if (S.countdown <= 0) { S.state = 'play'; S.playT = 0; playTick = 0; worldTick = rp.startTick; }   // screens.js startPlay
+      if (S.countdown <= 0) { S.state = 'play'; S.playT = 0; playTick = 0; S.worldTick = rp.startTick; }   // screens.js startPlay
     } else {
       playTick++;
       feedReplay(feed, playTick, (i, dx, dr) => rules.tryMove(players[i], dx, dr));
@@ -241,18 +255,18 @@ function createSim(rp) {
       for (const p of players) if (p.joined && p.alive) lead = Math.max(lead, p.row);
       S.camRow = creepCamera(S.camRow, S.playT, lead, STEP);
     }
-    const w = worldTick * STEP;
+    const w = S.worldTick * STEP;
     for (const r of touchRows(players, hot)) {
       const l = lane(r);
       if (l.kind === 'rail') l.train.active = railStep(l, w);
-      else if (l.kind === 'road' || l.kind === 'river') for (const o of l.objs) o.x = trafficX(l, o, w);
+      else if (l.kind === 'road' || l.kind === 'river' || l.kind === 'rocks') for (const o of l.objs) o.x = trafficX(l, o, w);
     }
     for (const p of players) if (p.joined && p.alive) rules.stepPlayer(p, STEP);
     return S.state !== 'over';
   }
   return {
     step, players, lane,
-    get tick() { return playTick; }, get worldTick() { return worldTick; }, get state() { return S.state; },
+    get tick() { return playTick; }, get worldTick() { return S.worldTick; }, get state() { return S.state; },
     get camRow() { return S.camRow; }, get end() { return end; }
   };
 }

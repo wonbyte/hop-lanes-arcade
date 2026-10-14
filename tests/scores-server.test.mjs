@@ -172,7 +172,7 @@ test('tests/serve.mjs: bad escape gives 400, traversal is not served', async () 
   } finally { await s.close(); }
 });
 
-// two runs the browser played (tests/sim.test.mjs has more): a classic run (score 17) and a daily one (score 79)
+// two runs the browser played (tests/sim.test.mjs has more): a classic run (score 17) and a daily one (score 44 since the late lane kinds; 79 before)
 const CLASSIC_RUN = 'MnwxMjA1NjkwMjUwfGNsYXNzaWN8ZnJvZyxmb3h8MXwxfDY2Mnw1YVUyMWFVMTZhVTM2YVUyNGFVMzNhVTMyYVUyNWFVMTBhVTEyYVUxNWFVMzNhVTM3YVUyOGFVMzBhUjhhVTI5YVUxM2FVOGFVMTNhVTMyYVUzN2FVMzVhVTE5YVUxNWFVMjlhVTE4YVUxMWFVMzJhVTMxYVUyOGFVMjlhVTM0YVU5YVUzM2FV';
 const DAILY_RUN = 'Mnw0MjEyNzcyODI0fGRhaWx5fGZyb2csZm94fDF8MHwzNjgzfDVhVTM0YVUyMGFVMjNhTDIwYVIzMWFEMTJhVTE4YUQxOGFVMzRhTDIwYVUxMWFVMzJhTDI5YVUyOGFVMjBhUjIyYVUzM2FMMzRhUjIyYUQzNGFVMThhRDMyYVUxMGFSMjBhRDIwYUQxMGFMMTNhVTE2YUQyMWFVMTlhRDE5YVUyMWFMMjlhVThhTDlhVTMxYVUzM2FVMzRhVTEwYUwxMWFSMTFhTDE1YUwxOWFSMTNhVTEzYVUyNWFVMTRhRDEwYVUyNmFEOWFVMTNhRDMyYVUxM2FMMTZhUjMzYVUyM2FVMjhhVTMwYVUxNWFVMTVhTDM3YUwyMmFSMjdhTDI1YUwyOWFSMTlhVTEyYVUxN2FVMTVhVTEzYVUxMWFVMzJhVTIzYVUyOGFVMjNhVTI4YVUxMWFVMTVhVTM0YVUxNmFMMjBhVTM1YUwxOGFMMTJhUjI3YVIzNGFSMzVhUjMwYVUzNmFVMjFhRDI4YVUxN2FMMjBhRDM1YUwzN2FMMTNhUjE4YUwxNGFEMTVhVTM1YUwyMGFVMzNhVTE2YVUxMGFVMzdhTDE1YUQzNWFSMzZhUjI4YUQyNGFVMThhVTMyYUQyNmFVMzVhVTIwYVUyNWFVMTdhVTlhVTIwYVUxN2FVMzBhVTEzYVUxNmFVMjRhVTE1YVUzM2FVMTJhVTI4YVUzM2FVMjNhVTI3YVUzNWFVMjBhVTIzYVUyMGFVMzFhVTI3YVUyN2FVMTBhVTlhVTEwYVUxMWFVMTVhVTlhVTIyYVUyN2FVMjhhVTE5YVUxMmFVMjVhVTI3YVUyM2FVMzZhVTIxYVUyOWFVMjlhVTlhVThhVTE4YVUyNWFSOGFVMzNhUjM3YUwxMWFSMjBhTDEzYVI4YUwyOGFVMzRhRDE5YVUzMmFVOGFVMzdhVTEyYUQxMmFVMTlhTDhhRDhhTDMwYUQzMWFVMTVhTDIwYVIyN2FEMzZhTDMwYVIyOGFSMTBhUjlhVTIxYVU5YUQxMWFVMzRhRDM2YUwyN2FVMzZhVTMzYUw4YUQyNWFEMzNhTDMyYUwyOGFEMzFhUjhhUjhhVTM3YUwyM2FSMTdhRDI0YVUzMmFVMzBhRDMxYVUxNmFEMjhhVTM0YVIxN2FMMzBhTDMzYVUzMmFVMzFhVTE5YVUyOWFVMTlhVTEwYVUxM2FEMjZhRDE3YVUyOWFMMTNhTDE0YUwyMGFMMjBhVTIwYUQyNmFVMzNhTDEyYUwyOWFMMzVhTDE1YUwyM2FMOWFSMTZhVTMwYVUzM2FVMzZhVTI5YUQyOWFVMjJhRDI4YVIxN2FVMjRhUjMyYUwzNmFEMTBhTDMyYVIzNmFSMjFhTDMwYUwzMGFMMThhTDI4YVIxNGFSMjJhUjEyYUwyMmFVMTJhVTMxYUwzNmFVMjhhTDE2YVIxNWFMMjZhVTE0YVUxMWFVMzBhVTMyYVUxOGFVMzFhVTExYVUxNWFVMTlhVTI3YVUxMmFVMjVhVTEzYVUxOWFVMzZhVTMyYVIzNWFVOGFSMjZhUjE1YVUyM2FSMjZhRDIxYVU4YUwzNGFMMzdhVTI2YVUyOGFEMjJhVThhUjIxYVIxNGFEMzNhVTI2YUwzNmFSMTVhTDE3YUwzNWFVMjhhVTEyYUwzNGFSMTFhUjI3YUwzNGFSMzBhTDM0YUwyNWFMMTlhTDI2YUwyNWFVMTFhVTMyYVIyMGFVMjdhTDIxYUQyOWFVMzVhTDEzYUwyM2FEOWFSMzZhUjIxYVIzMGFVMzRhUjE4YUwzMmFMMjlhVTlhUjMxYUwyMWFSMjJhVTMyYVUyMmFMMTVhUjIyYUwxMmFSMjNhRDE2YVU4YUQzMWFVMzJhVTE0YVU4YVUxOWFVMjRhVThhVTE2YUQ4YVUzM2FVMjhhVTM3YUQxMWFVMjFhRDE2YVUyMWFEMjFhRDE2YVUxOWFEMTVhRDIxYVUyOGFMMzBhRDI3YVUxNWFMMzVhUjhhTDMyYVIzNWFSMjhhTDI0YUQyMGFVMzdhTDM3YUwzNGFSMTZhUjIyYVUxOWFVMjVhTDI3YUQzNWFMMTVhTDE4YUQxOWFVMTdhUjI3YUwxNGFMOWFEMzRhUjE4YUwxNmFE';
 const dailyDay = code => { const seed = decodeReplay(code).seed; for (let d = 1; d <= 31; d++) { const day = '2026-10-' + String(d).padStart(2, '0'); if (hashString('hoplanes.day.' + day) === seed) return day; } return null; };
@@ -183,7 +183,7 @@ test('VERIFY: a posted score must be what its replay plays to', async () => {
   const day = dailyDay(DAILY_RUN);
   assert.ok(day, 'the daily run was played on an October day');
   assert.equal((await send({ name: 'Ann', score: 17, mode: 'classic', replay: CLASSIC_RUN })).status, 200, 'the true score');
-  assert.equal((await send({ name: 'Dee', score: 79, mode: 'daily', day, replay: DAILY_RUN })).status, 200, 'the daily run on its day');
+  assert.equal((await send({ name: 'Dee', score: 44, mode: 'daily', day, replay: DAILY_RUN })).status, 200, 'the daily run on its day');
   const reject = async (body, why) => {
     const r = await send(body);
     assert.equal(r.status, 400, why);
@@ -193,10 +193,10 @@ test('VERIFY: a posted score must be what its replay plays to', async () => {
   assert.equal(await reject({ name: 'Bob', score: 16, mode: 'classic', replay: CLASSIC_RUN }, 'a lower score'), 'replay mismatch');
   assert.equal(await reject({ name: 'Bob', score: 17, mode: 'classic' }, 'no replay'), 'replay mismatch');
   assert.equal(await reject({ name: 'Bob', score: 17, mode: 'race', replay: CLASSIC_RUN }, 'another mode'), 'replay mismatch');
-  assert.equal(await reject({ name: 'Bob', score: 79, mode: 'daily', day: '2026-10-01', replay: DAILY_RUN }, 'another day'), 'replay mismatch');
+  assert.equal(await reject({ name: 'Bob', score: 44, mode: 'daily', day: '2026-10-01', replay: DAILY_RUN }, 'another day'), 'replay mismatch');
   // the same daily hops on a classic seed are not a daily run
   const moved = encodeReplay({ ...decodeReplay(DAILY_RUN), seed: 42 });
-  assert.equal(await reject({ name: 'Bob', score: 79, mode: 'daily', day, replay: moved }, 'a daily run on another seed'), 'replay mismatch');
+  assert.equal(await reject({ name: 'Bob', score: 44, mode: 'daily', day, replay: moved }, 'a daily run on another seed'), 'replay mismatch');
   // tampered hops: an extra hop forward changes the run, so the claimed score no longer fits
   const rp = decodeReplay(CLASSIC_RUN);
   const forged = encodeReplay({ ...rp, events: rp.events.map(([t, p, dx, dr]) => [t, p, 0, 1]) });
@@ -204,7 +204,7 @@ test('VERIFY: a posted score must be what its replay plays to', async () => {
   assert.equal(await reject({ name: 'Bob', score: 1, mode: 'classic', replay: 'x'.repeat(20000) }, 'replay too long'), 'invalid name, score, day or mode');
   assert.equal(await reject({ name: 'Bob', score: 1, mode: 'classic', replay: 'no spaces!' }, 'replay not a code'), 'invalid name, score, day or mode');
   const { top } = await (await fetch(srv.base + '/scores')).json();
-  assert.deepEqual(top.map(e => [e.name, e.score]).sort(), [['Ann', 17], ['Dee', 79]].sort());
+  assert.deepEqual(top.map(e => [e.name, e.score]).sort(), [['Ann', 17], ['Dee', 44]].sort());
 });
 
 test('without VERIFY a replay is checked for shape only and not stored', async () => {

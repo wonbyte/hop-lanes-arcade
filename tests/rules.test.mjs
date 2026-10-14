@@ -1,7 +1,7 @@
 // Fast tests for js/rules.js (no browser). Run: node tests/rules.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { LANE_KINDS, MUD_SLOW, STREAK_MAX, difficultyAt, hashString, hopTarget, hopTime, mulberry32, nextLaneKind } from '../js/rules.js';
+import { BRIDGE_FROM, ICE_FROM, ROCKS_FROM, LANE_KINDS, MUD_SLOW, STREAK_MAX, difficultyAt, hashString, hopTarget, hopTime, mulberry32, nextLaneKind } from '../js/rules.js';
 
 test('mulberry32: same seed, same numbers, all in [0, 1)', () => {
   const a = mulberry32(42), b = mulberry32(42), c = mulberry32(7);
@@ -52,6 +52,9 @@ test('nextLaneKind: no two grass rows after the start, runs stay short, late kin
       if (ks[r] === 'grass') assert.notEqual(ks[r - 1], 'grass', `seed ${seed} row ${r}: grass after grass`);
       if (r <= 8) assert.notEqual(ks[r], 'lily');
       if (r <= 12) assert.notEqual(ks[r], 'mud');
+      if (r < ICE_FROM) assert.notEqual(ks[r], 'ice');
+      if (r < BRIDGE_FROM) assert.notEqual(ks[r], 'bridge');
+      if (r < ROCKS_FROM) assert.notEqual(ks[r], 'rocks');
     }
   }
   const all = new Set(Array.from({ length: 20 }, (_, i) => world(i + 1, 400)).flat());
@@ -60,7 +63,7 @@ test('nextLaneKind: no two grass rows after the start, runs stay short, late kin
 
 test('nextLaneKind: a run is kept on purpose only up to its cap', () => {
   const always = () => 0.1;   // below 0.55: keep the run while allowed; then the weighted pick lands on grass
-  for (const kind of ['road', 'river', 'lily', 'mud', 'rail']) {
+  for (const kind of ['road', 'river', 'lily', 'mud', 'rail', 'ice', 'bridge', 'rocks']) {
     for (let streak = 1; streak < STREAK_MAX[kind]; streak++) assert.equal(nextLaneKind(50, 0.3, { kind, streak }, always), kind);
     assert.equal(nextLaneKind(50, 0.3, { kind, streak: STREAK_MAX[kind] }, always), 'grass', `${kind} stops at ${STREAK_MAX[kind]}`);
   }
@@ -77,6 +80,7 @@ test('hopTarget: edges, trees, lily pads and river half steps', () => {
   assert.equal(hopTarget({ kind: 'river' }, 1.4, 1, 4), 2.4, 'on the river any x is fine');
   assert.equal(hopTarget({ kind: 'river' }, 4.2, 1, 4), null, 'but not past the bank');
   assert.equal(hopTarget(null, 0, 1, 4), null, 'no lane, no hop');
+  assert.equal(hopTarget({ kind: 'ice', trees: new Set([1]) }, 0, 1, 4), null, 'trees block on ice too');
 });
 
 test('hopTime: mud is slow', () => {

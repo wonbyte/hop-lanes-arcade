@@ -21,6 +21,7 @@ A two-player arcade game. Hop across roads, rivers and train tracks. Go too slow
 - Stand still too long and the eagle gets you.
 - Prize machine: 50 coins for a random surprise animal.
 - Far out the road turns to night, police cars chase, lily pads cross still water, and mud makes you slow.
+- Further out: ice (a sideways hop slides one more step), bridges (a plank breaks 0.6 s after you land on it), and rolling boulders. Roads have light edge lines and water has foam lines, so the rows read without colour.
 - Hear the beeps? Move. The eagle is on its way.
 - Quick hops in a row make a combo. Every 5 pay a coin.
 - Grab the blue gem for a shield (one free hit) and the red magnet to pull coins in.
@@ -33,6 +34,7 @@ A two-player arcade game. Hop across roads, rivers and train tracks. Go too slow
 - Pause (P, Esc or B on a pad) shows a menu: continue, restart, sound.
 - With a score server set up (see `server/README.md`) the title shows a TOP 10 button; the results show the world best.
 - Game over: SHARE your score, or copy a replay link that plays your run again.
+- Daily and room worlds remember your best run: next time a see-through ghost hops the same path. Beat it.
 - Gamepads work: d-pad or stick to move, A to hop, Start to start, B to pause.
 - Languages: English, Spanish, German (in SETTINGS).
 - Screen readers hear the start, every 10 rows and the result. If a script error ever stops the game, a notice offers a restart.

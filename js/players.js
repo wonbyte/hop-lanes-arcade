@@ -1,6 +1,7 @@
 import { sfx } from './audio.js';
 import { $, G, HOP_TIME, TAU, TRAIN_SPEED } from './core.js';
 import { t } from './i18n.js';
+import { isWater } from './rules.js';
 import { feedReplay, makeRules, resetPlayer } from './sim.js';
 import { buzz } from './device.js';
 import { ONE, reduceMotion, scene } from './gfx.js';
@@ -193,13 +194,13 @@ const playRules = makeRules({
     land(p, lane) {
       p.mesh.userData.body.scale.set(1.15, 0.8, 1.15);
       // a small puff where the feet land: dust on land, mud in mud, a splash on a log or a pad
-      const wet = lane && (lane.kind === 'river' || lane.kind === 'lily');
+      const wet = lane && isWater(lane.kind);
       if (!reduceMotion) burst(p.x, -p.row, wet ? SPLASH : lane && lane.kind === 'mud' ? MUD_FX : DUST, 3, 0.4);
     },
     hopPose(p, t) {
       const h = p.hop, m = p.mesh;
-      m.position.set(p.x, Math.sin(t * Math.PI) * 0.45, h.fz + (h.tz - h.fz) * t);
-      const stretch = Math.sin(t * Math.PI) * 0.16;   // taller in the air, a little thinner
+      m.position.set(p.x, h.slide ? 0 : Math.sin(t * Math.PI) * 0.45, h.fz + (h.tz - h.fz) * t);   // an ice slide stays on the ground
+      const stretch = h.slide ? 0 : Math.sin(t * Math.PI) * 0.16;   // taller in the air, a little thinner
       m.userData.body.scale.set(1 - stretch * 0.5, 1 + stretch, 1 - stretch * 0.5);
     },
     stand(p, dt) {   // standing still (or riding a log)

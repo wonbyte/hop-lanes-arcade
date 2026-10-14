@@ -67,7 +67,7 @@ function stepGhost() {
 function placeGhost() {
   if (!ghost || ghost.done) return;
   const p = ghost.p, h = p.hop, m = ghost.mesh;
-  if (h) { const t = Math.min(1, h.t / h.dur); m.position.set(p.x, Math.sin(t * Math.PI) * 0.45, h.fz + (h.tz - h.fz) * t); }
+  if (h) { const t = Math.min(1, h.t); m.position.set(p.x, h.slide ? 0 : Math.sin(t * Math.PI) * 0.45, h.fz + (h.tz - h.fz) * t); }   // h.t runs 0..1; a slide stays on the ice
   else m.position.set(p.x, p.log ? 0.1 : 0, -p.row);
   m.rotation.y = p.facing || 0;
 }
