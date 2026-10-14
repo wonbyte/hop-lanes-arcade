@@ -119,7 +119,8 @@ function frameBody(now) {
   // draw at most ~60 fps while playing (90-144 Hz screens), and every other frame on menus, to save battery
   const idle = G.state === 'attract' || (G.state === 'over' && G.stateT > RESULTS_DELAY);
   let draw;
-  if (idle) draw = (G.frameN++ & 1) === 0;
+  // a screen already at 30 Hz (iOS Low Power Mode) draws every frame; faster ones skip every other on the menus
+  if (idle) draw = rawDt > 0.025 || (G.frameN++ & 1) === 0;
   else {
     draw = now >= nextDraw - 2;   // 2 ms tolerance: timestamps land a hair early or late
     // keep a steady schedule: 60 draws/s on any refresh rate; after a stall, start the schedule again

@@ -101,7 +101,7 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
 ## Gotchas
 
 - Vehicle and character models face `-x` / `-z`; rotations were inverted once. Check the screenshot, not the math.
-- The draw loop caps at 60 draws/s on fast screens; judge performance from drawn frames only (`watchFrameTime`).
+- The draw loop caps at 60 draws/s on fast screens and skips every other frame on the menus unless the screen is already at 30 Hz (iOS Low Power Mode); judge performance from drawn frames only (`watchFrameTime`).
 - The quality ladder must not change `renderer.shadowMap.type`: that rebuilds every shader mid-game (a visible hitch).
 - Vehicles, logs, trains, coins, power-ups and particles are instanced (`Inst` in `world.js`): one draw call per model.
   `inst.move()` writes only the position; `showLane()` hides a far lane's instances; `drop()` moves the last instance
