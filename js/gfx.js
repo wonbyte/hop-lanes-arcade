@@ -24,6 +24,8 @@ renderer.domElement.setAttribute('aria-label', 'Game view: roads, rivers and tra
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x74d3f2);
+// a light haze toward the top of the screen, in the sky's color (set in resize, recolored in setNight)
+scene.fog = new THREE.Fog(0x74d3f2, 30, 60);
 const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100);
 const CAM_OFF = new THREE.Vector3(3.2, 12, 7.5);
 const focus = new THREE.Vector3();
@@ -34,7 +36,7 @@ scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xffffff, 0.6);
 sun.castShadow = true;
 sun.shadow.mapSize.setScalar(1024);   // at this camera angle 2048 looks the same and costs 4x the shadow pass
-Object.assign(sun.shadow.camera, { top: 15, bottom: -15, near: 1, far: 50 });   // left/right set in resize()
+Object.assign(sun.shadow.camera, { top: 15, bottom: -15, near: 1, far: 50 });   // fitted to the view in resize()
 scene.add(sun, sun.target);
 
 // day turns into night as the players get far: sky, ambient and sun blend toward a blue dusk
@@ -54,6 +56,40 @@ function setNight(row, weather = '') {
   sun.color.copy(DAY.sun).lerp(NIGHT.sun, t);
   hemi.intensity = (DAY.hemi + (NIGHT.hemi - DAY.hemi) * t) * (1 - wetT * 0.15);
   sun.intensity = (DAY.sunI + (NIGHT.sunI - DAY.sunI) * t) * (1 - wetT * 0.3);
+  scene.fog.color.copy(scene.background);
+}
+
+// The sun and the camera keep the same offsets from the focus point, so the visible ground is a fixed shape
+// around it. fitView() measures that shape once per resize: the shadow box is fitted to it (no texels spent
+// off screen, so shadows are sharper), and the haze starts a few rows below the top edge.
+const probe = new THREE.OrthographicCamera(), SUN_OFF = new THREE.Vector3(-6, 14, 6);
+const ray = new THREE.Vector3(), up = new THREE.Vector3(), right = new THREE.Vector3(), dir = new THREE.Vector3(), pt = new THREE.Vector3();
+function fitView(halfW, halfH) {
+  probe.position.copy(CAM_OFF); probe.lookAt(0, 0, 0); probe.updateMatrixWorld();
+  dir.set(0, 0, -1).applyQuaternion(probe.quaternion);
+  up.set(0, 1, 0).applyQuaternion(probe.quaternion);
+  right.set(1, 0, 0).applyQuaternion(probe.quaternion);
+  // where the screen corners meet the ground (y = 0) and the tree tops (y = 1.6)
+  const corners = [];
+  let topDepth = 0;
+  for (const sy of [-1, 1]) for (const sx of [-1, 1]) for (const h of [0, 1.6]) {
+    ray.copy(CAM_OFF).addScaledVector(right, sx * halfW).addScaledVector(up, sy * halfH);
+    const t = (h - ray.y) / dir.y;
+    corners.push(pt.copy(ray).addScaledVector(dir, t).clone());
+    if (sy > 0 && h === 0) topDepth = t;
+  }
+  scene.fog.near = topDepth - 6; scene.fog.far = topDepth + 14;   // about a third of the sky color at the top edge
+  // the same corners seen from the sun: their bounds (plus room for shadows cast from just off screen)
+  probe.position.copy(SUN_OFF); probe.lookAt(0, 0, 0); probe.updateMatrixWorld();
+  const inv = probe.matrixWorldInverse;
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  for (const c of corners) {
+    c.applyMatrix4(inv);
+    x0 = Math.min(x0, c.x); x1 = Math.max(x1, c.x); y0 = Math.min(y0, c.y); y1 = Math.max(y1, c.y); z0 = Math.min(z0, c.z); z1 = Math.max(z1, c.z);
+  }
+  const sc = sun.shadow.camera, m = 1.5;
+  Object.assign(sc, { left: x0 - m, right: x1 + m, bottom: y0 - m, top: y1 + m, near: Math.max(0.1, -z1 - 4), far: -z0 + 4 });
+  sc.updateProjectionMatrix();
 }
 
 function resize() {
@@ -73,9 +109,7 @@ function resize() {
   camera.updateProjectionMatrix();
   // rows on screen (the ground is seen at an angle, so one screen unit covers ~1.35 rows) + a margin for shadows
   G.visRows = camera.top * 1.35 + 2;
-  const sc = sun.shadow.camera;
-  sc.left = -(halfW + 2); sc.right = halfW + 2;
-  sc.updateProjectionMatrix();
+  fitView(halfW, halfW / aspect);
   G.redraw = true;   // a paused game draws one new frame at the new size
 }
 if ('ResizeObserver' in window) {
@@ -133,4 +167,4 @@ function watchFrameTime(frameT) {
 
 const getPixelRatio = () => pixelRatio;
 
-export { BAD_FRAME, BLINK_STEPS, CAM_OFF, LADDER, ONE, camera, focus, getPixelRatio, hemi, lowGpu, marquee, perf, pixelRatio, reduceMotion, renderer, resetFrameWatch, resize, scene, setNight, setRatio, setShadowMapSize, stage, sun, touchQuery, watchFrameTime };
+export { BAD_FRAME, BLINK_STEPS, CAM_OFF, SUN_OFF, LADDER, ONE, camera, focus, getPixelRatio, hemi, lowGpu, marquee, perf, pixelRatio, reduceMotion, renderer, resetFrameWatch, resize, scene, setNight, setRatio, setShadowMapSize, stage, sun, touchQuery, watchFrameTime };

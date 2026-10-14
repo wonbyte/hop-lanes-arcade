@@ -3,7 +3,7 @@ import { $, BEHIND_LIMIT, COMBO_EVERY, COMBO_GAP, EAGLE_IDLE, EAGLE_SWOOP, EAGLE
 import { t } from './i18n.js';
 import { hopTarget, hopTime } from './rules.js';
 import { buzz } from './device.js';
-import { ONE, scene } from './gfx.js';
+import { ONE, reduceMotion, scene } from './gfx.js';
 import { CHARACTERS, COLORS, eagleBoxes, makeCharacter } from './models.js';
 import { checkOver } from './screens.js';
 import { PICK_KEY, loadText, setBank } from './storage.js';
@@ -185,14 +185,14 @@ function kill(p, cause) {
 // Every particle is an instance of one small white box, tinted per particle: one draw call for all of them.
 // The handles are pooled, so a burst makes no garbage.
 const parts = [], partPool = [];
-const SPLASH = 0xffffff, DUST = 0xd8d2c4, COIN_FX = COLORS.coin.face;
+const SPLASH = 0xffffff, DUST = 0xd8d2c4, MUD_FX = 0x6b4a2c, COIN_FX = COLORS.coin.face;
 const partBoxes = () => [[0.14, 0.14, 0.14, 0xffffff, 0, -0.07, 0]];
-function burst(x, z, color, count) {
+function burst(x, z, color, count, power = 1) {
   for (let i = 0; i < count; i++) {
     const q = partPool.pop() || { inst: new Inst('part', partBoxes, false), x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0 };
     q.inst.paint(color);
     q.x = x; q.y = 0.1; q.z = z;
-    q.vx = fxRand(-2, 2); q.vy = fxRand(3, 5); q.vz = fxRand(-2, 2);
+    q.vx = fxRand(-2, 2) * power; q.vy = fxRand(3, 5) * power; q.vz = fxRand(-2, 2) * power;
     q.inst.set(x, 0.1, z);
     parts.push(q);
   }
@@ -261,6 +261,9 @@ function land(p, lane) {
     if (lane && lane.power && lane.power.x === p.x) pickPower(p, lane);
   }
   p.mesh.userData.body.scale.set(1.15, 0.8, 1.15);
+  // a small puff where the feet land: dust on land, mud in mud, a splash on a log or a pad
+  const wet = lane && (lane.kind === 'river' || lane.kind === 'lily');
+  if (!reduceMotion) burst(p.x, -p.row, wet ? SPLASH : lane && lane.kind === 'mud' ? MUD_FX : DUST, 3, 0.4);
   if (p.queue) { const [qx, qr] = p.queue; p.queue = null; tryMove(p, qx, qr); }
   return true;
 }

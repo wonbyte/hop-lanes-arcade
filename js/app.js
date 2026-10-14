@@ -3,7 +3,7 @@ import { COUNTDOWN, DEBUG, G, REPLAY_CODE, RESULTS_DELAY, STEP } from './core.js
 import { pollGamepads } from './input.js';   // also sets up every input listener
 import { decodeReplay } from './replay.js';
 import { CHARACTERS, LIGHT_OFF, lightGeo } from './models.js';
-import { CAM_OFF, camera, focus, getPixelRatio, renderer, scene, setNight, sun, touchQuery, watchFrameTime } from './gfx.js';
+import { CAM_OFF, SUN_OFF, camera, focus, getPixelRatio, renderer, scene, setNight, sun, touchQuery, watchFrameTime } from './gfx.js';
 import { applyMoves, giveShield, kill, players, updateParts, updatePlayer } from './players.js';
 import { join, resultsEl, setBanner, setModeLabel, showHowto, startPlay, toAttract } from './screens.js';
 import { HOWTO_KEY, dailySeed, loadText, owned } from './storage.js';
@@ -39,7 +39,7 @@ function placeCamera() {
   focus.set(0, 0, -(G.camRow + G.camLead));
   camera.position.copy(focus).add(CAM_OFF);
   camera.lookAt(focus);
-  sun.position.set(focus.x - 6, 14, focus.z + 6);
+  sun.position.copy(focus).add(SUN_OFF);
   sun.target.position.copy(focus);
   G.weather = weatherAt(Math.round(G.camRow + G.camLead));
   setNight(G.camRow, G.weather);

@@ -50,12 +50,13 @@ function fleetMesh(geo, cap, cast) {
 }
 // an instance handle: set(x, y, z, rotY, visible) writes its matrix; drop() frees the slot.
 // color (optional) tints the model's pure white boxes for this instance only.
+// Slots stay packed: drop() moves the last instance into the freed slot, so the GPU only runs live instances.
 const tint = new THREE.Color();
 class Inst {
-  constructor(key, build, cast, color) {
+  constructor(key, build, cast, color = 0xffffff) {
     let f = fleet.get(key);
-    if (!f) { f = { mesh: fleetMesh(cachedGeo(key, build), 32, cast), top: 0, free: [] }; fleet.set(key, f); }
-    if (!f.free.length && f.top === f.mesh.instanceMatrix.count) {   // full: a bigger mesh takes over the slots
+    if (!f) { f = { mesh: fleetMesh(cachedGeo(key, build), 32, cast), top: 0, handles: [] }; fleet.set(key, f); }
+    if (f.top === f.mesh.instanceMatrix.count) {   // full: a bigger mesh takes over the slots
       const big = fleetMesh(f.mesh.geometry, f.top * 2, f.mesh.castShadow);
       big.instanceMatrix.array.set(f.mesh.instanceMatrix.array);
       big.instanceColor.array.set(f.mesh.instanceColor.array);
@@ -63,9 +64,10 @@ class Inst {
       f.mesh = big;
     }
     this.f = f;
-    this.i = f.free.length ? f.free.pop() : f.top++;
+    this.i = f.top++;
+    f.handles[this.i] = this;
     f.mesh.count = f.top;
-    if (color !== undefined) { f.mesh.setColorAt(this.i, tint.setHex(color)); f.mesh.instanceColor.needsUpdate = true; }
+    this.paint(color);
     this.set(0, 0, 0, 0, false);
   }
   set(x, y, z, rotY = 0, visible = true) {
@@ -80,7 +82,19 @@ class Inst {
     this.f.mesh.instanceMatrix.needsUpdate = true;
   }
   paint(color) { this.f.mesh.setColorAt(this.i, tint.setHex(color)); this.f.mesh.instanceColor.needsUpdate = true; }
-  drop() { this.set(0, 0, 0, 0, false); this.f.free.push(this.i); }
+  drop() {
+    const f = this.f, last = --f.top, m = f.mesh;
+    if (this.i !== last) {   // the last instance takes this slot
+      m.instanceMatrix.array.copyWithin(this.i * 16, last * 16, last * 16 + 16);
+      m.instanceColor.array.copyWithin(this.i * 3, last * 3, last * 3 + 3);
+      const moved = f.handles[last];
+      moved.i = this.i; f.handles[this.i] = moved;
+      m.instanceMatrix.needsUpdate = true; m.instanceColor.needsUpdate = true;
+    }
+    f.handles[last] = undefined;
+    m.count = f.top;
+    this.i = -1;
+  }
 }
 
 // moving things in a lane share one wrap span so their gaps never drift
@@ -115,6 +129,7 @@ function placeCoin(lane, z, cols) {
   const x = pick(cols);
   lane.coins.set(x, spinner(lane, 'coin', coinBoxes, x, z));
 }
+const rippleBoxes = () => [[0.5, 0.02, 0.07, 0xd8f3ff, 0, -0.15, 0], [0.22, 0.02, 0.07, 0xd8f3ff, 0.5, -0.15, 0]];
 const playColumns = () => Array.from({ length: PLAY_HALF * 2 + 1 }, (_, i) => i - PLAY_HALF);
 // a power-up (shield or magnet) on a free column, now and then past row 10
 function placePower(lane, r, z, cols) {
@@ -184,6 +199,12 @@ const LANE_BUILDERS = {
     fillTraffic(lane, Math.max(3, Math.floor(rand(4, 6) - diff * 2)), z, () => {
       const len = pick([2, 3, 3, 4]) - (diff > 0.6 && worldRng() < 0.5 ? 1 : 0);
       return { inst: new Inst('log' + len, () => logBoxes(len), false), len };   // flat on the water, no shadow
+    });
+    // light ripples drift with the current (looks only: placed without the world generator, so seeds stay the same)
+    lane.ripples = [0, 1, 2].map(i => {
+      const q = { inst: new Inst('ripple', rippleBoxes, false), x0: -lane.span / 2 + (i + (lane.r * 0.37) % 1) * lane.span / 3, x: 0, z: z + (i - 1) * 0.24 };
+      q.inst.set(0, 0, q.z);
+      return q;
     });
   },
   // lily pads: still water with pads at a few columns; land on water and you sink
@@ -257,11 +278,12 @@ const chunks = new Map();   // chunk index -> { meshes, first }
 function joinGeos(geos) {
   let verts = 0, idx = 0;
   for (const g of geos) { verts += g.attributes.position.count; idx += g.index.count; }
-  const pos = new Float32Array(verts * 3), nor = new Float32Array(verts * 3), col = new Float32Array(verts * 3);
+  const pos = new Float32Array(verts * 3), nor = new Float32Array(verts * 3), col = new Float32Array(verts * 3), ao = new Float32Array(verts);
   const index = new (verts > 65535 ? Uint32Array : Uint16Array)(idx);
   let v = 0, i = 0;
   for (const g of geos) {
     pos.set(g.attributes.position.array, v * 3); nor.set(g.attributes.normal.array, v * 3); col.set(g.attributes.color.array, v * 3);
+    ao.set(g.attributes.ao.array, v);
     const src = g.index.array;
     for (let k = 0; k < src.length; k++) index[i + k] = src[k] + v;
     v += g.attributes.position.count; i += src.length;
@@ -270,6 +292,7 @@ function joinGeos(geos) {
   out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
   out.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  out.setAttribute('ao', new THREE.BufferAttribute(ao, 1));
   out.setIndex(new THREE.BufferAttribute(index, 1));
   return out;
 }
@@ -307,6 +330,7 @@ function dropLane(lane) {
   if (lane.chunk != null) splitChunk(lane.chunk);
   worldGroup.remove(lane.group);
   for (const o of lane.objs) o.inst.drop();
+  if (lane.ripples) for (const q of lane.ripples) q.inst.drop();
   if (lane.train) lane.train.inst.drop();
   if (lane.power) dropSpinner(lane.power.s);
   for (const s of lane.coins.values()) dropSpinner(s);
@@ -324,6 +348,14 @@ function moveTraffic(lane, w) {
     o.x = x - Math.floor(x / lane.span) * lane.span - half;
     o.inst.move(o.x, river ? Math.sin(now / 400 + o.x) * 0.02 : 0, o.z);
     if (o.light) { o.light.position.x = o.x + (lane.dir > 0 ? -0.08 : 0.08); o.light.material = Math.floor(now / 140) % 2 ? POLICE_RED : POLICE_BLUE; }
+  }
+  if (lane.ripples) {
+    const flow = travel * 0.6;
+    for (const q of lane.ripples) {
+      const x = q.x0 + flow + half;
+      q.x = x - Math.floor(x / lane.span) * lane.span - half;
+      q.inst.move(q.x, 0, q.z);
+    }
   }
 }
 // the rail at world time w: walk the seeded schedule forward, then the train is either waiting or passing
@@ -365,6 +397,7 @@ function showLane(lane, on) {
   lane.group.visible = on;
   if (lane.chunk != null) showChunk(lane.chunk);
   for (const o of lane.objs) o.inst.set(o.x, 0, o.z, o.rot || 0, on);
+  if (lane.ripples) for (const q of lane.ripples) q.inst.set(q.x, 0, q.z, 0, on);
   if (lane.train) lane.train.inst.set(lane.train.x, 0, -lane.r, 0, on && lane.train.active);
   for (const s of lane.coins.values()) s.inst.set(s.x, 0, s.z, 0, on);
   if (lane.power) lane.power.s.inst.set(lane.power.x, 0, -lane.r, 0, on);

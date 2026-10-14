@@ -85,9 +85,15 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
 - The draw loop caps at 60 draws/s on fast screens; judge performance from drawn frames only (`watchFrameTime`).
 - The quality ladder must not change `renderer.shadowMap.type`: that rebuilds every shader mid-game (a visible hitch).
 - Vehicles, logs, trains, coins, power-ups and particles are instanced (`Inst` in `world.js`): one draw call per model.
-  `inst.move()` writes only the position; `showLane()` hides a far lane's instances. The paint color is a per-instance
+  `inst.move()` writes only the position; `showLane()` hides a far lane's instances; `drop()` moves the last instance
+  into the freed slot (slots stay packed), so never use a handle after dropping it. The paint color is a per-instance
   tint that applies only to pure white (`0xffffff`) boxes, so no other box in an instanced model may be pure white.
   Every fleet mesh carries `instanceColor`: r128 picks the shader per material, so a mesh without it would crash.
+- `voxelMat.onBeforeCompile` sees the shader before `#include` parts are expanded: replace whole `#include <...>` lines,
+  never text from inside a part (that silently matched nothing once, and every box of a car got the paint).
+- Every geometry drawn with `voxelMat` needs the `ao` attribute (bottom-of-box shade); `mergeBoxes` and `joinGeos` add
+  it. A geometry without it reads 0 and draws black.
+- The shadow box and the haze (`scene.fog`) are fitted to the visible ground in `fitView()` on every resize.
 - Lane ground is joined into 8-row chunks (`CHUNK`) once all 8 rows exist: one mesh that casts shadows, one that does not.
   The lane keeps its own ground mesh (out of the scene while merged); dropping any row splits the chunk back.
   Anything added to `lane.ground` after the lane is built will not show while the chunk is merged.
