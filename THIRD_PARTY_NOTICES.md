@@ -1,6 +1,6 @@
 # Third-party notices
 
-`index.html` loads Three.js from a CDN. The fonts are in `fonts/`. `hop-lanes-standalone.html` contains copies of all of them.
+`index.html` loads a tree-shaken Three.js build from `vendor/three.min.js`. The fonts are in `fonts/`. `hop-lanes-standalone.html` contains copies of all of them.
 
 ## Three.js r186 (three@0.186.1)
 
