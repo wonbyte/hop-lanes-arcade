@@ -40,8 +40,12 @@ async function launch() {
 // New context + page. `storage` entries are written to localStorage before every load;
 // `clipboard` stubs navigator.clipboard and removes navigator.share.
 // `scale` sets the device pixel ratio; `noShare` removes the share sheet and the clipboard (the copy-by-hand fallback).
-async function open(url, { storage = {}, clipboard = false, scale = 0, noShare = false } = {}) {
-  const context = await browser.newContext(scale ? { deviceScaleFactor: scale } : {});
+// `phone` opens a touch screen the size of a phone.
+async function open(url, { storage = {}, clipboard = false, scale = 0, noShare = false, phone = false } = {}) {
+  const context = await browser.newContext({
+    ...(scale ? { deviceScaleFactor: scale } : {}),
+    ...(phone ? { isMobile: true, hasTouch: true, viewport: { width: 390, height: 760 } } : {})
+  });
   if (noShare) {
     await context.addInitScript(() => {
       Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined });
@@ -443,6 +447,20 @@ test('8d. the quality ladder lowers the pixel ratio twice when it helps, and kee
     await page.keyboard.press('Space');
     await waitState(page, 'attract', 120000);
     assert.equal(await hop(page, () => window.hopLanes.ladder.ratio), 1, 'a slow device keeps the lower setting for the next game');
+    assert.deepEqual(errors, []);
+  } finally { await context.close(); }
+});
+
+test('8d2. a dense phone screen starts at 2x and the ladder drops it to 1.5 first', { timeout: 240000 }, async () => {
+  const { context, page, errors } = await open(INDEX, { scale: 2, phone: true });
+  try {
+    await waitState(page, 'attract');
+    assert.equal(await hop(page, () => window.hopLanes.ladder.ratio), 2);
+    const box = await page.locator('#stage').boundingBox();
+    await page.touchscreen.tap(box.x + box.width * 0.25, box.y + box.height * 0.5);
+    await waitState(page, 'play', 120000);
+    assert.equal(await hop(page, () => { const L = window.hopLanes.ladder; for (let i = 0; i < 60; i++) L.feed(0.05); return L.ratio; }), 1.5);
+    assert.equal(await hop(page, () => { const L = window.hopLanes.ladder; for (let i = 0; i < 90; i++) L.feed(0.03); return L.ratio; }), 1.25);
     assert.deepEqual(errors, []);
   } finally { await context.close(); }
 });

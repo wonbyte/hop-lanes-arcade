@@ -124,7 +124,7 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
   on a state change (`paintSignal`, `o.lightRed`).
 - Phones use `BasicShadowMap` (hard edges, one shadow read per pixel) and a 512 shadow map; desktops `PCFShadowMap`
   (r186 removed `PCFSoftShadowMap`) and 1024. Chosen once at boot. The quality ladder retries a rung that helped
-  (pixel ratio 1.5 → 1.25 → 1.0); the lowered setting stays for the next game, and every rung may be tried again (`resetFrameWatch`). On the menus the shadow map is redrawn every other frame (`shadowCadence`).
+  (pixel ratio 2 → 1.5 → 1.25 → 1.0; phones with a dense screen start at 2, everything else at 1.5); the lowered setting stays for the next game, and every rung may be tried again (`resetFrameWatch`). On the menus the shadow map is redrawn every other frame (`shadowCadence`).
 - The window of built rows follows `visRows` (fewer rows on a sideways phone): `rowsBehind()` and the ahead limit in
   `ensureLanes`.
 - `near()`, `visRows` and `firstNeededRow()` decide which rows exist and sound; keep them in step with the camera.

@@ -13,8 +13,9 @@ let renderer;
 // on high-density phone screens edges are already fine, and multisampling costs a lot of fill
 try { renderer = new THREE.WebGLRenderer({ antialias: !(lowGpu && (window.devicePixelRatio || 1) >= 2) }); }
 catch (e) { fail('This browser can not show 3D graphics. Turn on WebGL or try another browser.'); throw new Error('no-webgl'); }
-// 1.5 is enough for voxels on any screen; 2 draws almost twice the pixels for no visible gain
-let pixelRatio = Math.min(1.5, window.devicePixelRatio || 1);
+// dense phone screens start at 2 (no multisampling there, so the resolution is what makes edges sharp); the ladder
+// drops to 1.5 first if frames get slow. Elsewhere 1.5 is enough for voxels: 2 would draw almost twice the pixels
+let pixelRatio = Math.min(lowGpu ? 2 : 1.5, window.devicePixelRatio || 1);
 renderer.setPixelRatio(pixelRatio);
 renderer.shadowMap.enabled = true;
 // phones: hard-edged shadows (one shadow-map read per pixel instead of several); they suit the voxel look.
@@ -144,7 +145,7 @@ const LADDER = [
   () => {
     if (pixelRatio <= 1) return null;
     const was = pixelRatio;
-    setRatio(Math.max(1, was - 0.25));
+    setRatio(was > 1.5 ? 1.5 : Math.max(1, was - 0.25));   // 2 → 1.5 → 1.25 → 1
     return () => setRatio(was);
   },
   () => {
