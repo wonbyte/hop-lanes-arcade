@@ -43,6 +43,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+        with:
+          enablement: true   # turns Pages on (source: GitHub Actions) the first time; a no-op after that
       - name: Assemble site
         run: |
           mkdir _site
