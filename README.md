@@ -69,6 +69,8 @@ Browsers refuse ES modules from `file://`, so `index.html` needs a server. The s
   row and is worth 3.
 - The blue gem gives a shield (one free hit). The red magnet pulls coins in.
 - Finish a mission for 20 coins. The prize machine gives a random animal for 50.
+- There is no diagonal hop, so the world is built with a way forward: lily pads and planks always line up with
+  something you can stand on in the row before.
 - On ice, a sideways hop slides one more step. A bridge plank breaks 0.6 s after you land on it and comes back 3 s later.
 - A car that just misses you is a near miss: +1 combo and a whoosh.
 - Game over: share your score, copy a replay link, or try again. Pause → SNAPSHOT saves a picture of the field with

@@ -2,7 +2,7 @@
 // Run: node tests/sim.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createWorldGen, railStep, trafficX } from '../js/gen.js';
+import { createWorldGen, railStep, standColumns, standGroups, trafficX } from '../js/gen.js';
 import { createSim, makeRules, resetPlayer, simulate, winnerOf } from '../js/sim.js';
 import { decodeReplay, encodeReplay } from '../js/replay.js';
 import { BRIDGE_FROM, ICE_FROM, PLANK_BACK, PLANK_BREAK, ROCKS_FROM, STEP, plankState, traitOf } from '../js/rules.js';
@@ -278,4 +278,19 @@ test('near miss: a car that passes just short of a hit adds one combo, once per 
   b.run(5);
   assert.equal(p.combo, 2, 'the same car does not count again');
   assert.ok(p.alive);
+});
+
+test('gen: every world has a way forward (pads over pads, planks reachable, no tree wall after a lily row)', () => {
+  for (let seed = 1; seed <= 200; seed++) {
+    const g = createWorldGen(seed);
+    let prev = null;
+    for (let r = 1; r <= 220; r++) {
+      const lane = g.lane(r), stand = standColumns(lane), here = stand && new Set(stand);
+      if (here) for (const group of standGroups(prev)) assert.ok(group.some(x => here.has(x)), `seed ${seed} row ${r} (${lane.kind}): the group ${group} of row ${r - 1} has no straight hop`);
+      if (lane.kind === 'lily') assert.ok(lane.pads.size >= 3 && lane.pads.size <= 9);
+      prev = stand;
+    }
+  }
+  assert.deepEqual(standGroups([-4, -3, 0, 1, 2, 4]), [[-4, -3], [0, 1, 2], [4]]);
+  assert.deepEqual(standGroups(null), [[-4, -3, -2, -1, 0, 1, 2, 3, 4]]);
 });

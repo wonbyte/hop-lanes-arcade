@@ -160,39 +160,74 @@ const ROW_BUILDERS = {
   }
 };
 
+// ---------- a way forward ----------
+// The columns of a row a player can stand on (null: every column, or logs that drift anywhere), and the groups of
+// them a player can walk between with sideways hops. The row after must give every group a straight hop onto
+// something solid, or a player who came in on that group is stuck (pads over pads, planks, trees over pads).
+function standColumns(lane) {
+  if (lane.kind === 'lily') return [...lane.pads].sort((a, b) => a - b);
+  if (lane.kind === 'bridge') return [...lane.planks.keys()].sort((a, b) => a - b);
+  if (lane.kind === 'grass' || lane.kind === 'ice') return playColumns().filter(x => !lane.trees.has(x));
+  return null;
+}
+function standGroups(cols) {
+  if (!cols) return [playColumns()];
+  const groups = [];
+  for (const x of cols) {
+    const g = groups[groups.length - 1];
+    if (g && x === g[g.length - 1] + 1) g.push(x); else groups.push([x]);
+  }
+  return groups;
+}
+// make sure every group of the row before meets this row: a pad, a plank or a felled tree on one of its columns
+function connectRow(rng, lane, prevStand) {
+  if (prevStand === null && lane.kind !== 'lily' && lane.kind !== 'bridge') return;   // anything goes
+  const stand = standColumns(lane);
+  if (stand === null) return;
+  const here = new Set(stand);
+  for (const group of standGroups(prevStand)) {
+    if (group.some(x => here.has(x))) continue;
+    const x = genPick(rng, group);
+    if (lane.kind === 'lily') lane.pads.add(x);
+    else if (lane.kind === 'bridge') lane.planks.set(x, { breakAt: -1, backAt: -1 });
+    else { lane.trees.delete(x); lane.treeH = lane.treeH.filter(t => t[0] !== x); }
+    here.add(x);
+  }
+}
+
 // The rows of one world. A row depends on the row before it (runs of one kind, rivers that alternate, one boss train
-// per 100 rows), so the chain is walked from row 3 (rows below 4 are always grass) and remembered.
+// per 100 rows, the columns a player can stand on), so the chain is walked from row 1 and remembered.
 // lane(r) returns a new data object every call: the caller owns its moving state (o.x, coins, the train schedule).
 function createWorldGen(seed) {
-  const heads = [];   // heads[r - 3]: { kind, streak, dir, bossChunk } after row r
-  const GRASS = { kind: 'grass', streak: 1, dir: 1, bossChunk: 0 };
+  const heads = [];   // heads[r - 1]: { kind, streak, dir, bossChunk, stand } after row r
+  const GRASS = { kind: 'grass', streak: 1, dir: 1, bossChunk: 0, stand: null };
   const headOf = r => {
-    if (r < 3) return GRASS;
-    while (heads.length <= r - 3) {
-      const row = heads.length + 3;
-      heads.push(row === 3 ? GRASS : build(row, heads[heads.length - 1], true));
+    if (r < 1) return GRASS;
+    while (heads.length < r) {
+      const lane = build(heads.length + 1, heads.length ? heads[heads.length - 1] : GRASS);
+      heads.push({ kind: lane.kind, streak: lane.streak, dir: lane.dir, bossChunk: lane.bossChunk, stand: standColumns(lane) });
     }
-    return heads[r - 3];
+    return heads[r - 1];
   };
-  // headOnly: just the chain state (the kind and the direction are the first draws of a row)
-  function build(r, prev, headOnly) {
+  function build(r, prev) {
     const rng = rowRng(seed, r);
     const diff = difficulty(r);
     const kind = nextLaneKind(r, diff, prev, rng);
     let dir = rng() < 0.5 ? 1 : -1;
     if (kind === 'river' && prev.kind === 'river') dir = -prev.dir;
     const boss = kind === 'rail' && r >= 100 && Math.floor(r / 100) > prev.bossChunk;
-    if (headOnly) return { kind, streak: kind === prev.kind ? prev.streak + 1 : 1, dir, bossChunk: boss ? Math.floor(r / 100) : prev.bossChunk };
     const lane = {
       r, kind, diff, dir, speed: 0, span: LANE_SPAN, wet: wetAt(seed, r), prevKind: prev.kind, boss,
+      streak: kind === prev.kind ? prev.streak + 1 : 1, bossChunk: boss ? Math.floor(r / 100) : prev.bossChunk,
       objs: [], trees: new Set(), coins: new Map(), secret: null, power: null
     };
     ROW_BUILDERS[kind](rng, lane, seed);
+    if (r >= 1) connectRow(rng, lane, prev.stand);   // the draws come after the row's own, so rows before stay as they were
     return lane;
   }
   return {
     seed,
-    lane: r => build(r, headOf(r - 1), false),
+    lane: r => build(r, headOf(r - 1)),
     kind: r => headOf(r).kind
   };
 }
@@ -216,4 +251,4 @@ function railStep(lane, w) {
   return active;
 }
 
-export { CAR_COLORS, LANE_SPAN, TRAIN_CARS, TRAIN_CAR_LEN, TRAIN_GAP, createWorldGen, playColumns, railStep, trafficX, trainLen, wetAt };
+export { CAR_COLORS, LANE_SPAN, TRAIN_CARS, TRAIN_CAR_LEN, TRAIN_GAP, createWorldGen, playColumns, railStep, standColumns, standGroups, trafficX, trainLen, wetAt };

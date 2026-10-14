@@ -1,7 +1,7 @@
 import { sfx } from './audio.js';
 import { FIRST_ROW, FIXED_SEED, G, LANES_AHEAD, LANES_BEHIND, PLAY_HALF, STEP, WRAP } from './core.js';
 import { hashString, plankState } from './rules.js';
-import { createWorldGen, railStep, trafficX, wetAt } from './gen.js';
+import { createWorldGen, railStep, trafficX, wetAt, standGroups } from './gen.js';
 import { touchRows } from './sim.js';
 import { BLINK_STEPS, scene } from './gfx.js';
 import { LIGHT_TINT, boulderBoxes, coinBoxes, lightBoxes, logBoxes, magnetBoxes, plankBoxes, policeBoxes, shieldBoxes, trainBoxes, vehicleBoxes } from './models.js';
@@ -191,9 +191,12 @@ const LANE_BUILDERS = {
   bridge(lane, { z, ground }) {
     ground.push([40, 0.3, 1, 0x5ec8f0, 0, -0.45, z], [40, 0.02, 0.16, 0x74d3f5, 0, -0.16, z + 0.3]);
     edgeLines(ground, z, FOAM, -0.16);
-    const cols = [...lane.planks.keys()], a = cols[0] - 0.5, b = cols[cols.length - 1] + 0.5;
-    for (const x of [a, b]) for (const dz of [-0.42, 0.42]) ground.push([0.12, 0.62, 0.12, 0x6e4826, x, -0.3, z + dz]);
-    for (const dz of [-0.42, 0.42]) ground.push([b - a, 0.04, 0.04, 0xc9a77a, (a + b) / 2, 0.26, z + dz]);
+    const cols = [...lane.planks.keys()].sort((p, q) => p - q);
+    for (const run of standGroups(cols)) {   // posts and rope rails per run of planks (gen.js may add a lone plank)
+      const a = run[0] - 0.5, b = run[run.length - 1] + 0.5;
+      for (const x of [a, b]) for (const dz of [-0.42, 0.42]) ground.push([0.12, 0.62, 0.12, 0x6e4826, x, -0.3, z + dz]);
+      for (const dz of [-0.42, 0.42]) ground.push([b - a, 0.04, 0.04, 0xc9a77a, (a + b) / 2, 0.26, z + dz]);
+    }
     lane.plankInst = cols.map(x => { const i = new Inst('plank', plankBoxes, false); i.set(x, 0, z); return { x, i, y: 0 }; });
   },
   // rocks: dusty ground with pebbles; boulders roll across like slow traffic
