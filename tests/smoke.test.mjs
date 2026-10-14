@@ -284,6 +284,26 @@ test('5d. shield and safe time: one free hit, but water never holds you', async 
   } finally { await context.close(); }
 });
 
+test('5e. the shadow box and the haze follow the screen shape', async () => {
+  const { context, page, errors } = await open({ viewport: { width: 390, height: 760 } }, INDEX + '#debug');
+  try {
+    await waitState(page, 'attract');
+    const tall = await page.evaluate(() => window.hopLanes.view);
+    await page.setViewportSize({ width: 1280, height: 600 });
+    await page.waitForFunction(w => window.hopLanes.view.shadowW !== w, tall.shadowW, { timeout: T });
+    const wide = await page.evaluate(() => window.hopLanes.view);
+    for (const v of [tall, wide]) {
+      assert.ok(v.shadowW > 8 && v.shadowW < 80, 'shadow box width ' + v.shadowW);
+      assert.ok(v.shadowH > 8 && v.shadowH < 80, 'shadow box height ' + v.shadowH);
+      assert.ok(v.fogNear > 0 && v.fogFar > v.fogNear + 10, 'haze from ' + v.fogNear + ' to ' + v.fogFar);
+      assert.ok([256, 512, 1024].includes(v.mapSize));
+    }
+    assert.notEqual(wide.shadowW * wide.shadowH, tall.shadowW * tall.shadowH, 'the shadow box is refitted to the new screen shape');
+    assert.equal(await page.locator('#fps').isVisible(), true, 'the debug frame counter shows');
+    assert.deepEqual(errors, []);
+  } finally { await context.close(); }
+});
+
 test('6. standalone works fully offline', async () => {
   const { context, page, errors, requests } = await open({}, STANDALONE + '#debug', { network: 'offline' });
   try {

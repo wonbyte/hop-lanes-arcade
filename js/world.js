@@ -193,7 +193,7 @@ const LANE_BUILDERS = {
     placePower(lane, lane.r, z, playColumns());
   },
   river(lane, { z, diff, prev, ground }) {
-    ground.push([40, 0.3, 1, 0x5ec8f0, 0, -0.45, z]);
+    ground.push([40, 0.3, 1, 0x5ec8f0, 0, -0.45, z], [40, 0.02, 0.16, 0x74d3f5, 0, -0.16, z + 0.3]);   // a lighter streak: depth
     if (prev && prev.kind === 'river') lane.dir = -prev.dir;
     lane.speed = (rand(1.0, 1.9) + diff * 1.0) * (weatherAt(lane.r) ? 1.2 : 1);   // rain or snow: faster water
     fillTraffic(lane, Math.max(3, Math.floor(rand(4, 6) - diff * 2)), z, () => {
@@ -209,7 +209,7 @@ const LANE_BUILDERS = {
   },
   // lily pads: still water with pads at a few columns; land on water and you sink
   lily(lane, { z, ground }) {
-    ground.push([40, 0.3, 1, 0x5ec8f0, 0, -0.45, z]);
+    ground.push([40, 0.3, 1, 0x5ec8f0, 0, -0.45, z], [40, 0.02, 0.16, 0x74d3f5, 0, -0.16, z + 0.3]);
     lane.pads = new Set();
     const cols = playColumns();
     const count = Math.floor(rand(3, 6));
@@ -252,6 +252,9 @@ const LANE_BUILDERS = {
 };
 
 function addLane(r) {
+  // every row has its own generator from the seed and the row: a row is the same whatever rows were built
+  // before it (the first built row depends on the screen size), so a replay or a shared seed never drifts
+  worldRng = mulberry32((worldSeed ^ Math.imul(r + 4096, 0x9e3779b1)) >>> 0);
   const kind = laneKind(r);
   const lane = {
     r, kind, group: new THREE.Group(), objs: [], trees: new Set(), coins: new Map(), shown: true,
@@ -405,13 +408,14 @@ function showLane(lane, on) {
 
 // Visible rows are built at once; rows further ahead are added one per frame, so a restart
 // or a fast run never builds many lanes in a single frame.
+// the window of built rows follows how many are visible: a sideways phone sees fewer rows and builds fewer
 const lastNeededRow = () => Math.ceil(G.camRow + G.camLead + G.visRows);
-const firstNeededRow = () => Math.min(G.camRow - LANES_BEHIND, Math.floor(G.camRow + G.camLead - G.visRows));
+const rowsBehind = () => Math.min(LANES_BEHIND, Math.ceil(G.visRows));   // always more than BEHIND_LIMIT
+const firstNeededRow = () => Math.min(G.camRow - rowsBehind(), Math.floor(G.camRow + G.camLead - G.visRows));
 function resetWorld() {
   for (const lane of [...lanes.values()]) dropLane(lane);
   worldSeed = G.replay ? G.replay.seed : FIXED_SEED !== null ? FIXED_SEED
     : G.mode === 'daily' ? dailySeed() : G.mode === 'room' ? hashString('room:' + G.room) : (Math.random() * 4294967296) >>> 0;
-  worldRng = mulberry32(worldSeed);
   G.worldTick = 0;
   snowSeason = new Date().getMonth() === 11;
   maxRow = Math.min(FIRST_ROW, firstNeededRow()) - 1; lastKind = 'grass'; streak = 0; bossChunk = 0;
@@ -420,7 +424,7 @@ function resetWorld() {
 function ensureLanes() {
   while (maxRow < lastNeededRow()) addLane(maxRow + 1);
   // keep a few rows built ahead of the screen edge, so a lane is never built in the frame it appears
-  if (maxRow < Math.max(G.camRow + LANES_AHEAD, lastNeededRow() + 6)) addLane(maxRow + 1);
+  if (maxRow < Math.max(G.camRow + Math.min(LANES_AHEAD, G.visRows + 8), lastNeededRow() + 6)) addLane(maxRow + 1);
   const first = firstNeededRow();
   for (const lane of lanes.values()) if (lane.r < first) dropLane(lane);
 }

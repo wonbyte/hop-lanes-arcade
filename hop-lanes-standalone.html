@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-Gjh0TdEZeXBKgPb/SW90eZnVrm9S8T6aWCY6aRN7b/Y=' 'sha256-v+RmxHtqZJLRRRjOgO/bPO/eyYALK2+lPtawYpgRPWY='; style-src 'sha256-R10EOjzqzyJftnfWUN/ewdh0JQfFJMRg0QF220/Hzek='; font-src data:; img-src data:; connect-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-Gjh0TdEZeXBKgPb/SW90eZnVrm9S8T6aWCY6aRN7b/Y=' 'sha256-qTnVt8ZO/JwCJCjZGQvJnA+1WdK9YuNWVA2Cdnz42F4='; style-src 'sha256-Lgz1lMFTAtWCuy87oq945fQZu8ZA4gDV3k4j7yidirk='; font-src data:; img-src data:; connect-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Hop Lanes Arcade</title>
 <meta name="description" content="Two-player voxel arcade game: Frog vs Fox hop across roads, rivers and train tracks.">
 <meta name="theme-color" content="#10131c">
@@ -137,6 +137,7 @@ body {
 #missions h3 { margin: 0 0 2px; font-size: 8px; color: var(--gold); letter-spacing: .1em; }
 #missions ul { margin: 0; padding: 0; list-style: none; }
 #missions ul li::before { content: '\25C6 '; color: var(--gold); }
+#fps { position: absolute; z-index: 9; right: 6px; bottom: 6px; padding: 3px 6px; background: rgba(0,0,0,.6); color: #9f9; font: 10px/1.4 monospace; pointer-events: none; }
 #replayTag {
   position: absolute; z-index: 5; left: 50%; transform: translateX(-50%); top: calc(var(--marquee-h, 74px) + 8px);
   padding: 4px 10px; border-radius: 8px; background: rgba(216,58,58,.85); color: #fff; font-family: var(--font-pixel); font-size: 9px; letter-spacing: .1em;
@@ -359,6 +360,7 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
     </div>
     <div id="weather" aria-hidden="true"></div>
     <div id="replayTag" hidden data-i18n="REPLAY">REPLAY</div>
+    <div id="fps" hidden aria-hidden="true"></div>
     <div id="confetti" aria-hidden="true"></div>
     <div id="banner" hidden aria-live="polite"><h2></h2><p></p></div>
     <div id="howto" hidden>
@@ -3731,20 +3733,24 @@ const voxelMat = new THREE.MeshLambertMaterial({ vertexColors: true });
 // expanded, so the whole color_vertex part is replaced, not a line inside it):
 // - instanced models (world.js Inst) carry a color per instance that tints only the pure white boxes,
 //   so one car model serves every paint color while windows and wheels keep their own colors
-// - `ao` darkens the bottom of every box a little (baked ambient occlusion): blocks look grounded
+// - `ao` darkens the bottom of every box a little (baked ambient occlusion): blocks look grounded;
+//   a value above 1 is a glow (headlights) that comes on with the night (uniform `glow`, set by gfx.setNight)
+const glowU = { value: 0 };
 voxelMat.onBeforeCompile = shader => {
+  shader.uniforms.glow = glowU;
   shader.vertexShader = shader.vertexShader
-    .replace('#include <common>', '#include <common>\nattribute float ao;')
+    .replace('#include <common>', '#include <common>\nattribute float ao;\nuniform float glow;')
     .replace('#include <color_vertex>', [
       '#if defined( USE_COLOR ) || defined( USE_INSTANCING_COLOR )', 'vColor = vec3( 1.0 );', '#endif',
       '#ifdef USE_COLOR', 'vColor *= color;', '#endif',
       '#ifdef USE_INSTANCING_COLOR',
       'if ( color.r > 0.999 && color.g > 0.999 && color.b > 0.999 ) vColor *= instanceColor;',
       '#endif',
-      'vColor *= ao;'
+      'vColor *= ao <= 1.0 ? ao : 1.0 + ( ao - 1.0 ) * glow;'
     ].join('\n'));
 };
 const AO_BOTTOM = 0.72;   // shade at the bottom of a box (the top stays 1); flat boxes get none
+// a box may carry an 8th value: its glow at night (1 = twice as bright); a glowing box gets no bottom shade
 const UNIT = new THREE.BoxGeometry(1, 1, 1);
 const UP = UNIT.attributes.position.array, UN = UNIT.attributes.normal.array, UI = UNIT.index.array;
 const UV = UP.length / 3;
@@ -3754,7 +3760,7 @@ function mergeBoxes(boxes) {
   const n = boxes.length;
   const pos = new Float32Array(n * UV * 3), nor = new Float32Array(n * UV * 3), col = new Float32Array(n * UV * 3), ao = new Float32Array(n * UV);
   const idx = new (n * UV > 65535 ? Uint32Array : Uint16Array)(n * UI.length);
-  boxes.forEach(([w, h, d, color, x, y, z], k) => {
+  boxes.forEach(([w, h, d, color, x, y, z, glow = 0], k) => {
     tmpColor.setHex(color);
     const o = k * UV * 3;
     for (let i = 0; i < UV * 3; i += 3) {
@@ -3762,7 +3768,7 @@ function mergeBoxes(boxes) {
       pos[o + i + 1] = UP[i + 1] * h + y + h / 2;
       pos[o + i + 2] = UP[i + 2] * d + z;
       col[o + i] = tmpColor.r; col[o + i + 1] = tmpColor.g; col[o + i + 2] = tmpColor.b;
-      ao[(o + i) / 3] = UP[i + 1] < 0 && h > 0.12 ? AO_BOTTOM : 1;
+      ao[(o + i) / 3] = glow ? 1 + glow : UP[i + 1] < 0 && h > 0.12 ? AO_BOTTOM : 1;
     }
     nor.set(UN, o);
     for (let i = 0; i < UI.length; i++) idx[k * UI.length + i] = UI[i] + k * UV;
@@ -4049,12 +4055,23 @@ const POLICE_RED = new THREE.MeshLambertMaterial({ color: 0x331111, emissive: 0x
 const POLICE_BLUE = new THREE.MeshLambertMaterial({ color: 0x111133, emissive: 0x3a7bff });
 const eagleBoxes = () => {
   const b = [
-    [0.9, 0.32, 0.5, 0x4a3426, 0, 0, 0],
-    [0.3, 0.3, 0.3, 0xf4f1ec, 0, 0.1, -0.5],          // head
-    [0.12, 0.1, 0.2, 0xf2c33a, 0, 0.15, -0.72],       // beak
-    [0.4, 0.08, 0.3, 0xf4f1ec, 0, 0.1, 0.35]          // tail
+    [0.9, 0.34, 0.52, 0x4a3426, 0, 0, 0],             // body
+    [0.5, 0.12, 0.4, 0x5c4332, 0, 0.34, 0.02],        // back
+    [0.32, 0.3, 0.32, 0xf4f1ec, 0, 0.14, -0.52],      // white head
+    [0.14, 0.1, 0.22, 0xf2c33a, 0, 0.2, -0.76],       // beak
+    [0.1, 0.06, 0.08, 0x3a281d, 0, 0.17, -0.86],      // beak tip (hooked)
+    [0.44, 0.08, 0.36, 0xf4f1ec, 0, 0.1, 0.4],        // tail
+    [0.2, 0.06, 0.16, 0xe8e2d8, 0, 0.12, 0.58],       // tail tip
+    [0.3, 0.14, 0.16, 0xf2c33a, 0, -0.12, -0.1]       // talons
   ];
-  for (const s of [-1, 1]) b.push([1.5, 0.08, 0.45, 0x3a281d, s * 1.1, 0.2, 0], [0.05, 0.05, 0.05, 0x111111, s * 0.1, 0.28, -0.62]);
+  for (const s of [-1, 1]) {
+    b.push([1.1, 0.09, 0.5, 0x3a281d, s * 0.9, 0.2, 0.02],        // wing
+           [0.7, 0.08, 0.42, 0x2e2016, s * 1.75, 0.22, 0.06],      // wing tip, a little back
+           [0.5, 0.06, 0.1, 0x241910, s * 1.9, 0.21, 0.3],         // feather
+           [0.3, 0.06, 0.1, 0x241910, s * 2.0, 0.21, 0.42],
+           [0.06, 0.06, 0.05, 0x111111, s * 0.11, 0.3, -0.66],     // eye
+           [0.08, 0.03, 0.08, 0x4a3426, s * 0.11, 0.35, -0.64]);   // brow
+  }
   return b;
 };
 const coinBoxes = () => [[0.34, 0.34, 0.08, COLORS.coin.face, 0, 0.28, 0], [0.18, 0.18, 0.1, COLORS.coin.rim, 0, 0.36, 0]];
@@ -4087,6 +4104,8 @@ function vehicleBoxes(truck, c = 0xffffff) {
   ];
   for (const wx of [-len / 2 + 0.3, len / 2 - 0.3]) for (const wz of [-0.38, 0.38])
     b.push([0.3, 0.26, 0.1, 0x222222, wx, 0, wz]);
+  // headlights (front is -x) and tail lights: they glow at night (8th value, see voxel.js)
+  for (const wz of [-0.26, 0.26]) b.push([0.06, 0.12, 0.16, 0xfff1b0, -len / 2 - 0.02, 0.3, wz, 1.4], [0.06, 0.1, 0.14, 0xff4a3a, len / 2 + 0.02, 0.3, wz, 0.8]);
   return b;
 }
 const logBoxes = len => [
@@ -4160,7 +4179,7 @@ const hemi = new THREE.HemisphereLight(0xffffff, 0x8899aa, 0.65);
 scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xffffff, 0.6);
 sun.castShadow = true;
-sun.shadow.mapSize.setScalar(1024);   // at this camera angle 2048 looks the same and costs 4x the shadow pass
+sun.shadow.mapSize.setScalar(lowGpu ? 512 : 1024);   // phone screens are small: 512 looks the same there and costs a quarter
 Object.assign(sun.shadow.camera, { top: 15, bottom: -15, near: 1, far: 50 });   // fitted to the view in resize()
 scene.add(sun, sun.target);
 
@@ -4177,6 +4196,7 @@ function setNight(row, weather = '') {
   if (weather !== shownWeather) { shownWeather = weather; weatherEl.className = weather; }
   if (t === nightT && wet === wetT) return;
   nightT = t; wetT += (wet - wetT) * 0.03; if (Math.abs(wet - wetT) < 0.01) wetT = wet;
+  glowU.value = Math.min(1, t * 1.5 + wetT * 0.4);   // headlights come on with the dusk, and a little in rain
   scene.background.copy(DAY.sky).lerp(NIGHT.sky, t).lerp(weather === 'snow' ? SNOW_SKY : RAIN_SKY, wetT * (weather === 'snow' ? 0.5 : 0.6));
   sun.color.copy(DAY.sun).lerp(NIGHT.sun, t);
   hemi.intensity = (DAY.hemi + (NIGHT.hemi - DAY.hemi) * t) * (1 - wetT * 0.15);
@@ -4267,7 +4287,7 @@ const LADDER = [
     return () => setRatio(was);
   },
   () => {
-    if (sun.shadow.mapSize.x <= 512) return null;
+    if (sun.shadow.mapSize.x <= 256) return null;
     const was = sun.shadow.mapSize.x;
     setShadowMapSize(was / 2);
     return () => setShadowMapSize(was);
@@ -4291,6 +4311,17 @@ function watchFrameTime(frameT) {
 }
 
 const getPixelRatio = () => pixelRatio;
+// shadows are redrawn with every frame while playing; on the menus and the results every other drawn frame
+// is enough (the title traffic moves slowly), which saves about a third of each frame there
+let shadowSkip = false;
+function shadowCadence(idle) {
+  if (!idle) { renderer.shadowMap.autoUpdate = true; return; }
+  renderer.shadowMap.autoUpdate = false;
+  shadowSkip = !shadowSkip;
+  if (!shadowSkip) renderer.shadowMap.needsUpdate = true;
+}
+// test hook: how the view was fitted
+const viewInfo = () => { const sc = sun.shadow.camera; return { shadowW: sc.right - sc.left, shadowH: sc.top - sc.bottom, fogNear: scene.fog.near, fogFar: scene.fog.far, mapSize: sun.shadow.mapSize.x }; };
 // Lanes: building, scrolling, traffic, trains and coins. Seeded, so a seed always gives the same world.
 // ---------- random ----------
 // The world is built from a seeded generator (rules.js), so a seed always gives the same lanes.
@@ -4478,7 +4509,7 @@ const LANE_BUILDERS = {
     placePower(lane, lane.r, z, playColumns());
   },
   river(lane, { z, diff, prev, ground }) {
-    ground.push([40, 0.3, 1, 0x5ec8f0, 0, -0.45, z]);
+    ground.push([40, 0.3, 1, 0x5ec8f0, 0, -0.45, z], [40, 0.02, 0.16, 0x74d3f5, 0, -0.16, z + 0.3]);   // a lighter streak: depth
     if (prev && prev.kind === 'river') lane.dir = -prev.dir;
     lane.speed = (rand(1.0, 1.9) + diff * 1.0) * (weatherAt(lane.r) ? 1.2 : 1);   // rain or snow: faster water
     fillTraffic(lane, Math.max(3, Math.floor(rand(4, 6) - diff * 2)), z, () => {
@@ -4494,7 +4525,7 @@ const LANE_BUILDERS = {
   },
   // lily pads: still water with pads at a few columns; land on water and you sink
   lily(lane, { z, ground }) {
-    ground.push([40, 0.3, 1, 0x5ec8f0, 0, -0.45, z]);
+    ground.push([40, 0.3, 1, 0x5ec8f0, 0, -0.45, z], [40, 0.02, 0.16, 0x74d3f5, 0, -0.16, z + 0.3]);
     lane.pads = new Set();
     const cols = playColumns();
     const count = Math.floor(rand(3, 6));
@@ -4537,6 +4568,9 @@ const LANE_BUILDERS = {
 };
 
 function addLane(r) {
+  // every row has its own generator from the seed and the row: a row is the same whatever rows were built
+  // before it (the first built row depends on the screen size), so a replay or a shared seed never drifts
+  worldRng = mulberry32((worldSeed ^ Math.imul(r + 4096, 0x9e3779b1)) >>> 0);
   const kind = laneKind(r);
   const lane = {
     r, kind, group: new THREE.Group(), objs: [], trees: new Set(), coins: new Map(), shown: true,
@@ -4690,13 +4724,14 @@ function showLane(lane, on) {
 
 // Visible rows are built at once; rows further ahead are added one per frame, so a restart
 // or a fast run never builds many lanes in a single frame.
+// the window of built rows follows how many are visible: a sideways phone sees fewer rows and builds fewer
 const lastNeededRow = () => Math.ceil(G.camRow + G.camLead + G.visRows);
-const firstNeededRow = () => Math.min(G.camRow - LANES_BEHIND, Math.floor(G.camRow + G.camLead - G.visRows));
+const rowsBehind = () => Math.min(LANES_BEHIND, Math.ceil(G.visRows));   // always more than BEHIND_LIMIT
+const firstNeededRow = () => Math.min(G.camRow - rowsBehind(), Math.floor(G.camRow + G.camLead - G.visRows));
 function resetWorld() {
   for (const lane of [...lanes.values()]) dropLane(lane);
   worldSeed = G.replay ? G.replay.seed : FIXED_SEED !== null ? FIXED_SEED
     : G.mode === 'daily' ? dailySeed() : G.mode === 'room' ? hashString('room:' + G.room) : (Math.random() * 4294967296) >>> 0;
-  worldRng = mulberry32(worldSeed);
   G.worldTick = 0;
   snowSeason = new Date().getMonth() === 11;
   maxRow = Math.min(FIRST_ROW, firstNeededRow()) - 1; lastKind = 'grass'; streak = 0; bossChunk = 0;
@@ -4705,7 +4740,7 @@ function resetWorld() {
 function ensureLanes() {
   while (maxRow < lastNeededRow()) addLane(maxRow + 1);
   // keep a few rows built ahead of the screen edge, so a lane is never built in the frame it appears
-  if (maxRow < Math.max(G.camRow + LANES_AHEAD, lastNeededRow() + 6)) addLane(maxRow + 1);
+  if (maxRow < Math.max(G.camRow + Math.min(LANES_AHEAD, G.visRows + 8), lastNeededRow() + 6)) addLane(maxRow + 1);
   const first = firstNeededRow();
   for (const lane of lanes.values()) if (lane.r < first) dropLane(lane);
 }
@@ -4733,11 +4768,17 @@ const players = [
   { id: 1, charIndex: pickIndex(1, 1), startX: 2, joined: false, scoreEl: $('score2').querySelector('b') }
 ];
 const charOf = p => CHARACTERS[p.charIndex];
+// a soft dark spot on the ground under an animal in the air: it shows where the hop lands
+const blobGeo = new THREE.BoxGeometry(0.62, 0.02, 0.62);
+const blobMat = new THREE.MeshLambertMaterial({ color: 0x000000, transparent: true, opacity: 0.22, depthWrite: false });
 function spawn(p) {
   despawn(p);
   const ch = charOf(p);
   p.mesh = makeCharacter(ch.boxes, ch.key);
   scene.add(p.mesh);
+  p.blob = new THREE.Mesh(blobGeo, blobMat);
+  p.blob.visible = false;
+  scene.add(p.blob);
   Object.assign(p, {
     x: p.startX, row: 0, alive: true, hop: null, queue: null, score: 0, idleT: 0, warned: false, eagle: null, breath: p.id * 1.7,
     facing: 0, cause: '', log: null, logOff: 0, trainDir: 0,
@@ -4800,6 +4841,7 @@ function updateMagnet(p, dt) {
 }
 function despawn(p) {
   if (p.mesh) { scene.remove(p.mesh); p.mesh = null; }
+  if (p.blob) { scene.remove(p.blob); p.blob = null; }
   if (p.eagle) { scene.remove(p.eagle.mesh); p.eagle = null; }
   p.alive = false;
 }
@@ -5022,6 +5064,9 @@ function updatePlayer(p, dt) {
   if (p.safeT > 0) { p.safeT = Math.max(0, p.safeT - dt); p.mesh.visible = !p.safeT || Math.floor(p.safeT * 12) % 2 === 0; }
   const lane = lanes.get(p.row);
   const ok = p.hop ? stepHop(p, lane, dt) : stand(p, dt);
+  const air = p.hop && p.mesh.position.y > 0.08;   // the blob shows only while the animal is up
+  p.blob.visible = !!air;
+  if (air) p.blob.position.set(p.mesh.position.x, 0.02, p.mesh.position.z);
   if (ok && p.alive && !p.safeT) checkHazards(p, lanes.get(p.row));
   if (!p.alive || G.state !== 'play') return;
   if (p.magnetT) { updateMagnet(p, dt); if (!p.magnetT) setLabel(p); }
@@ -5617,15 +5662,27 @@ function frame(now) {
   if (draw) {
     spinAll(now);
     placeCamera();
+    shadowCadence(idle);
     renderer.render(scene, camera);
     if (lastDraw) watchFrameTime((now - lastDraw) / 1000);   // judge drawn frames only
     lastDraw = now;
+    if (DEBUG) countFrame(now);
   }
   if (G.state === 'attract') { if (G.stateT < 0.5) startTune(); else if (G.stateT > 14) idleAudio(); }
   requestAnimationFrame(frame);
 }
 
+// #debug: drawn frames per second and draw calls, in the corner, once a second
+const fpsEl = $('fps');
+let fpsN = 0, fpsT0 = 0;
+function countFrame(now) {
+  fpsN++;
+  if (now - fpsT0 < 1000) return;
+  if (fpsT0) fpsEl.textContent = Math.round(fpsN * 1000 / (now - fpsT0)) + ' FPS \u00b7 ' + renderer.info.render.calls + ' DRAWS \u00b7 ' + getPixelRatio() + 'x';
+  fpsT0 = now; fpsN = 0;
+}
 if (DEBUG) {
+  fpsEl.hidden = false;
   window.hopLanes = {
     players, renderer, laneCoins, laneKinds, kill, giveShield,
     get state() { return G.state; },
@@ -5644,7 +5701,8 @@ if (DEBUG) {
     get playTick() { return G.playTick; },
     get startTick() { return G.startTick; },
     get replay() { return G.replay; },
-    get weather() { return G.weather; }
+    get weather() { return G.weather; },
+    get view() { return viewInfo(); }
   };
 }
 // a replay link: the same world, the same animals, the same hops (a link with an unknown animal is ignored)

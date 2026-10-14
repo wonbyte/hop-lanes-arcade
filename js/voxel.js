@@ -7,20 +7,24 @@ const voxelMat = new THREE.MeshLambertMaterial({ vertexColors: true });
 // expanded, so the whole color_vertex part is replaced, not a line inside it):
 // - instanced models (world.js Inst) carry a color per instance that tints only the pure white boxes,
 //   so one car model serves every paint color while windows and wheels keep their own colors
-// - `ao` darkens the bottom of every box a little (baked ambient occlusion): blocks look grounded
+// - `ao` darkens the bottom of every box a little (baked ambient occlusion): blocks look grounded;
+//   a value above 1 is a glow (headlights) that comes on with the night (uniform `glow`, set by gfx.setNight)
+const glowU = { value: 0 };
 voxelMat.onBeforeCompile = shader => {
+  shader.uniforms.glow = glowU;
   shader.vertexShader = shader.vertexShader
-    .replace('#include <common>', '#include <common>\nattribute float ao;')
+    .replace('#include <common>', '#include <common>\nattribute float ao;\nuniform float glow;')
     .replace('#include <color_vertex>', [
       '#if defined( USE_COLOR ) || defined( USE_INSTANCING_COLOR )', 'vColor = vec3( 1.0 );', '#endif',
       '#ifdef USE_COLOR', 'vColor *= color;', '#endif',
       '#ifdef USE_INSTANCING_COLOR',
       'if ( color.r > 0.999 && color.g > 0.999 && color.b > 0.999 ) vColor *= instanceColor;',
       '#endif',
-      'vColor *= ao;'
+      'vColor *= ao <= 1.0 ? ao : 1.0 + ( ao - 1.0 ) * glow;'
     ].join('\n'));
 };
 const AO_BOTTOM = 0.72;   // shade at the bottom of a box (the top stays 1); flat boxes get none
+// a box may carry an 8th value: its glow at night (1 = twice as bright); a glowing box gets no bottom shade
 const UNIT = new THREE.BoxGeometry(1, 1, 1);
 const UP = UNIT.attributes.position.array, UN = UNIT.attributes.normal.array, UI = UNIT.index.array;
 const UV = UP.length / 3;
@@ -30,7 +34,7 @@ function mergeBoxes(boxes) {
   const n = boxes.length;
   const pos = new Float32Array(n * UV * 3), nor = new Float32Array(n * UV * 3), col = new Float32Array(n * UV * 3), ao = new Float32Array(n * UV);
   const idx = new (n * UV > 65535 ? Uint32Array : Uint16Array)(n * UI.length);
-  boxes.forEach(([w, h, d, color, x, y, z], k) => {
+  boxes.forEach(([w, h, d, color, x, y, z, glow = 0], k) => {
     tmpColor.setHex(color);
     const o = k * UV * 3;
     for (let i = 0; i < UV * 3; i += 3) {
@@ -38,7 +42,7 @@ function mergeBoxes(boxes) {
       pos[o + i + 1] = UP[i + 1] * h + y + h / 2;
       pos[o + i + 2] = UP[i + 2] * d + z;
       col[o + i] = tmpColor.r; col[o + i + 1] = tmpColor.g; col[o + i + 2] = tmpColor.b;
-      ao[(o + i) / 3] = UP[i + 1] < 0 && h > 0.12 ? AO_BOTTOM : 1;
+      ao[(o + i) / 3] = glow ? 1 + glow : UP[i + 1] < 0 && h > 0.12 ? AO_BOTTOM : 1;
     }
     nor.set(UN, o);
     for (let i = 0; i < UI.length; i++) idx[k * UI.length + i] = UI[i] + k * UV;
@@ -60,4 +64,4 @@ function voxelMesh(geo, cast = true) {
 const geoCache = new Map();
 const cachedGeo = (key, build) => geoCache.get(key) || geoCache.set(key, mergeBoxes(build())).get(key);
 
-export { UI, UN, UNIT, UP, UV, cachedGeo, geoCache, mergeBoxes, tmpColor, voxelMat, voxelMesh };
+export { AO_BOTTOM, cachedGeo, glowU, mergeBoxes, voxelMat, voxelMesh };

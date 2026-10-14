@@ -1,9 +1,9 @@
 import { idleAudio, isMuted, sfx, startTune } from './audio.js';
-import { COUNTDOWN, DEBUG, G, REPLAY_CODE, RESULTS_DELAY, STEP } from './core.js';
+import { $, COUNTDOWN, DEBUG, G, REPLAY_CODE, RESULTS_DELAY, STEP } from './core.js';
 import { pollGamepads } from './input.js';   // also sets up every input listener
 import { decodeReplay } from './replay.js';
 import { CHARACTERS, LIGHT_OFF, lightGeo } from './models.js';
-import { CAM_OFF, SUN_OFF, camera, focus, getPixelRatio, renderer, scene, setNight, sun, touchQuery, watchFrameTime } from './gfx.js';
+import { CAM_OFF, SUN_OFF, camera, focus, getPixelRatio, renderer, scene, setNight, shadowCadence, sun, touchQuery, viewInfo, watchFrameTime } from './gfx.js';
 import { applyMoves, giveShield, kill, players, updateParts, updatePlayer } from './players.js';
 import { join, resultsEl, setBanner, setModeLabel, showHowto, startPlay, toAttract } from './screens.js';
 import { HOWTO_KEY, dailySeed, loadText, owned } from './storage.js';
@@ -88,15 +88,27 @@ function frame(now) {
   if (draw) {
     spinAll(now);
     placeCamera();
+    shadowCadence(idle);
     renderer.render(scene, camera);
     if (lastDraw) watchFrameTime((now - lastDraw) / 1000);   // judge drawn frames only
     lastDraw = now;
+    if (DEBUG) countFrame(now);
   }
   if (G.state === 'attract') { if (G.stateT < 0.5) startTune(); else if (G.stateT > 14) idleAudio(); }
   requestAnimationFrame(frame);
 }
 
+// #debug: drawn frames per second and draw calls, in the corner, once a second
+const fpsEl = $('fps');
+let fpsN = 0, fpsT0 = 0;
+function countFrame(now) {
+  fpsN++;
+  if (now - fpsT0 < 1000) return;
+  if (fpsT0) fpsEl.textContent = Math.round(fpsN * 1000 / (now - fpsT0)) + ' FPS \u00b7 ' + renderer.info.render.calls + ' DRAWS \u00b7 ' + getPixelRatio() + 'x';
+  fpsT0 = now; fpsN = 0;
+}
 if (DEBUG) {
+  fpsEl.hidden = false;
   window.hopLanes = {
     players, renderer, laneCoins, laneKinds, kill, giveShield,
     get state() { return G.state; },
@@ -115,7 +127,8 @@ if (DEBUG) {
     get playTick() { return G.playTick; },
     get startTick() { return G.startTick; },
     get replay() { return G.replay; },
-    get weather() { return G.weather; }
+    get weather() { return G.weather; },
+    get view() { return viewInfo(); }
   };
 }
 // a replay link: the same world, the same animals, the same hops (a link with an unknown animal is ignored)

@@ -24,11 +24,17 @@ const players = [
   { id: 1, charIndex: pickIndex(1, 1), startX: 2, joined: false, scoreEl: $('score2').querySelector('b') }
 ];
 const charOf = p => CHARACTERS[p.charIndex];
+// a soft dark spot on the ground under an animal in the air: it shows where the hop lands
+const blobGeo = new THREE.BoxGeometry(0.62, 0.02, 0.62);
+const blobMat = new THREE.MeshLambertMaterial({ color: 0x000000, transparent: true, opacity: 0.22, depthWrite: false });
 function spawn(p) {
   despawn(p);
   const ch = charOf(p);
   p.mesh = makeCharacter(ch.boxes, ch.key);
   scene.add(p.mesh);
+  p.blob = new THREE.Mesh(blobGeo, blobMat);
+  p.blob.visible = false;
+  scene.add(p.blob);
   Object.assign(p, {
     x: p.startX, row: 0, alive: true, hop: null, queue: null, score: 0, idleT: 0, warned: false, eagle: null, breath: p.id * 1.7,
     facing: 0, cause: '', log: null, logOff: 0, trainDir: 0,
@@ -91,6 +97,7 @@ function updateMagnet(p, dt) {
 }
 function despawn(p) {
   if (p.mesh) { scene.remove(p.mesh); p.mesh = null; }
+  if (p.blob) { scene.remove(p.blob); p.blob = null; }
   if (p.eagle) { scene.remove(p.eagle.mesh); p.eagle = null; }
   p.alive = false;
 }
@@ -313,6 +320,9 @@ function updatePlayer(p, dt) {
   if (p.safeT > 0) { p.safeT = Math.max(0, p.safeT - dt); p.mesh.visible = !p.safeT || Math.floor(p.safeT * 12) % 2 === 0; }
   const lane = lanes.get(p.row);
   const ok = p.hop ? stepHop(p, lane, dt) : stand(p, dt);
+  const air = p.hop && p.mesh.position.y > 0.08;   // the blob shows only while the animal is up
+  p.blob.visible = !!air;
+  if (air) p.blob.position.set(p.mesh.position.x, 0.02, p.mesh.position.z);
   if (ok && p.alive && !p.safeT) checkHazards(p, lanes.get(p.row));
   if (!p.alive || G.state !== 'play') return;
   if (p.magnetT) { updateMagnet(p, dt); if (!p.magnetT) setLabel(p); }

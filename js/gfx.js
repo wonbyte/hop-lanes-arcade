@@ -1,4 +1,5 @@
 import { $, G, NIGHT_FULL, NIGHT_START, fail } from './core.js';
+import { glowU } from './voxel.js';
 
 // Three.js renderer, camera, light, resize handling and the adaptive quality ladder.
 // ---------- three.js setup ----------
@@ -35,7 +36,7 @@ const hemi = new THREE.HemisphereLight(0xffffff, 0x8899aa, 0.65);
 scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xffffff, 0.6);
 sun.castShadow = true;
-sun.shadow.mapSize.setScalar(1024);   // at this camera angle 2048 looks the same and costs 4x the shadow pass
+sun.shadow.mapSize.setScalar(lowGpu ? 512 : 1024);   // phone screens are small: 512 looks the same there and costs a quarter
 Object.assign(sun.shadow.camera, { top: 15, bottom: -15, near: 1, far: 50 });   // fitted to the view in resize()
 scene.add(sun, sun.target);
 
@@ -52,6 +53,7 @@ function setNight(row, weather = '') {
   if (weather !== shownWeather) { shownWeather = weather; weatherEl.className = weather; }
   if (t === nightT && wet === wetT) return;
   nightT = t; wetT += (wet - wetT) * 0.03; if (Math.abs(wet - wetT) < 0.01) wetT = wet;
+  glowU.value = Math.min(1, t * 1.5 + wetT * 0.4);   // headlights come on with the dusk, and a little in rain
   scene.background.copy(DAY.sky).lerp(NIGHT.sky, t).lerp(weather === 'snow' ? SNOW_SKY : RAIN_SKY, wetT * (weather === 'snow' ? 0.5 : 0.6));
   sun.color.copy(DAY.sun).lerp(NIGHT.sun, t);
   hemi.intensity = (DAY.hemi + (NIGHT.hemi - DAY.hemi) * t) * (1 - wetT * 0.15);
@@ -142,7 +144,7 @@ const LADDER = [
     return () => setRatio(was);
   },
   () => {
-    if (sun.shadow.mapSize.x <= 512) return null;
+    if (sun.shadow.mapSize.x <= 256) return null;
     const was = sun.shadow.mapSize.x;
     setShadowMapSize(was / 2);
     return () => setShadowMapSize(was);
@@ -166,5 +168,16 @@ function watchFrameTime(frameT) {
 }
 
 const getPixelRatio = () => pixelRatio;
+// shadows are redrawn with every frame while playing; on the menus and the results every other drawn frame
+// is enough (the title traffic moves slowly), which saves about a third of each frame there
+let shadowSkip = false;
+function shadowCadence(idle) {
+  if (!idle) { renderer.shadowMap.autoUpdate = true; return; }
+  renderer.shadowMap.autoUpdate = false;
+  shadowSkip = !shadowSkip;
+  if (!shadowSkip) renderer.shadowMap.needsUpdate = true;
+}
+// test hook: how the view was fitted
+const viewInfo = () => { const sc = sun.shadow.camera; return { shadowW: sc.right - sc.left, shadowH: sc.top - sc.bottom, fogNear: scene.fog.near, fogFar: scene.fog.far, mapSize: sun.shadow.mapSize.x }; };
 
-export { BAD_FRAME, BLINK_STEPS, CAM_OFF, SUN_OFF, LADDER, ONE, camera, focus, getPixelRatio, hemi, lowGpu, marquee, perf, pixelRatio, reduceMotion, renderer, resetFrameWatch, resize, scene, setNight, setRatio, setShadowMapSize, stage, sun, touchQuery, watchFrameTime };
+export { BAD_FRAME, BLINK_STEPS, CAM_OFF, SUN_OFF, LADDER, ONE, camera, focus, getPixelRatio, hemi, lowGpu, marquee, perf, reduceMotion, renderer, resetFrameWatch, resize, scene, setNight, setRatio, setShadowMapSize, shadowCadence, stage, sun, touchQuery, viewInfo, watchFrameTime };

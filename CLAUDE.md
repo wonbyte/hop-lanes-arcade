@@ -50,7 +50,8 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
 
 - Shared mutable state goes in `G` (`js/core.js`). Modules never assign to an imported binding.
 - Every model is a list of `[w, h, d, color, x, y, z]` boxes (y = bottom). Characters face `-z` (forward).
-- World generation uses `worldRng` (seeded). Effects use `fxRand` / `Math.random`, so seeds stay stable.
+- World generation uses `worldRng`, reseeded per row from the world seed and the row number in `addLane`, so a row
+  is the same whatever rows were built before it. Effects use `fxRand` / `Math.random`, so seeds stay stable.
 - The game steps at a fixed rate (`STEP`) and hops are queued to step boundaries, so replays are exact. Anything that
   changes the outcome of a run must be deterministic: seeded (`worldRng`, per-lane `lane.rng` for trains) or step-driven.
   Traffic and trains are a function of the world clock `G.worldTick` (reset when the world is built), never of frames
@@ -68,7 +69,7 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
 
 ## Testing hooks
 
-- `index.html#debug` exposes `window.hopLanes` (`players`, `state`, `camRow` (settable: jump the view to a far row), `seed`, `bank`, `muted`, `drawCalls`, `run` (mission stats), `record` (this run's hops), `replay`, `weather`, `laneCoins(r)`, `laneKinds()`).
+- `index.html#debug` exposes `window.hopLanes` (`players`, `state`, `camRow` (settable: jump the view to a far row), `seed`, `bank`, `muted`, `drawCalls`, `view` (shadow box, haze, map size), `run` (mission stats), `record` (this run's hops), `replay`, `weather`, `laneCoins(r)`, `laneKinds()`, `kill`, `giveShield`) and shows `#fps` (drawn frames per second, draw calls, pixel ratio).
 - `#replay-<code>` (or `#debug-replay-<code>`) plays a run back; smoke test 5c runs into traffic after waiting on the title, then replays it on a phone-sized screen and checks it ends on the same tick, row and cause. 5d checks the shield and the water rule (`hopLanes.kill`, `hopLanes.giveShield`).
 - `#seed-42` or `#debug-seed-42` makes the world deterministic.
 - Tests set `localStorage['hoplanes.howto'] = '1'` before load so the first-run help does not swallow the first tap.
@@ -92,11 +93,15 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
 - `voxelMat.onBeforeCompile` sees the shader before `#include` parts are expanded: replace whole `#include <...>` lines,
   never text from inside a part (that silently matched nothing once, and every box of a car got the paint).
 - Every geometry drawn with `voxelMat` needs the `ao` attribute (bottom-of-box shade); `mergeBoxes` and `joinGeos` add
-  it. A geometry without it reads 0 and draws black.
+  it. A geometry without it reads 0 and draws black. A box's 8th value is a night glow (headlights): `ao` above 1,
+  scaled by the `glow` uniform that `setNight` sets.
 - The shadow box and the haze (`scene.fog`) are fitted to the visible ground in `fitView()` on every resize.
 - Lane ground is joined into 8-row chunks (`CHUNK`) once all 8 rows exist: one mesh that casts shadows, one that does not.
   The lane keeps its own ground mesh (out of the scene while merged); dropping any row splits the chunk back.
   Anything added to `lane.ground` after the lane is built will not show while the chunk is merged.
-- Phones use `BasicShadowMap` (hard edges, one shadow read per pixel); desktops `PCFSoftShadowMap`. Chosen once at boot.
+- Phones use `BasicShadowMap` (hard edges, one shadow read per pixel) and a 512 shadow map; desktops `PCFSoftShadowMap`
+  and 1024. Chosen once at boot. On the menus the shadow map is redrawn every other frame (`shadowCadence`).
+- The window of built rows follows `visRows` (fewer rows on a sideways phone): `rowsBehind()` and the ahead limit in
+  `ensureLanes`.
 - `near()`, `visRows` and `firstNeededRow()` decide which rows exist and sound; keep them in step with the camera.
 - Don't add a service worker: the CSP has `worker-src 'none'` and the PWA installs without one.

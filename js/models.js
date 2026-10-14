@@ -267,12 +267,23 @@ const POLICE_RED = new THREE.MeshLambertMaterial({ color: 0x331111, emissive: 0x
 const POLICE_BLUE = new THREE.MeshLambertMaterial({ color: 0x111133, emissive: 0x3a7bff });
 const eagleBoxes = () => {
   const b = [
-    [0.9, 0.32, 0.5, 0x4a3426, 0, 0, 0],
-    [0.3, 0.3, 0.3, 0xf4f1ec, 0, 0.1, -0.5],          // head
-    [0.12, 0.1, 0.2, 0xf2c33a, 0, 0.15, -0.72],       // beak
-    [0.4, 0.08, 0.3, 0xf4f1ec, 0, 0.1, 0.35]          // tail
+    [0.9, 0.34, 0.52, 0x4a3426, 0, 0, 0],             // body
+    [0.5, 0.12, 0.4, 0x5c4332, 0, 0.34, 0.02],        // back
+    [0.32, 0.3, 0.32, 0xf4f1ec, 0, 0.14, -0.52],      // white head
+    [0.14, 0.1, 0.22, 0xf2c33a, 0, 0.2, -0.76],       // beak
+    [0.1, 0.06, 0.08, 0x3a281d, 0, 0.17, -0.86],      // beak tip (hooked)
+    [0.44, 0.08, 0.36, 0xf4f1ec, 0, 0.1, 0.4],        // tail
+    [0.2, 0.06, 0.16, 0xe8e2d8, 0, 0.12, 0.58],       // tail tip
+    [0.3, 0.14, 0.16, 0xf2c33a, 0, -0.12, -0.1]       // talons
   ];
-  for (const s of [-1, 1]) b.push([1.5, 0.08, 0.45, 0x3a281d, s * 1.1, 0.2, 0], [0.05, 0.05, 0.05, 0x111111, s * 0.1, 0.28, -0.62]);
+  for (const s of [-1, 1]) {
+    b.push([1.1, 0.09, 0.5, 0x3a281d, s * 0.9, 0.2, 0.02],        // wing
+           [0.7, 0.08, 0.42, 0x2e2016, s * 1.75, 0.22, 0.06],      // wing tip, a little back
+           [0.5, 0.06, 0.1, 0x241910, s * 1.9, 0.21, 0.3],         // feather
+           [0.3, 0.06, 0.1, 0x241910, s * 2.0, 0.21, 0.42],
+           [0.06, 0.06, 0.05, 0x111111, s * 0.11, 0.3, -0.66],     // eye
+           [0.08, 0.03, 0.08, 0x4a3426, s * 0.11, 0.35, -0.64]);   // brow
+  }
   return b;
 };
 const coinBoxes = () => [[0.34, 0.34, 0.08, COLORS.coin.face, 0, 0.28, 0], [0.18, 0.18, 0.1, COLORS.coin.rim, 0, 0.36, 0]];
@@ -305,6 +316,8 @@ function vehicleBoxes(truck, c = 0xffffff) {
   ];
   for (const wx of [-len / 2 + 0.3, len / 2 - 0.3]) for (const wz of [-0.38, 0.38])
     b.push([0.3, 0.26, 0.1, 0x222222, wx, 0, wz]);
+  // headlights (front is -x) and tail lights: they glow at night (8th value, see voxel.js)
+  for (const wz of [-0.26, 0.26]) b.push([0.06, 0.12, 0.16, 0xfff1b0, -len / 2 - 0.02, 0.3, wz, 1.4], [0.06, 0.1, 0.14, 0xff4a3a, len / 2 + 0.02, 0.3, wz, 0.8]);
   return b;
 }
 const logBoxes = len => [
