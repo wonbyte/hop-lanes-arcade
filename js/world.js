@@ -2,7 +2,7 @@ import { sfx } from './audio.js';
 import { COIN_CHANCE, FIRST_ROW, FIXED_SEED, G, LANES_AHEAD, LANES_BEHIND, PLAY_HALF, POWER_CHANCE, STEP, TRAIN_SPEED, TRAIN_WARN, WRAP, difficulty } from './core.js';
 import { hashString, mulberry32, nextLaneKind } from './rules.js';
 import { BLINK_STEPS, scene } from './gfx.js';
-import { CAR_COLORS, LIGHT_OFF, LIGHT_ON, POLICE_BLUE, POLICE_RED, TRAIN_CARS, coinBoxes, lightGeo, logBoxes, magnetBoxes, policeBoxes, shieldBoxes, trainBoxes, trainLen, vehicleBoxes } from './models.js';
+import { CAR_COLORS, LIGHT_TINT, TRAIN_CARS, coinBoxes, lightBoxes, logBoxes, magnetBoxes, policeBoxes, shieldBoxes, trainBoxes, trainLen, vehicleBoxes } from './models.js';
 import { dailySeed } from './storage.js';
 import { cachedGeo, mergeBoxes, voxelMat, voxelMesh } from './voxel.js';
 
@@ -140,12 +140,21 @@ function placePower(lane, r, z, cols) {
 }
 // weather by 40-row chunk, seeded: rain (snow in December) from row 20 on; it changes the look and the traffic
 let snowSeason = new Date().getMonth() === 11;
+const weatherCache = new Map();   // 40-row chunk -> weather (asked every drawn frame; cleared with the world)
 function weatherAt(r) {
   if (r < 20) return '';
   const chunk = Math.floor(r / 40);
-  const roll = mulberry32((worldSeed ^ Math.imul(chunk + 7, 0x85ebca6b)) >>> 0)();
-  return roll < 0.25 ? (snowSeason ? 'snow' : 'rain') : '';
+  let w = weatherCache.get(chunk);
+  if (w === undefined) {
+    const roll = mulberry32((worldSeed ^ Math.imul(chunk + 7, 0x85ebca6b)) >>> 0)();
+    weatherCache.set(chunk, w = roll < 0.25 ? (snowSeason ? 'snow' : 'rain') : '');
+  }
+  return w;
 }
+// signal lights (rail crossing, police) are instances of one light model, painted per instance (LIGHT_TINT)
+const LIGHT_Y_CAR = 0.88, LIGHT_Y_RAIL = 1.1, POLE_X = PLAY_HALF + 0.6, POLE_DZ = 0.45;
+const newLight = tintKey => new Inst('light', lightBoxes, false, LIGHT_TINT[tintKey]);
+const carLightX = (lane, o) => o.x + (lane.dir > 0 ? -0.08 : 0.08);
 
 // One builder per lane type. Each adds its static boxes to `ground` (merged into one mesh later)
 // and its moving parts to lane.group / lane.objs.
@@ -185,9 +194,10 @@ const LANE_BUILDERS = {
       const c = pick(CAR_COLORS);
       const inst = lane.police ? new Inst('police', policeBoxes, true) : new Inst(truck ? 'truck' : 'car', () => vehicleBoxes(truck), true, c);
       const o = { inst, rot, len, jitter: rand(0, spacing * 0.35) };
-      if (lane.police) { o.light = new THREE.Mesh(lightGeo, POLICE_RED); o.light.position.set(0, 0.98, z); lane.group.add(o.light); }
+      if (lane.police) { o.light = newLight('red'); o.lightRed = true; }
       return o;
     });
+    for (const o of lane.objs) if (o.light) o.light.set(carLightX(lane, o), LIGHT_Y_CAR, z);
     if (worldRng() < COIN_CHANCE.road) placeCoin(lane, z, playColumns());
     placePower(lane, lane.r, z, playColumns());
   },
@@ -233,12 +243,10 @@ const LANE_BUILDERS = {
     if (lane.boss) bossChunk = Math.floor(r / 100);
     const cars = lane.boss ? TRAIN_CARS * 2 : TRAIN_CARS;
     for (let x = -14; x <= 14; x += 0.7) ground.push([0.18, 0.06, 0.9, 0x5a3d2a, x, 0, z]);
-    const poleX = PLAY_HALF + 0.6;
     ground.push([40, 0.06, 0.08, 0x9aa3b5, 0, 0.05, z - 0.28], [40, 0.06, 0.08, 0x9aa3b5, 0, 0.05, z + 0.28],
-                [0.12, 1.3, 0.12, 0xeeeeee, poleX, 0, z + 0.45]);
-    lane.light = new THREE.Mesh(lightGeo, LIGHT_OFF);
-    lane.light.position.set(poleX, 1.2, z + 0.45);
-    lane.group.add(lane.light);
+                [0.12, 1.3, 0.12, 0xeeeeee, POLE_X, 0, z + POLE_DZ]);
+    lane.light = newLight('off'); lane.lightOn = false; lane.lightWant = false;   // lightOn: as painted; lightWant: the schedule's state
+    lane.light.set(POLE_X, LIGHT_Y_RAIL, z + POLE_DZ);
     // the train schedule is seeded per lane and runs on world time: trains come at the same moments in a replay
     const rng = mulberry32((worldSeed ^ Math.imul(r + 1000, 0x9e3779b1)) >>> 0);
     const speed = TRAIN_SPEED * (lane.boss ? 1.25 : 1), len = trainLen(cars);
@@ -274,9 +282,10 @@ function addLane(r) {
 
 // ---------- ground chunks: 8 rows of ground drawn as one mesh (two: one that casts shadows, one that does not) ----------
 // Each lane keeps its own ground mesh; once all 8 rows of a chunk exist their ground is joined into chunk meshes and
-// the lane meshes leave the scene. When a lane of the chunk is dropped the chunk splits back into lane meshes.
+// the lane meshes leave the scene. A dropped row (always off screen, behind the players) stays in the chunk meshes;
+// the chunk is freed once every one of its rows is dropped, so dropping rows never rebuilds meshes.
 const CHUNK = 8;
-const chunks = new Map();   // chunk index -> { meshes, first }
+const chunks = new Map();   // chunk index -> { meshes, rows }
 function joinGeos(geos) {
   let verts = 0, idx = 0;
   for (const g of geos) { verts += g.attributes.position.count; idx += g.index.count; }
@@ -314,14 +323,15 @@ function mergeChunk(k) {
   chunks.set(k, { meshes, rows });
   showChunk(k);
 }
-function splitChunk(k) {
+// a row was dropped: the chunk stays while any of its rows is still built, and is freed with the last one
+function releaseChunk(k) {
   const c = chunks.get(k);
   if (!c) return;
+  if (c.rows.some(l => lanes.get(l.r) === l)) { showChunk(k); return; }
   for (const m of c.meshes) { worldGroup.remove(m); m.geometry.dispose(); }
-  for (const l of c.rows) { l.chunk = null; if (lanes.get(l.r) === l) l.group.add(l.ground); }
   chunks.delete(k);
 }
-// a chunk is drawn while any of its rows is
+// a chunk is drawn while any of its (still built) rows is
 function showChunk(k) {
   const c = chunks.get(k);
   const on = c.rows.some(l => l.shown);
@@ -329,15 +339,17 @@ function showChunk(k) {
 }
 
 function dropLane(lane) {
-  if (lane.chunk != null) splitChunk(lane.chunk);
+  lanes.delete(lane.r);
+  lane.shown = false;   // a dropped row counts as off screen for its chunk
   worldGroup.remove(lane.group);
-  for (const o of lane.objs) o.inst.drop();
+  for (const o of lane.objs) { o.inst.drop(); if (o.light) o.light.drop(); }
   if (lane.ripples) for (const q of lane.ripples) q.inst.drop();
   if (lane.train) lane.train.inst.drop();
+  if (lane.light) lane.light.drop();
   if (lane.power) dropSpinner(lane.power.s);
   for (const s of lane.coins.values()) dropSpinner(s);
-  lane.ground.geometry.dispose();
-  lanes.delete(lane.r);
+  lane.ground.geometry.dispose();   // a merged chunk holds its own copy of this ground
+  if (lane.chunk != null) releaseChunk(lane.chunk);
 }
 
 const near = r => G.state === 'play' && Math.abs(r - (G.camRow + G.camLead)) < G.visRows;   // rails on screen
@@ -349,7 +361,11 @@ function moveTraffic(lane, w) {
     const x = o.x0 + travel + half;
     o.x = x - Math.floor(x / lane.span) * lane.span - half;
     o.inst.move(o.x, river ? Math.sin(now / 400 + o.x) * 0.02 : 0, o.z);
-    if (o.light) { o.light.position.x = o.x + (lane.dir > 0 ? -0.08 : 0.08); o.light.material = Math.floor(now / 140) % 2 ? POLICE_RED : POLICE_BLUE; }
+    if (o.light) {
+      o.light.move(carLightX(lane, o), LIGHT_Y_CAR, o.z);
+      const red = Math.floor(now / 140) % 2 === 1;
+      if (red !== o.lightRed) { o.lightRed = red; o.light.paint(red ? LIGHT_TINT.red : LIGHT_TINT.blue); }
+    }
   }
   if (lane.ripples) {
     const flow = travel * 0.6;
@@ -360,8 +376,10 @@ function moveTraffic(lane, w) {
     }
   }
 }
-// the rail at world time w: walk the seeded schedule forward, then the train is either waiting or passing
-function updateRail(lane, w) {
+// the rail at world time w: walk the seeded schedule forward, then the train is either waiting or passing.
+// The schedule (and its rng draws) depends on w only, so it is the same however often this runs.
+// draw = false (a hidden lane): the schedule and the sounds still advance, nothing is written to the instances.
+function updateRail(lane, w, draw = true) {
   const tr = lane.train;
   while (w >= lane.nextEnd) {   // trains that have passed; far out, trains come twice as often
     const diff = difficulty(lane.r);
@@ -381,26 +399,54 @@ function updateRail(lane, w) {
     tr.x = -lane.dir * (WRAP + tr.len / 2 + 2) + lane.dir * lane.speed * (w - lane.nextStart);
     on = Math.floor(w * BLINK_STEPS) % 2 === 1;
   }
+  lane.lightWant = on;
+  if (!draw) { tr.active = active; return; }   // showLane() writes the train and the light when the lane comes back
   if (active !== tr.active) { tr.active = active; tr.inst.set(tr.x, 0, -lane.r, 0, active && lane.shown); }
   else if (active) tr.inst.move(tr.x, 0, -lane.r);
-  lane.light.material = on ? LIGHT_ON : LIGHT_OFF;
+  paintSignal(lane);
 }
-function updateLanes() {
+function paintSignal(lane) {
+  if (lane.lightOn === lane.lightWant) return;
+  lane.lightOn = lane.lightWant;
+  lane.light.paint(lane.lightOn ? LIGHT_TINT.on : LIGHT_TINT.off);
+}
+function updateLane(lane, w, draw) {
+  if (lane.kind === 'rail') updateRail(lane, w, draw);
+  else if (draw && (lane.kind === 'road' || lane.kind === 'river')) moveTraffic(lane, w);
+}
+// Every step: only the lanes a player can touch (collisions and landings read o.x and train.x there), so the
+// outcome is exact whatever the screen or the frame rate. The rest of the lanes move once per drawn frame
+// (updateFarLanes); positions are a function of the world clock, so they are where they would be anyway.
+// `players`: the player objects (joined, row, hop.fromRow); without them every lane steps, as before.
+const hot = new Set();   // rows stepped by updateLanes
+function updateLanes(players = null) {
   const w = G.worldTick * STEP;
-  for (const lane of lanes.values()) {
-    if (lane.kind === 'road' || lane.kind === 'river') moveTraffic(lane, w);
-    else if (lane.kind === 'rail') updateRail(lane, w);
+  if (!players) { for (const lane of lanes.values()) updateLane(lane, w, true); return; }
+  hot.clear();
+  for (const p of players) {
+    if (!p.joined) continue;
+    for (let r = p.row - 1; r <= p.row + 1; r++) hot.add(r);
+    if (p.hop) hot.add(p.hop.fromRow);
   }
+  for (const r of hot) { const lane = lanes.get(r); if (lane) updateLane(lane, w, true); }
 }
-// lanes far from the camera are not drawn; their instances (cars, logs, train, coins) are hidden too
+// once per drawn frame, before placeCamera(): the lanes no player can touch. A hidden lane gets no position
+// writes (its rail schedule still advances, so a train is not announced late when the lane scrolls in).
+function updateFarLanes() {
+  const w = G.worldTick * STEP;
+  for (const lane of lanes.values()) if (!hot.has(lane.r)) updateLane(lane, w, lane.shown);
+}
+// lanes far from the camera are not drawn; their instances (cars, logs, train, coins, lights) are hidden too
 function showLane(lane, on) {
   if (lane.shown === on) return;
   lane.shown = on;
   lane.group.visible = on;
   if (lane.chunk != null) showChunk(lane.chunk);
-  for (const o of lane.objs) o.inst.set(o.x, 0, o.z, o.rot || 0, on);
+  if (on) updateLane(lane, G.worldTick * STEP, true);   // a hidden lane was not moved: catch up before it shows
+  for (const o of lane.objs) { o.inst.set(o.x, 0, o.z, o.rot || 0, on); if (o.light) o.light.set(carLightX(lane, o), LIGHT_Y_CAR, o.z, 0, on); }
   if (lane.ripples) for (const q of lane.ripples) q.inst.set(q.x, 0, q.z, 0, on);
   if (lane.train) lane.train.inst.set(lane.train.x, 0, -lane.r, 0, on && lane.train.active);
+  if (lane.light) { lane.light.set(POLE_X, LIGHT_Y_RAIL, -lane.r + POLE_DZ, 0, on); paintSignal(lane); }
   for (const s of lane.coins.values()) s.inst.set(s.x, 0, s.z, 0, on);
   if (lane.power) lane.power.s.inst.set(lane.power.x, 0, -lane.r, 0, on);
 }
@@ -415,8 +461,11 @@ function resetWorld() {
   for (const lane of [...lanes.values()]) dropLane(lane);
   worldSeed = G.replay ? G.replay.seed : FIXED_SEED !== null ? FIXED_SEED
     : G.mode === 'daily' ? dailySeed() : G.mode === 'room' ? hashString('room:' + G.room) : (Math.random() * 4294967296) >>> 0;
+  for (const k of [...chunks.keys()]) releaseChunk(k);   // nothing should be left; frees any chunk that is
+  hot.clear();
   G.worldTick = 0;
   snowSeason = new Date().getMonth() === 11;
+  weatherCache.clear();
   maxRow = Math.min(FIRST_ROW, firstNeededRow()) - 1; lastKind = 'grass'; streak = 0; bossChunk = 0;
   while (maxRow < lastNeededRow()) addLane(maxRow + 1);
 }
@@ -438,4 +487,4 @@ function laneKinds() {   // lane types for rows 0..30 (builds missing rows ahead
   return out;
 }
 
-export { CHUNK, Inst, LANE_BUILDERS, addLane, chunks, dropLane, dropSpinner, ensureLanes, fillTraffic, firstNeededRow, fleet, fxRand, getSeed, laneCoins, laneKind, laneKinds, lanes, lastNeededRow, moveTraffic, near, pick, placeCoin, placePower, playColumns, rand, resetWorld, showLane, spinAll, spinners, updateLanes, updateRail, weatherAt, worldGroup };
+export { CHUNK, Inst, LANE_BUILDERS, addLane, chunks, dropLane, dropSpinner, ensureLanes, fillTraffic, firstNeededRow, fleet, fxRand, getSeed, laneCoins, laneKind, laneKinds, lanes, lastNeededRow, moveTraffic, near, pick, placeCoin, placePower, playColumns, rand, resetWorld, showLane, spinAll, spinners, updateFarLanes, updateLanes, updateRail, weatherAt, worldGroup };

@@ -131,12 +131,16 @@ const PIX = {
     '............'],
     pal: { G: COLORS.turtle.shell, S: COLORS.turtle.shell, D: COLORS.turtle.dark, L: COLORS.turtle.skin, K: COLORS.turtle.eye } }
 };
+// one <rect> per pixel, built as nodes (no markup strings: a palette can never become markup)
 function drawPix(svg, art) {
-  let s = '';
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
   art.rows.forEach((r, y) => [...r].forEach((c, x) => {
-    if (c !== '.') s += `<rect x="${x}" y="${y}" width="1" height="1" fill="${css(art.pal[c])}"/>`;
+    if (c === '.') return;
+    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    rect.setAttribute('x', x); rect.setAttribute('y', y); rect.setAttribute('width', 1); rect.setAttribute('height', 1);
+    rect.setAttribute('fill', css(art.pal[c]));
+    svg.appendChild(rect);
   }));
-  svg.innerHTML = s;
 }
 
 // ---------- models (all face -z, which is "forward") ----------
@@ -261,10 +265,8 @@ function turtleBoxes() {
     [0.14, 0.1, 0.14, c.skin, s * 0.28, 0, 0.18]);
   return b;
 }
-// a white police car: a plain car body with a light bar; the flashing light is a separate mesh
+// a white police car: a plain car body with a light bar; the flashing light is a light instance (lightBoxes)
 const policeBoxes = () => vehicleBoxes(false, 0xf4f4f4).concat([[0.5, 0.08, 0.5, 0x222222, 0.08, 0.84, 0]]);
-const POLICE_RED = new THREE.MeshLambertMaterial({ color: 0x331111, emissive: 0xff2a2a });
-const POLICE_BLUE = new THREE.MeshLambertMaterial({ color: 0x111133, emissive: 0x3a7bff });
 const eagleBoxes = () => {
   const b = [
     [0.9, 0.34, 0.52, 0x4a3426, 0, 0, 0],             // body
@@ -326,7 +328,6 @@ const logBoxes = len => [
   [0.12, 0.27, 0.7, 0xc08a5a, len / 2 - 0.05, -0.16, 0]
 ];
 const TRAIN_CARS = 4, TRAIN_CAR_LEN = 3, TRAIN_GAP = 0.15;
-const TRAIN_LEN = TRAIN_CARS * TRAIN_CAR_LEN + (TRAIN_CARS - 1) * TRAIN_GAP;
 const trainLen = cars => cars * TRAIN_CAR_LEN + (cars - 1) * TRAIN_GAP;
 function trainBoxes(dir, cars = TRAIN_CARS) {
   const b = [], len = trainLen(cars), boss = cars > TRAIN_CARS;
@@ -352,9 +353,12 @@ function makeCharacter(boxesFn, key) {
   return g;
 }
 
-// rail signal light: two shared materials, swapped instead of edited
+// signal lights (rail crossings, police cars): one instanced fleet (world.js Inst). The box is pure white, so each
+// light is painted per instance with a LIGHT_TINT; its glow (8th value) makes it twice as bright at night
+const lightBoxes = () => [[0.38, 0.2, 0.14, 0xffffff, 0, 0, 0, 1]];
+const LIGHT_TINT = { off: 0x331111, on: 0xff2222, red: 0xff2a2a, blue: 0x3a7bff };
+// a plain (non-voxel) material and geometry: app.js draws one box with them at boot to warm the shader
 const LIGHT_OFF = new THREE.MeshLambertMaterial({ color: 0x331111 });
-const LIGHT_ON = new THREE.MeshLambertMaterial({ color: 0x331111, emissive: 0xff2222 });
 const lightGeo = new THREE.BoxGeometry(0.38, 0.2, 0.14);
 
-export { CAR_COLORS, CHARACTERS, COLORS, LIGHT_OFF, LIGHT_ON, PIX, POLICE_BLUE, POLICE_RED, PRIZES, TRAIN_CARS, TRAIN_CAR_LEN, TRAIN_GAP, TRAIN_LEN, bunnyBoxes, catBoxes, coinBoxes, css, drawPix, eagleBoxes, foxBoxes, frogBoxes, isOwned, lightGeo, logBoxes, magnetBoxes, makeCharacter, penguinBoxes, pigBoxes, policeBoxes, robotBoxes, shieldBoxes, trainBoxes, trainLen, turtleBoxes, vehicleBoxes };
+export { CAR_COLORS, CHARACTERS, COLORS, LIGHT_OFF, LIGHT_TINT, PIX, PRIZES, TRAIN_CARS, TRAIN_CAR_LEN, TRAIN_GAP, bunnyBoxes, catBoxes, coinBoxes, drawPix, eagleBoxes, foxBoxes, frogBoxes, isOwned, lightBoxes, lightGeo, logBoxes, magnetBoxes, makeCharacter, penguinBoxes, pigBoxes, policeBoxes, robotBoxes, shieldBoxes, trainBoxes, trainLen, turtleBoxes, vehicleBoxes };

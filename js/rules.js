@@ -52,4 +52,10 @@ function hopTarget(lane, x, dx, half) {
 const MUD_SLOW = 2.2;
 const hopTime = (fromKind, base) => fromKind === 'mud' ? base * MUD_SLOW : base;
 
-export { LANE_KINDS, MUD_SLOW, STREAK_MAX, difficultyAt, hashString, hopTarget, hopTime, mulberry32, nextLaneKind };
+// the game modes, shared by core.js (the DOM side), replay.js and the score server's own copy
+const MODES = ['classic', 'race', 'daily', 'room'];
+// a local calendar day as YYYY-MM-DD, built by hand (locale date formats are not stable across browsers)
+const pad2 = n => String(n).padStart(2, '0');
+const isoDay = (d = new Date()) => d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+
+export { LANE_KINDS, MODES, isoDay, MUD_SLOW, STREAK_MAX, difficultyAt, hashString, hopTarget, hopTime, mulberry32, nextLaneKind };

@@ -20,8 +20,6 @@ A two-player arcade game. Hop across roads, rivers and train tracks. Go too slow
 - Coins lie on the road. Collect them to buy new animals (arrows on the join cards).
 - Stand still too long and the eagle gets you.
 - Prize machine: 50 coins for a random surprise animal.
-- Modes (button on the title screen): CLASSIC, RACE (two players; the first to die loses) and DAILY (one world
-  for everyone each day, with its own best score).
 - Far out the road turns to night, police cars chase, lily pads cross still water, and mud makes you slow.
 - Hear the beeps? Move. The eagle is on its way.
 - Quick hops in a row make a combo. Every 5 pay a coin.
@@ -30,7 +28,7 @@ A two-player arcade game. Hop across roads, rivers and train tracks. Go too slow
 - A hidden coin sometimes sits one step past the edge of a grass row. It is worth 3.
 - Every 100 rows a boss train comes: twice as long and faster.
 - Rain speeds the traffic up. In December it snows.
-- Modes: classic, race (first to die loses), daily (the same world for everyone today), room (type a code; two phones get the same world).
+- Modes (button on the title screen): classic, race (first to die loses), daily (the same world for everyone today, with its own best score), room (type a code; two phones get the same world).
 - Handicap: give the weaker player a shield to start with.
 - Game over: SHARE your score, or copy a replay link that plays your run again.
 - Gamepads work: d-pad or stick to move, A to hop, Start to start, B to pause.

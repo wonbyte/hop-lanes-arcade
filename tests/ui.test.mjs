@@ -6,6 +6,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { serve } from './serve.mjs';
+import { spawn } from 'node:child_process';
+import os from 'node:os';
+import net from 'node:net';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ARGS = ['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist'];
@@ -259,16 +262,56 @@ test('6. share button copies the score text and says COPIED!', async () => {
     await waitState(page, 'over', 90000);
     await resultsVisible(page);
     await page.locator('#results #share').waitFor({ state: 'visible', timeout: T });
-    const score = await hop(page, () => { const h = window.hopLanes; const s = h.players[0].score; return typeof s === 'number' ? s : h.score; });
+    const score = await hop(page, () => window.hopLanes.players[0].score);
+    assert.equal(typeof score, 'number');
     await page.click('#share');
     await page.waitForFunction(() => typeof window.__copied === 'string', null, { timeout: T });
     const copied = await hop(page, () => window.__copied);
     assert.match(copied, /Hop Lanes/);
-    if (typeof score === 'number') assert.ok(copied.includes(String(score)), `copied text has score ${score}: ${copied}`);
-    else assert.match(copied, /\d/);
+    assert.ok(copied.includes(String(score)), `copied text has score ${score}: ${copied}`);
     await page.waitForFunction(() => /COPIED!/.test(document.getElementById('share').textContent), null, { timeout: 5000 });
     assert.deepEqual(errors, []);
   } finally { await context.close(); }
+});
+
+// the served index.html with a score server wired in (the meta and its origin in connect-src)
+async function openWithScores(scoresBase, opts) {
+  const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')
+    .replace("connect-src 'none'", `connect-src ${scoresBase}`)
+    .replace('<meta name="hop-lanes-scores" content="">', `<meta name="hop-lanes-scores" content="${scoresBase}/scores">`)
+    .replace('<meta name="hop-lanes-token" content="">', '<meta name="hop-lanes-token" content="t0k">');
+  assert.ok(html.includes(`${scoresBase}/scores`) && html.includes('t0k'), 'the metas were found');
+  // served by a real server, not a route stub: Chrome refuses fetches to 127.0.0.1 from a page with no address
+  const site2 = await serve(ROOT, { '/index.html': html });
+  const out = await open(site2.url + '/index.html#debug', opts);
+  out.context.once('close', () => site2.close());
+  return out;
+}
+test('6b. a finished game posts its score (today, mode) and the world best shows', { timeout: SLOW }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hop-scores-'));
+  const port = await new Promise(r => { const s = net.createServer().listen(0, () => { const p = s.address().port; s.close(() => r(p)); }); });
+  const srv = spawn(process.execPath, [path.join(ROOT, 'server/scores.mjs')],
+    { env: { ...process.env, PORT: String(port), DATA_FILE: path.join(dir, 's.json'), POST_TOKEN: 't0k', SAVE_DELAY_MS: '0' }, stdio: ['ignore', 'pipe', 'inherit'] });
+  await new Promise((res, rej) => { srv.stdout.once('data', res); srv.once('error', rej); });
+  const base = `http://127.0.0.1:${port}`;
+  const { context, page, errors } = await openWithScores(base);
+  try {
+    await waitState(page, 'attract');
+    await page.keyboard.press('KeyW');
+    await waitState(page, 'play');
+    await waitState(page, 'over', 90000);
+    await page.locator('#world').waitFor({ state: 'visible', timeout: T });
+    const score = await hop(page, () => window.hopLanes.players[0].score);
+    const top = (await (await fetch(base + '/scores')).json()).top;
+    assert.equal(top.length, 1, 'one score was posted');
+    assert.equal(top[0].score, score);
+    assert.match(top[0].name, /^FROG [A-Z2-9]{4}$/, 'character plus device tag');
+    assert.equal(top[0].mode, 'classic');
+    const d = new Date(), today = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    assert.equal(top[0].day, today, 'the day is a plain YYYY-MM-DD');
+    assert.match(await page.locator('#world').textContent(), new RegExp('WORLD BEST ' + score + ' · FROG'));
+    assert.deepEqual(errors, []);
+  } finally { await context.close(); srv.kill(); fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
 test('7. new all-time best shows confetti and a note', async () => {

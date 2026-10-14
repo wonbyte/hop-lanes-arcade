@@ -25,9 +25,12 @@ const post = (body, raw) => fetch(base + '/scores', { method: 'POST', headers: {
 
 test.before(async () => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'scores-'));
-  ({ base } = await start({ RATE_MAX: '1000' }));
+  ({ base } = await start({ RATE_MAX: '1000', SAVE_DELAY_MS: '0' }));   // written at once: the tests read the file
 });
-test.after(() => { procs.forEach(p => p.kill()); fs.rmSync(dir, { recursive: true, force: true }); });
+test.after(async () => {
+  await Promise.all(procs.map(p => new Promise(r => { if (p.exitCode !== null) return r(); p.once('exit', r); p.kill(); })));   // each flushes on exit
+  fs.rmSync(dir, { recursive: true, force: true });
+});
 
 test('empty list, CORS, 404, preflight', async () => {
   const r = await fetch(base + '/scores');
@@ -96,6 +99,37 @@ test('POST_TOKEN: required on POST only, allowed in preflight', async () => {
   const o = await fetch(url, { method: 'OPTIONS' });
   assert.equal(o.status, 204);
   assert.match(o.headers.get('access-control-allow-headers'), /X-Hop-Token/);
+});
+
+test('TRUST_PROXY: the limit keys on X-Forwarded-For; without it the socket address', async () => {
+  const srv = await start({ RATE_MAX: '2', TRUST_PROXY: '1' });
+  const sp = (fwd, b) => fetch(srv.base + '/scores', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': fwd }, body: JSON.stringify(b) });
+  assert.equal((await sp('10.0.0.1', { name: 'A', score: 1 })).status, 200);
+  assert.equal((await sp('10.0.0.1', { name: 'A', score: 2 })).status, 200);
+  assert.equal((await sp('10.0.0.1', { name: 'A', score: 3 })).status, 429, 'third post from one client');
+  assert.equal((await sp('10.0.0.2', { name: 'B', score: 1 })).status, 200, 'another client has its own budget');
+  assert.equal((await sp('2001:db8:1:2:aaaa::1', { name: 'C', score: 1 })).status, 200);
+  assert.equal((await sp('2001:db8:1:2:bbbb::9', { name: 'C', score: 2 })).status, 200);
+  assert.equal((await sp('2001:db8:1:2:cccc::1', { name: 'C', score: 3 })).status, 429, 'one IPv6 /64 is one client');
+  assert.equal((await sp('2001:db8:1:3::1', { name: 'D', score: 1 })).status, 200, 'another /64');
+  const plain = await start({ RATE_MAX: '1' });
+  const pp = fwd => fetch(plain.base + '/scores', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': fwd }, body: JSON.stringify({ name: 'E', score: 1 }) });
+  assert.equal((await pp('10.0.0.1')).status, 200);
+  assert.equal((await pp('10.0.0.2')).status, 429, 'without TRUST_PROXY the header is ignored');
+});
+
+test('POST_TOKEN of another length is rejected; the file is written after a burst and on exit', async () => {
+  const srv = await start({ RATE_MAX: '1000', POST_TOKEN: 'abc', SAVE_DELAY_MS: '60000' });
+  const sp = (tok, b) => fetch(srv.base + '/scores', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Hop-Token': tok }, body: JSON.stringify(b) });
+  assert.equal((await sp('abcd', { name: 'A', score: 1 })).status, 401);
+  assert.equal((await sp('ab', { name: 'A', score: 1 })).status, 401);
+  assert.equal((await sp('abc', { name: 'A', score: 7 })).status, 200);
+  assert.equal(fs.existsSync(srv.file), false, 'not written yet (debounced)');
+  const p = procs[procs.length - 1];
+  const gone = new Promise(r => p.once('exit', r));
+  p.kill('SIGTERM');
+  await gone;
+  assert.deepEqual(JSON.parse(fs.readFileSync(srv.file, 'utf8')).map(e => [e.name, e.score]), [['A', 7]], 'flushed on exit');
 });
 
 test('one entry per name per bucket: lower post ignored, higher replaces; 5001 rejected', async () => {

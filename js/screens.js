@@ -7,7 +7,7 @@ import { keepAwake } from './device.js';
 import { reduceMotion, resetFrameWatch, touchQuery } from './gfx.js';
 import { CHARACTERS, PIX, PRIZES, drawPix, isOwned } from './models.js';
 import { charOf, despawn, players, restorePicks, spawn } from './players.js';
-import { BEST_KEY, DAILY_KEY, HANDICAP_KEY, HOWTO_KEY, INSTALL_KEY, MISSIONS_KEY, MODE_KEY, OWNED_KEY, PICK_KEY, ROOM_KEY, dayKey, flushBank, load, loadText, owned, refreshBests, save, setBank } from './storage.js';
+import { BEST_KEY, DAILY_KEY, HANDICAP_KEY, HOWTO_KEY, INSTALL_KEY, MISSIONS_KEY, MODE_KEY, OWNED_KEY, PICK_KEY, ROOM_KEY, dayKey, deviceTag, flushBank, load, loadText, owned, refreshBests, save, savedMode, setBank, today } from './storage.js';
 import { getSeed, resetWorld } from './world.js';
 
 // Screens and flow: join cards and the shop, countdown, results, restart, pause, first-run help, online scores.
@@ -63,8 +63,6 @@ function setMode(mode) {
   setModeLabel();
   if (G.state === 'attract') resetWorld();   // daily and room modes have their own seeds
 }
-// the saved mode (a replay may have shown another one)
-const savedMode = () => MODES.includes(loadText(MODE_KEY)) && (loadText(MODE_KEY) !== 'room' || G.room) ? loadText(MODE_KEY) : 'classic';
 // room mode: two phones that enter the same code play the same world (seed = the code)
 const randomCode = () => Array.from({ length: 4 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ'[Math.floor(Math.random() * 24)]).join('');
 function askRoom() {
@@ -298,7 +296,7 @@ function checkOver() {
   $('res1').querySelector('span').textContent = t(charOf(p1).name);
   $('res2').querySelector('span').textContent = t(charOf(p2).name);
   $('world').hidden = true;
-  if (!replay) postScore(charOf(hero).name, top);
+  if (!replay) postScore(charOf(hero).name + ' ' + deviceTag, top);   // the server keeps one entry per name
   $('res1').querySelector('b').textContent = p1.score;
   $('res2').querySelector('b').textContent = p2.score;
   $('resNote').textContent = (note ? note + ' ' : '') + t('PRESS TAP TO PLAY AGAIN');
@@ -313,12 +311,16 @@ async function postScore(name, score) {
     const daily = G.mode === 'daily';
     const res = await fetch(SCORES_URL, {
       method: 'POST', headers: { 'Content-Type': 'application/json', ...(SCORES_TOKEN ? { 'X-Hop-Token': SCORES_TOKEN } : {}) },
-      body: JSON.stringify({ name, score, day: dayKey(), mode: G.mode }), signal: ctrl.signal
+      body: JSON.stringify({ name, score, day: today(), mode: G.mode }), signal: ctrl.signal
     });
     if (!res.ok) return;
     let top = (await res.json()).top;
     // daily mode compares with everyone who played today's world
-    if (daily) top = (await (await fetch(SCORES_URL + '?day=' + dayKey() + '&mode=daily', { signal: ctrl.signal })).json()).top;
+    if (daily) {
+      const u = new URL(SCORES_URL, location.href);   // the server address may carry a query of its own
+      u.searchParams.set('day', today()); u.searchParams.set('mode', 'daily');
+      top = (await (await fetch(u, { signal: ctrl.signal })).json()).top;
+    }
     if (Array.isArray(top) && top.length && G.state === 'over') {
       $('world').textContent = t(daily ? 'TODAY TOP {n} · {name}' : 'WORLD BEST {n} · {name}', { n: top[0].score, name: top[0].name });
       $('world').hidden = false;
@@ -336,7 +338,7 @@ function pauseGame() {
 }
 function resumeGame() {
   if (G.state !== 'paused') return;
-  G.state = pausedFrom; G.goT = 0;
+  G.state = pausedFrom; G.goT = 0; G.countKey = '';   // the countdown number is drawn again
   setBanner('');
   if (G.state === 'play') keepAwake(true);
 }
@@ -373,6 +375,7 @@ function showHowto() {
     ? 'Tap the game to hop forward.\nSwipe to move left, right or back.\nCollect coins to unlock animals.\nStand still too long and the eagle gets you!'
     : 'Player 1: W A S D.  Player 2: arrow keys.\nCollect coins to unlock animals.\nStand still too long and the eagle gets you!');
   howto.hidden = false;
+  try { $('gotit').focus({ preventScroll: true }); } catch (e) {}   // keyboard users land on the button
 }
 function hideHowto() {
   if (howto.hidden) return false;

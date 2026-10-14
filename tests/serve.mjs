@@ -10,10 +10,13 @@ const TYPES = {
 };
 
 // serves `root` on 127.0.0.1 at a free port; returns { url, close }
-export function serve(root) {
+// `overrides` maps a path ('/index.html') to a body served instead of the file (a test page with a server wired in)
+export function serve(root, overrides = {}) {
   const server = http.createServer((req, res) => {
     let rel;
     try { rel = decodeURIComponent(new URL(req.url, 'http://x').pathname); } catch { res.writeHead(400); res.end(); return; }
+    if (rel === '/') rel = '/index.html';
+    if (Object.hasOwn(overrides, rel)) { res.writeHead(200, { 'Content-Type': TYPES[path.extname(rel)] || 'text/plain' }); res.end(overrides[rel]); return; }
     const file = path.join(root, rel === '/' ? 'index.html' : rel);
     const out = path.relative(root, file);
     if (out.startsWith('..') || path.isAbsolute(out)) { res.writeHead(403); res.end(); return; }

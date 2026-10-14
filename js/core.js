@@ -1,4 +1,4 @@
-import { difficultyAt } from './rules.js';
+import { MODES, difficultyAt } from './rules.js';
 
 // Shared constants, the game state object and the one "can not load" screen.
 // ---------- tuning ----------
@@ -22,7 +22,6 @@ const EAGLE_WARN = 1.5;       // seconds before the swoop a warning sounds
 const COIN_CHANCE = { grass: 0.28, road: 0.18, lily: 0.4, mud: 0.3 };   // chance of a coin on a lane
 const PRIZE_COST = 50;        // coins for one turn of the prize machine
 const NIGHT_START = 90, NIGHT_FULL = 150;   // rows over which day turns into night
-const MODES = ['classic', 'race', 'daily', 'room'];
 const STEP = 1 / 120;         // the game steps at a fixed rate, so a replay plays back the same run
 const POWER_CHANCE = 0.05;    // chance of a power-up (shield or magnet) on a lane past row 10
 const COMBO_GAP = 0.45;       // seconds between hops that keep a combo alive
@@ -48,6 +47,7 @@ const G = {
   tick: 0,             // fixed steps since boot
   worldTick: 0,        // fixed steps since the world was built: traffic and trains run on this
   startTick: 0,        // worldTick when play began (saved in replays)
+  countKey: '',        // the countdown banner that is showing (cleared to redraw it, e.g. after a pause)
   redraw: false,       // paused: draw one frame (the pause banner, a resize)
   playTick: 0,         // fixed steps since play began (replay time base)
   record: [],          // this run's hops: [playTick, player, dx, dr]
@@ -79,4 +79,4 @@ function fail(why) {
   b.querySelector('p').textContent = why;
 }
 
-export { $, BEHIND_LIMIT, COIN_CHANCE, COMBO_EVERY, COMBO_GAP, COUNTDOWN, DEBUG, DIFF_ROWS, EAGLE_IDLE, EAGLE_SWOOP, EAGLE_WARN, EDGE_DEATH, FIRST_ROW, FIXED_SEED, G, GO_TIME, HIT_PAD, HOP_TIME, LANES_AHEAD, LANES_BEHIND, MAGNET_REACH, MAGNET_TIME, MODES, POWER_CHANCE, REPLAY_CODE, NIGHT_FULL, NIGHT_START, PLAY_HALF, PRIZE_COST, RESULTS_DELAY, SCORES_TOKEN, SCORES_URL, SHIELD_TIME, STEP, TAU, TRAIN_SPEED, TRAIN_WARN, WIPE_MS, WRAP, difficulty, fail, hashMatch };
+export { $, BEHIND_LIMIT, COIN_CHANCE, COMBO_EVERY, COMBO_GAP, COUNTDOWN, DEBUG, DIFF_ROWS, EAGLE_IDLE, EAGLE_SWOOP, EAGLE_WARN, EDGE_DEATH, FIRST_ROW, FIXED_SEED, G, GO_TIME, HIT_PAD, HOP_TIME, LANES_AHEAD, LANES_BEHIND, MAGNET_REACH, MAGNET_TIME, MODES, POWER_CHANCE, REPLAY_CODE, NIGHT_FULL, NIGHT_START, PLAY_HALF, PRIZE_COST, RESULTS_DELAY, SCORES_TOKEN, SCORES_URL, SHIELD_TIME, STEP, TAU, TRAIN_SPEED, TRAIN_WARN, WIPE_MS, WRAP, difficulty, fail };

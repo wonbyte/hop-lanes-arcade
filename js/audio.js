@@ -1,4 +1,4 @@
-import { $ } from './core.js';
+import { $, G } from './core.js';
 import { t } from './i18n.js';
 import { MUTE_KEY, loadText } from './storage.js';
 
@@ -7,7 +7,10 @@ import { MUTE_KEY, loadText } from './storage.js';
 let actx = null;
 function audio() {
   if (!actx) { try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
-  if (actx && actx.state === 'suspended') actx.resume().catch(() => {});
+  if (!actx) return;
+  // the title tune needs a running context, which needs a gesture: start it with the first one on the title
+  const onTitle = () => { if (G.state === 'attract') startTune(); };
+  if (actx.state === 'suspended') actx.resume().then(onTitle).catch(() => {}); else onTitle();
 }
 let muted = loadText(MUTE_KEY) === '1';
 function setMuted(on) {

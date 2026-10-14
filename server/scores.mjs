@@ -1,7 +1,9 @@
 // Hop Lanes optional online high-score server. Dependency-free, Node 20+.
 // Run: node server/scores.mjs
-// Env: PORT (8787), DATA_FILE (./scores.json next to this script), ALLOW_ORIGIN ('*'), POST_TOKEN ('' = none), MAX_SCORE (5000), RATE_MAX (10).
+// Env: PORT (8787), DATA_FILE (./scores.json next to this script), ALLOW_ORIGIN ('*'), POST_TOKEN ('' = none), MAX_SCORE (5000), RATE_MAX (10),
+//      TRUST_PROXY ('1' when a reverse proxy sits in front: the rate limit then keys on the client in X-Forwarded-For).
 import http from 'node:http';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,7 +12,9 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT ?? 8787);
 const DATA_FILE = process.env.DATA_FILE || path.join(HERE, 'scores.json');
 const ALLOW_ORIGIN = process.env.ALLOW_ORIGIN || '*';
-const POST_TOKEN = process.env.POST_TOKEN || ''; // when set, POSTs must send it as X-Hop-Token
+const POST_TOKEN = process.env.POST_TOKEN || ''; // when set, POSTs must send it as X-Hop-Token (an anti-bot gate, not a secret: the page ships it)
+const TRUST_PROXY = process.env.TRUST_PROXY === '1';
+const SAVE_DELAY_MS = Number(process.env.SAVE_DELAY_MS ?? 1000); // POSTs are written to disk at most this often (0 = at once)
 
 const MAX_PER_BUCKET = 200;    // entries kept per bucket (mode|day), so a flood in one bucket cannot evict the rest
 const MAX_SCORE = Number(process.env.MAX_SCORE ?? 5000); // highest accepted score (env override is for tests)
@@ -33,11 +37,24 @@ function load() {
 }
 
 // Write to a temp file then rename, so readers never see a half-written file.
-function save() {
+function writeNow() {
   const tmp = `${DATA_FILE}.${process.pid}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(scores));
   fs.renameSync(tmp, DATA_FILE);
 }
+// A burst of POSTs is one write: the file is written a moment after the last change (and on exit).
+let saveTimer = null;
+function save() {
+  if (!SAVE_DELAY_MS) return writeNow();
+  if (!saveTimer) saveTimer = setTimeout(flush, SAVE_DELAY_MS);
+}
+function flush() {
+  if (!saveTimer) return;
+  clearTimeout(saveTimer); saveTimer = null;
+  try { writeNow(); } catch (err) { console.error('scores: write failed', err); }
+}
+for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { flush(); process.exit(0); });
+process.on('exit', flush);
 
 const MODES = ['classic', 'race', 'daily', 'room'];
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -95,6 +112,27 @@ function add(name, score, day, mode) {
 // ---- rate limit (in memory) ---------------------------------------------
 const hits = new Map(); // ip -> [timestamps]
 
+// The client address for the rate limit: behind a trusted proxy the last X-Forwarded-For hop (the one the
+// proxy added), else the socket; an IPv6 client is keyed by its /64, which is what one subscriber usually holds.
+function clientKey(req) {
+  let ip = req.socket.remoteAddress || 'unknown';
+  if (TRUST_PROXY) {
+    const fwd = String(req.headers['x-forwarded-for'] || '').split(',').pop().trim();
+    if (fwd) ip = fwd;
+  }
+  if (ip.startsWith('::ffff:')) ip = ip.slice(7);
+  if (ip.includes(':')) {
+    const full = ip.split('::'), head = full[0].split(':').filter(Boolean);
+    while (head.length < 4) head.push('0');
+    return head.slice(0, 4).join(':') + '::/64';
+  }
+  return ip;
+}
+// constant-time token check (equal-length buffers only; lengths differ: reject)
+function tokenOk(got) {
+  const a = Buffer.from(String(got ?? '')), b = Buffer.from(POST_TOKEN);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
 function limited(ip) {
   const now = Date.now();
   const recent = (hits.get(ip) || []).filter(t => now - t < RATE_WINDOW_MS);
@@ -178,8 +216,8 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { top: top(day, mode) });
     }
     if (req.method === 'POST') {
-      if (POST_TOKEN && req.headers['x-hop-token'] !== POST_TOKEN) return send(res, 401, { error: 'bad token' });
-      if (limited(req.socket.remoteAddress || 'unknown')) return send(res, 429, { error: 'rate limited' });
+      if (POST_TOKEN && !tokenOk(req.headers['x-hop-token'])) return send(res, 401, { error: 'bad token' });
+      if (limited(clientKey(req))) return send(res, 429, { error: 'rate limited' });
       let parsed;
       try { parsed = JSON.parse(await readBody(req)); } catch { return send(res, 400, { error: 'bad json' }); }
       const entry = validate(parsed);

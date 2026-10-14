@@ -34,11 +34,13 @@ window.addEventListener('keydown', e => {
   if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;   // leave browser shortcuts alone
   // a focused on-screen button handles its own Enter/Space (as a click)
   if ((e.code === 'Enter' || e.code === 'Space') && e.target.closest && e.target.closest('button')) return;
-  if (hideHowto()) return;
-  const k = KEYS[e.code];
+  if (e.target.tagName === 'TEXTAREA') return;   // the share text: typing there is not a restart
+  const k = KEYS[e.code], start = e.code === 'Space' || e.code === 'Enter';
+  // the first-run help closes on a game key (Tab and Shift still reach its button)
+  if ((k || start || e.code === 'Escape') && hideHowto()) { e.preventDefault(); return; }
   if (k) { e.preventDefault(); press(...k); }
-  else if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); pressStart(); }
-  else if (e.code === 'KeyP' || e.code === 'Escape') { if (G.state === 'paused') resumeGame(); else pauseGame(); }
+  else if (start) { e.preventDefault(); pressStart(); }
+  else if (e.code === 'KeyP' || e.code === 'Escape') { if (G.state === 'paused') { audio(); resumeGame(); } else pauseGame(); }
   else if (e.code === 'KeyM') setMuted(!muted);
 });
 $('mute').addEventListener('click', () => { audio(); setMuted(!muted); });
@@ -84,7 +86,7 @@ function touchRing(clientX, clientY, i, r) {
   setTimeout(gone, 500);   // also without animations (reduced motion)
 }
 stage.addEventListener('pointerdown', e => {
-  if (e.button > 0 || e.target.closest('#cards, #howto, #menu, #results button, #mute')) return;
+  if (e.button > 0 || e.target.closest('#cards, #howto, #menu, #results button, #results textarea, #mute')) return;
   const r = stage.getBoundingClientRect();   // one layout read per touch
   const i = fieldPlayer(e.clientX, r);
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, i, done: false });
@@ -136,7 +138,7 @@ function pollGamepads() {
       if (padEdge(n + 'l', b(14) || sl)) press(n, -1, 0);
       if (padEdge(n + 'r', b(15) || sr)) press(n, 1, 0);
       if (padEdge(n + 's', b(9) || b(8))) pressStart();
-      if (padEdge(n + 'p', b(1) || b(2))) { if (G.state === 'paused') resumeGame(); else pauseGame(); }
+      if (padEdge(n + 'p', b(1) || b(2))) { if (G.state === 'paused') { audio(); resumeGame(); } else pauseGame(); }
     } catch (e) {}
   }
 }

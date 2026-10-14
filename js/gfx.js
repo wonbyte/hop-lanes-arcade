@@ -18,7 +18,7 @@ renderer.setPixelRatio(pixelRatio);
 renderer.shadowMap.enabled = true;
 // phones: hard-edged shadows (one shadow-map read per pixel instead of several); they suit the voxel look.
 // Set once at boot: changing the type later rebuilds every shader.
-renderer.shadowMap.type = lowGpu ? THREE.BasicShadowMap : THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = lowGpu ? THREE.BasicShadowMap : THREE.PCFShadowMap;
 stage.prepend(renderer.domElement);
 renderer.domElement.setAttribute('role', 'img');
 renderer.domElement.setAttribute('aria-label', 'Game view: roads, rivers and train tracks to hop across');
@@ -124,12 +124,14 @@ resize();
 
 // Slow device? Lower the resolution, then the shadow detail, one step at a time.
 // Only steps that need no shader rebuild are used (a rebuild mid-game is a hitch of its own).
-// Each step is judged after 2 s of play: a step that does not help is undone and the next one is tried;
-// once every step has been tried, the ladder stops (a phone capped at 30 fps keeps its quality).
-const perf = { ema: 1 / 60, t: 0, undo: null, before: 0, tried: 0 };
+// Each step is judged after 2 s of play: a step that helped is kept and its rung is tried again (the pixel ratio
+// can go 1.5 -> 1.25 -> 1); a step that did not help is undone and the next rung is tried; a rung with nothing
+// left to lower is passed over. Once past every rung, the ladder stops (a phone capped at 30 fps keeps its quality).
+const perf = { ema: 1 / 60, t: 0, undo: null, before: 0, tried: 0 };   // tried: the rung being tried next
 function resetFrameWatch() {
   perf.undo = null;    // a step taken just before game over stays: it was never judged, and it is cheap
   perf.ema = 1 / 60; perf.t = 0;
+  perf.tried = 0;      // the next game climbs the ladder again from the first rung
 }
 function setRatio(r) { pixelRatio = r; renderer.setPixelRatio(r); resize(); }
 function setShadowMapSize(n) {
@@ -160,11 +162,12 @@ function watchFrameTime(frameT) {
   if ((perf.t += frameT) < 2) return;
   perf.t = 0;
   if (perf.undo) {                                       // judge the last step
-    if (perf.ema > perf.before * 0.9) perf.undo();       // no real gain: put it back, try the next rung
-    perf.undo = null;
+    if (perf.ema > perf.before * 0.9) { perf.undo(); perf.tried++; }   // no real gain: put it back, move on to the next rung
+    perf.undo = null;                                    // (a step that helped keeps its rung: it is tried again)
   }
   if (perf.ema < BAD_FRAME) return;
-  while (perf.tried < LADDER.length && !perf.undo) perf.undo = LADDER[perf.tried++]();
+  // the first rung with something left to lower takes a step; a rung that returns null is passed over
+  while (perf.tried < LADDER.length && !(perf.undo = LADDER[perf.tried]())) perf.tried++;
   perf.before = perf.ema;
 }
 

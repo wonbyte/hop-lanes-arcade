@@ -24,4 +24,4 @@ document.addEventListener('visibilitychange', () => {
   if (wantAwake && document.visibilityState === 'visible') keepAwake(true);
 });
 
-export { buzz, keepAwake, wakeLock, wakePending, wantAwake };
+export { buzz, keepAwake };

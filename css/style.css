@@ -134,7 +134,8 @@ body {
 /* weather: rain streaks and snow flakes drawn with gradients, no images. The pattern sits on an oversized
    layer that moves with transform (done by the compositor), so the screen is not repainted every frame. */
 #weather { position: absolute; inset: 0; z-index: 2; pointer-events: none; opacity: 0; transition: opacity 1s; overflow: hidden; }
-#weather::before { content: ''; position: absolute; inset: -280px -140px; will-change: transform; }
+#weather::before { content: ''; position: absolute; inset: -280px -140px; }
+#weather.rain::before, #weather.snow::before { will-change: transform; }   /* its own layer only while it animates */
 #weather.rain { opacity: .5; }
 #weather.rain::before {
   background: repeating-linear-gradient(100deg, transparent 0 14px, rgba(220,235,255,.45) 14px 15px, transparent 15px 26px);

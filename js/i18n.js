@@ -21,7 +21,7 @@ const ES = {
   'Player 1: W A S D.  Player 2: arrow keys.\nCollect coins to unlock animals.\nStand still too long and the eagle gets you!':
     'Jugador 1: W A S D.  Jugador 2: flechas.\nJunta monedas para abrir animales.\n¡Si te quedas quieto, el águila te atrapa!',
   'HOW TO PLAY': 'CÓMO JUGAR', 'GOT IT': 'ENTENDIDO', BEST: 'RÉCORD', TODAY: 'HOY', COINS: 'MONEDAS', TAP: 'TAP', 'PLAYER 1': 'JUGADOR 1', 'PLAYER 2': 'JUGADOR 2',
-  START: 'INICIO', 'P1 W A S D': 'J1 W A S D', 'P2 ARROWS': 'J2 FLECHAS', 'SPACE START': 'ESPACIO INICIO', 'SOUND ON': 'SONIDO SÍ', 'SOUND OFF': 'SONIDO NO',
+  START: 'INICIO', P1: 'J1', P2: 'J2', 'P1 W A S D': 'J1 W A S D', 'P2 ARROWS': 'J2 FLECHAS', 'SPACE START': 'ESPACIO INICIO', 'SOUND ON': 'SONIDO SÍ', 'SOUND OFF': 'SONIDO NO',
   'ADD TO HOME SCREEN': 'AÑADIR A INICIO', 'TAP SHARE IN SAFARI, THEN "ADD TO HOME SCREEN"': 'TOCA COMPARTIR EN SAFARI Y LUEGO "AÑADIR A INICIO"',
   MAGNET: 'IMÁN', 'HANDICAP: OFF': 'VENTAJA: NO', 'SHIELD: P1': 'ESCUDO: J1', 'SHIELD: P2': 'ESCUDO: J2', 'ROOM CODE (4 LETTERS)': 'CÓDIGO DE SALA (4 LETRAS)',
   MISSIONS: 'MISIONES', 'MISSION DONE +{n}': 'MISIÓN HECHA +{n}',
@@ -49,7 +49,7 @@ const DE = {
   'Player 1: W A S D.  Player 2: arrow keys.\nCollect coins to unlock animals.\nStand still too long and the eagle gets you!':
     'Spieler 1: W A S D.  Spieler 2: Pfeiltasten.\nSammle Münzen für neue Tiere.\nStehst du zu lange still, holt dich der Adler!',
   'HOW TO PLAY': 'SO GEHT ES', 'GOT IT': 'ALLES KLAR', BEST: 'REKORD', TODAY: 'HEUTE', COINS: 'MÜNZEN', TAP: 'TAP', 'PLAYER 1': 'SPIELER 1', 'PLAYER 2': 'SPIELER 2',
-  START: 'START', 'P1 W A S D': 'S1 W A S D', 'P2 ARROWS': 'S2 PFEILE', 'SPACE START': 'LEERTASTE START', 'SOUND ON': 'TON AN', 'SOUND OFF': 'TON AUS',
+  START: 'START', P1: 'S1', P2: 'S2', 'P1 W A S D': 'S1 W A S D', 'P2 ARROWS': 'S2 PFEILE', 'SPACE START': 'LEERTASTE START', 'SOUND ON': 'TON AN', 'SOUND OFF': 'TON AUS',
   'ADD TO HOME SCREEN': 'ZUM STARTBILDSCHIRM', 'TAP SHARE IN SAFARI, THEN "ADD TO HOME SCREEN"': 'IN SAFARI AUF TEILEN, DANN "ZUM HOME-BILDSCHIRM"',
   MAGNET: 'MAGNET', 'HANDICAP: OFF': 'HANDICAP: AUS', 'SHIELD: P1': 'SCHILD: S1', 'SHIELD: P2': 'SCHILD: S2', 'ROOM CODE (4 LETTERS)': 'RAUMCODE (4 BUCHSTABEN)',
   MISSIONS: 'MISSIONEN', 'MISSION DONE +{n}': 'MISSION GESCHAFFT +{n}',

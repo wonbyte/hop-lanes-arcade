@@ -1,10 +1,11 @@
-import { $, G, MODES } from './core.js';
-import { hashString } from './rules.js';
+import { $, G } from './core.js';
+import { MODES, hashString, isoDay } from './rules.js';
 
 // Saved data: best scores, coins, owned characters. Everything is best effort (private mode, blocked storage).
 // ---------- storage (best effort) ----------
 const BEST_KEY = 'hoplanes.best', DAY_PREFIX = 'hoplanes.day.';
-const dayKey = () => DAY_PREFIX + new Date().toLocaleDateString('en-CA');   // local YYYY-MM-DD
+const today = isoDay;                            // local YYYY-MM-DD (what the score server expects as `day`)
+const dayKey = () => DAY_PREFIX + today();
 // stored scores are only ever whole, non-negative numbers; anything else reads as 0
 function load(k) {
   try {
@@ -43,10 +44,18 @@ function flushBank() { if (bankDirty) setBank(G.bank); }
 addEventListener('pagehide', flushBank);
 document.addEventListener('visibilitychange', () => { if (document.hidden) flushBank(); });
 G.bestAll = load(BEST_KEY);
-G.mode = MODES.includes(loadText(MODE_KEY)) ? loadText(MODE_KEY) : 'classic';
 G.handicap = Math.min(2, load(HANDICAP_KEY));
 G.room = loadText(ROOM_KEY).replace(/[^A-Z0-9]/g, '').slice(0, 6);
-if (G.mode === 'room' && !G.room) G.mode = 'classic';
+// the saved mode; room mode needs a code, and a replay may have shown another mode
+const savedMode = () => MODES.includes(loadText(MODE_KEY)) && (loadText(MODE_KEY) !== 'room' || G.room) ? loadText(MODE_KEY) : 'classic';
+G.mode = savedMode();
+// a short tag that tells this device's scores from everyone else's FROG on the online list
+const TAG_KEY = 'hoplanes.tag';
+let deviceTag = loadText(TAG_KEY).replace(/[^A-Z0-9]/g, '').slice(0, 4);
+if (deviceTag.length !== 4) {
+  deviceTag = Array.from({ length: 4 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 32)]).join('');
+  try { localStorage.setItem(TAG_KEY, deviceTag); } catch (e) {}
+}
 // the daily challenge: one seed for everyone, made from today's date
 const dailySeed = () => hashString(dayKey());
 let bestDay = 0, shownDay = '';
@@ -61,4 +70,4 @@ setBank(G.bank);
 // a game left open past midnight starts a new "today"
 setInterval(() => { if (dayKey() !== shownDay) { dropOldDays(); refreshBests(); } }, 60000);
 
-export { BEST_KEY, COINS_KEY, DAILY_KEY, DAY_PREFIX, HANDICAP_KEY, HOWTO_KEY, INSTALL_KEY, MISSIONS_KEY, ROOM_KEY, MODE_KEY, MUTE_KEY, OWNED_KEY, PICK_KEY, bestDay, dailySeed, dayKey, dropOldDays, flushBank, load, loadText, owned, refreshBests, save, setBank, shownDay };
+export { BEST_KEY, COINS_KEY, DAILY_KEY, DAY_PREFIX, HANDICAP_KEY, HOWTO_KEY, INSTALL_KEY, MISSIONS_KEY, ROOM_KEY, MODE_KEY, MUTE_KEY, OWNED_KEY, PICK_KEY, dailySeed, dayKey, deviceTag, dropOldDays, flushBank, load, loadText, owned, refreshBests, save, savedMode, setBank, today };

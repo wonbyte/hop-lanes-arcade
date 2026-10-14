@@ -1,8 +1,9 @@
 // Replays: a run is its seed, mode, characters, handicap, the world tick play began on, and every hop
 // with the tick it happened on. The game steps at a fixed rate (app.js STEP) and traffic and trains are a
 // function of the world tick, so the same hops on the same ticks give the same run. Pure: no DOM, tested by node.
+import { MODES } from './rules.js';
+
 const REPLAY_VERSION = 2;
-const REPLAY_MODES = ['classic', 'race', 'daily', 'room'];   // core.js MODES (core needs the DOM, so not imported)
 const MAX_TICK = 120 * 60 * 60;   // an hour of play: anything later in a link is junk
 const DIRS = { '0,1': 'U', '0,-1': 'D', '-1,0': 'L', '1,0': 'R' };
 const DIR_MOVE = { U: [0, 1], D: [0, -1], L: [-1, 0], R: [1, 0] };
@@ -17,7 +18,7 @@ function decodeReplay(code) {
   try {
     const text = atob(code.replace(/-/g, '+').replace(/_/g, '/'));
     const [v, seed, mode, chars, joined, handicap, startTick, ev = ''] = text.split('|');
-    if (Number(v) !== REPLAY_VERSION || !/^\d{1,10}$/.test(seed) || !REPLAY_MODES.includes(mode)) return null;
+    if (Number(v) !== REPLAY_VERSION || !/^\d{1,10}$/.test(seed) || !MODES.includes(mode)) return null;
     if (!/^[12]$/.test(handicap) && handicap !== '0') return null;
     if (!/^\d{1,9}$/.test(startTick) || Number(startTick) > MAX_TICK) return null;
     if (!/^[123]$/.test(joined)) return null;   // at least one player
@@ -37,4 +38,4 @@ function decodeReplay(code) {
   } catch (e) { return null; }
 }
 
-export { REPLAY_MODES, decodeReplay, encodeReplay };
+export { decodeReplay, encodeReplay };

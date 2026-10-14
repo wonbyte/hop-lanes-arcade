@@ -47,7 +47,7 @@ function spawn(p) {
 }
 // the name over the score, plus the combo and the magnet while they last
 function setLabel(p) {
-  const text = 'P' + (p.id + 1) + ' ' + t(charOf(p).name) + (p.combo >= 3 ? ' x' + p.combo : '') + (p.magnetT > 0 ? ' ' + t('MAGNET') : '');
+  const text = t('P' + (p.id + 1)) + ' ' + t(charOf(p).name) + (p.combo >= 3 ? ' x' + p.combo : '') + (p.magnetT > 0 ? ' ' + t('MAGNET') : '');
   if (text !== p.label) { p.label = text; $('score' + (p.id + 1)).querySelector('span').textContent = text; }
 }
 // ---------- power-ups ----------
@@ -333,4 +333,4 @@ function updatePlayer(p, dt) {
   if (p.eagle) updateEagle(p, dt);
 }
 
-export { charOf, despawn, restorePicks, giveShield, kill, players, queueMove, applyMoves, spawn, tryMove, updateParts, updatePlayer };
+export { blobGeo, blobMat, bubbleGeo, bubbleMat, charOf, despawn, restorePicks, giveShield, kill, players, queueMove, applyMoves, spawn, tryMove, updateParts, updatePlayer };

@@ -25,12 +25,12 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
 | `vendor/three.min.js` | Generated: a tree-shaken Three.js r186 (about 530 KB) exposing only the names the game uses as `window.THREE`. Add a name to `tools/three-entry.js` before using a new THREE class |
 | `css/style.css` | All styles. Media queries: `max-width: 520px` (phones), `max-width: 340px` (tiny phones), `orientation: landscape` (phone held sideways) |
 | `js/main.js` | Entry. Checks `window.THREE`, then `import('./app.js')` |
-| `js/rules.js` | Pure rules with no DOM or Three.js: seeded RNG, `nextLaneKind`, `hopTarget`, `hopTime` (mud). Tested by node directly: put logic here when it needs no scene |
+| `js/rules.js` | Pure rules with no DOM or Three.js: seeded RNG, `nextLaneKind`, `hopTarget`, `hopTime` (mud), `MODES`, `isoDay` (the local YYYY-MM-DD). Tested by node directly: put logic here when it needs no scene |
 | `js/missions.js` | Pure: the mission list and the done/advance logic (`tests/replay.test.mjs`) |
 | `js/replay.js` | Pure: `encodeReplay` / `decodeReplay` for `#replay-<code>` links |
 | `js/i18n.js` | `t(key, args)`: English keys, Spanish and German tables; `data-i18n` for static markup; `#lang` cycles |
 | `js/core.js` | Tuning constants, the shared state object `G`, `fail()`, `#debug` / `#seed-N` hash parsing |
-| `js/storage.js` | localStorage: best scores, coins (`G.bank`), owned characters, picks. Always best effort (try/catch) |
+| `js/storage.js` | localStorage: best scores, coins (`G.bank`), owned characters, picks, `savedMode()`, `deviceTag` (4 chars; the online score name is `<CHARACTER> <tag>`). Always best effort (try/catch) |
 | `js/audio.js` | Web Audio beeps (`sfx.*`), mute |
 | `js/device.js` | Vibration, wake lock |
 | `js/voxel.js` | `mergeBoxes`: a list of boxes becomes one vertex-colored mesh (one draw call). `cachedGeo` for repeated models |
@@ -44,7 +44,7 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
 | `tools/build-standalone.sh` | Inlines CSS, the modules (in `tools/bundle-order.json` order), `vendor/three.min.js` and fonts into one offline HTML with a hash-based CSP |
 | `.github/workflows/deploy.yml` | Deploys `main` to GitHub Pages after the tests pass (Settings → Pages → Source: GitHub Actions, once) |
 | `tests/serve.mjs` | Tiny static server for the tests: browsers refuse ES modules from `file://` |
-| `server/` | Optional dependency-free score server; wired by `<meta name="hop-lanes-scores">` (and `hop-lanes-token` for its `POST_TOKEN`) |
+| `server/` | Optional dependency-free score server; wired by `<meta name="hop-lanes-scores">` (and `hop-lanes-token` for its `POST_TOKEN`). Set `TRUST_PROXY=1` behind a proxy. UI test 6b runs it against the real page (`tests/serve.mjs` overrides `/index.html` with the meta and `connect-src` filled in) |
 
 ## Conventions
 
@@ -56,6 +56,9 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
   changes the outcome of a run must be deterministic: seeded (`worldRng`, per-lane `lane.rng` for trains) or step-driven.
   Traffic and trains are a function of the world clock `G.worldTick` (reset when the world is built), never of frames
   or build time; a replay stores `startTick` (the world tick play began on) and the handicap.
+- `updateLanes(players)` steps only the lanes a player can touch (row ±1 and the hop's `fromRow`); the other lanes
+  are moved once per drawn frame by `updateFarLanes()` (before `placeCamera`). Anything in `players.js` that reads a
+  car, log or train position (`o.x`, `train.x`) must stay inside that window, or widen it in `updateLanes`.
 - A replay pays no coins, sets no records and takes no input except restart (`G.replay` checks in players, screens, input).
 - Coins during play go through `setBank(n, true)` and are saved at game over or when the tab hides (`flushBank`).
 - Per-frame (not per-step) work: `placeCamera`, `spinAll` (coins), `updateParts` (particles). Gameplay never goes there.
@@ -78,6 +81,7 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
 - `tests/ui.test.mjs` drives the shop, prize machine, modes, share and confetti through the real DOM (ids: `#mode`, `#prize`, `#share`, `#card1 .cyc`, `#tap1`).
 - Lane kinds: grass, road (police variant past difficulty 0.3), river, lily (pads; water kills), mud (from row 13; a hop out of it is slow), rail. Night fades in from row 90.
 - The eagle warns (`sfx.warn`) 1.5 s before it swoops; a new best shows in `#resBest`; the install hint `#install` shows only on the served page, once.
+- The countdown banner is keyed by `G.countKey`; clear it to force a redraw (resume from pause does). The title tune starts with the first gesture on the title (`audio()`), and the pause keys call `audio()` so a suspended context wakes.
 - Power-ups: `lane.power` (shield or magnet) on grass, road and mud past row 10. A hidden coin column is `lane.secret` on grass. The boss train is `lane.boss` (first rail past each 100 rows). Weather is `weatherAt(r)` per 40-row chunk (rain; snow in December, which only changes the look).
 
 ## Gotchas
@@ -99,10 +103,14 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
   scaled by the `glow` uniform that `setNight` sets.
 - The shadow box and the haze (`scene.fog`) are fitted to the visible ground in `fitView()` on every resize.
 - Lane ground is joined into 8-row chunks (`CHUNK`) once all 8 rows exist: one mesh that casts shadows, one that does not.
-  The lane keeps its own ground mesh (out of the scene while merged); dropping any row splits the chunk back.
+  The lane keeps its own ground mesh (out of the scene while merged); a dropped row stays in the chunk (it is off
+  screen) and the chunk is freed with its last row (`releaseChunk`), so no mesh is rebuilt while scrolling.
   Anything added to `lane.ground` after the lane is built will not show while the chunk is merged.
-- Phones use `BasicShadowMap` (hard edges, one shadow read per pixel) and a 512 shadow map; desktops `PCFSoftShadowMap`
-  and 1024. Chosen once at boot. On the menus the shadow map is redrawn every other frame (`shadowCadence`).
+- Rail signals and police lights are one `light` fleet (`newLight`), painted per instance (`LIGHT_TINT`); repaint only
+  on a state change (`paintSignal`, `o.lightRed`).
+- Phones use `BasicShadowMap` (hard edges, one shadow read per pixel) and a 512 shadow map; desktops `PCFShadowMap`
+  (r186 removed `PCFSoftShadowMap`) and 1024. Chosen once at boot. The quality ladder retries a rung that helped
+  (pixel ratio 1.5 → 1.25 → 1.0) and starts over each game (`resetFrameWatch`). On the menus the shadow map is redrawn every other frame (`shadowCadence`).
 - The window of built rows follows `visRows` (fewer rows on a sideways phone): `rowsBehind()` and the ahead limit in
   `ensureLanes`.
 - `near()`, `visRows` and `firstNeededRow()` decide which rows exist and sound; keep them in step with the camera.

@@ -4,25 +4,24 @@ import { pollGamepads } from './input.js';   // also sets up every input listene
 import { decodeReplay } from './replay.js';
 import { CHARACTERS, LIGHT_OFF, lightGeo } from './models.js';
 import { CAM_OFF, SUN_OFF, camera, focus, getPixelRatio, renderer, scene, setNight, shadowCadence, sun, touchQuery, viewInfo, watchFrameTime } from './gfx.js';
-import { applyMoves, giveShield, kill, players, updateParts, updatePlayer } from './players.js';
+import { applyMoves, blobGeo, blobMat, bubbleGeo, bubbleMat, giveShield, kill, players, updateParts, updatePlayer } from './players.js';
 import { join, resultsEl, setBanner, setModeLabel, showHowto, startPlay, toAttract } from './screens.js';
 import { HOWTO_KEY, dailySeed, loadText, owned } from './storage.js';
-import { ensureLanes, getSeed, laneCoins, laneKinds, lanes, showLane, spinAll, updateLanes, weatherAt } from './world.js';
+import { ensureLanes, getSeed, laneCoins, laneKinds, lanes, showLane, spinAll, updateFarLanes, updateLanes, weatherAt } from './world.js';
 import { t } from './i18n.js';
 
 // The game loop and boot. main.js loads this once Three.js is present.
 // ---------- loop ----------
-let countKey = '';
 function updateCountdown(dt) {
   const before = Math.ceil(G.countdown);
   G.countdown -= dt;
   const n = Math.ceil(G.countdown);
   if (n !== before && n > 0) sfx.tick();
-  if (G.countdown <= 0) { countKey = ''; startPlay(); return; }
+  if (G.countdown <= 0) { G.countKey = ''; startPlay(); return; }
   // the banner text is built only when the number or the players change
   const both = players[0].joined && players[1].joined, key = n + '|' + both;
-  if (key === countKey) return;
-  countKey = key;
+  if (key === G.countKey) return;
+  G.countKey = key;
   setBanner(String(n), (G.replay ? t('REPLAY') : both ? t('FROG VS FOX') : t('OTHER PLAYER: TAP TO JOIN'))
     + (touchQuery.matches && !G.replay ? '\n' + t('TAP TO HOP · SWIPE TO TURN') : ''));
 }
@@ -54,7 +53,7 @@ function step(dt) {
   else if (G.state === 'play') { G.playTick++; applyMoves(); updateCamera(dt); }
   else if (G.state === 'over' && G.stateT > RESULTS_DELAY && resultsEl.hidden) resultsEl.hidden = false;
   ensureLanes();
-  updateLanes();
+  updateLanes(players);   // only the lanes a player can touch; the rest move once per drawn frame
   for (const p of players) updatePlayer(p, dt);
 }
 const DRAW_INTERVAL = 1000 / 60, MAX_STEPS = 6;   // after a long stall, time is dropped rather than caught up
@@ -87,6 +86,7 @@ function frame(now) {
   }
   if (draw) {
     spinAll(now);
+    updateFarLanes();
     placeCamera();
     shadowCadence(idle);
     renderer.render(scene, camera);
@@ -149,9 +149,10 @@ if (G.replay) {
   G.replay.joined.forEach((on, i) => { if (on) join(i); });
 }
 if (loadText(HOWTO_KEY) !== '1' && !G.replay) showHowto();
-// build the plain shader (rail lights) now; built mid-game, it stutters on the first train
-const warm = new THREE.Mesh(lightGeo, LIGHT_OFF);
-scene.add(warm);
+// build the other shaders now (rail lights; the see-through landing spot and shield bubble): built on the first
+// join or train, each one stutters the game
+const warm = [new THREE.Mesh(lightGeo, LIGHT_OFF), new THREE.Mesh(blobGeo, blobMat), new THREE.Mesh(bubbleGeo, bubbleMat)];
+warm.forEach(m => scene.add(m));
 renderer.compile(scene, camera);
-scene.remove(warm);
+warm.forEach(m => scene.remove(m));
 requestAnimationFrame(frame);
