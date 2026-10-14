@@ -29,10 +29,13 @@ A two-player arcade game. Hop across roads, rivers and train tracks. Go too slow
 - Every 100 rows a boss train comes: twice as long and faster.
 - Rain speeds the traffic up. In December it snows.
 - Modes (button on the title screen): classic, race (first to die loses), daily (the same world for everyone today, with its own best score), room (type a code; two phones get the same world).
-- Handicap: give the weaker player a shield to start with.
+- Handicap: give the weaker player a shield to start with (SETTINGS on the title, with sound, vibration, language and a less-motion switch).
+- Pause (P, Esc or B on a pad) shows a menu: continue, restart, sound.
+- With a score server set up (see `server/README.md`) the title shows a TOP 10 button; the results show the world best.
 - Game over: SHARE your score, or copy a replay link that plays your run again.
 - Gamepads work: d-pad or stick to move, A to hop, Start to start, B to pause.
-- Languages: English, Spanish, German (the EN button on the title).
+- Languages: English, Spanish, German (in SETTINGS).
+- Screen readers hear the start, every 10 rows and the result. If a script error ever stops the game, a notice offers a restart.
 
 ## Develop
 

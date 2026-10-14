@@ -1,5 +1,7 @@
 [
 "rules",
+"gen",
+"sim",
 "core",
 "missions",
 "replay",
@@ -13,6 +15,7 @@
 "world",
 "players",
 "screens",
+"panels",
 "input",
 "app"
 ]

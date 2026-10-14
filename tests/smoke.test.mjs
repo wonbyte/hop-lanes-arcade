@@ -6,7 +6,8 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
 import { serve } from './serve.mjs';
-import { encodeReplay } from '../js/replay.js';
+import { decodeReplay, encodeReplay } from '../js/replay.js';
+import { simulate } from '../js/sim.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let INDEX = '';   // served over http (set in before): module scripts do not load from file://
@@ -255,6 +256,10 @@ test('5c. a replay link plays the same run again, across traffic, on another scr
     await again.page.waitForFunction(() => window.hopLanes.state === 'over', null, { timeout: 120000 });
     const second = await again.page.evaluate(() => { const h = window.hopLanes, p = h.players[0]; return { row: p.row, score: p.score, cause: p.cause, x: Math.round(p.x * 1000), seed: h.seed, tick: h.playTick }; });
     assert.deepEqual(second, first, 'the replay ends where and when the run ended');
+    // the same replay without a browser (sim.js, what the score server runs) ends on the same tick, row, cause and score
+    const sim = simulate(decodeReplay(code));
+    assert.deepEqual({ tick: sim.endTick, row: sim.row, cause: sim.cause, score: sim.scores[0], x: Math.round(sim.players[0].x * 1000) },
+      { tick: second.tick, row: second.row, cause: second.cause, score: second.score, x: second.x }, 'sim.js plays the run as the browser did');
     assert.equal(await again.page.evaluate(() => window.hopLanes.players[1].joined), false, 'no extra player');
     assert.equal(await again.page.evaluate(() => window.hopLanes.bank), bank, 'a replay pays no coins');
     assert.match(await again.page.locator('#resTitle').textContent(), /REPLAY OVER/);

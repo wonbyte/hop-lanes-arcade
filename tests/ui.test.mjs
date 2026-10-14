@@ -11,7 +11,7 @@ import os from 'node:os';
 import net from 'node:net';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const ARGS = ['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist'];
+const ARGS = ['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required'];
 const T = 60000;
 const SLOW = 120000; // whole-test budget for tests that wait through a game
 
@@ -39,8 +39,15 @@ async function launch() {
 
 // New context + page. `storage` entries are written to localStorage before every load;
 // `clipboard` stubs navigator.clipboard and removes navigator.share.
-async function open(url, { storage = {}, clipboard = false } = {}) {
-  const context = await browser.newContext();
+// `scale` sets the device pixel ratio; `noShare` removes the share sheet and the clipboard (the copy-by-hand fallback).
+async function open(url, { storage = {}, clipboard = false, scale = 0, noShare = false } = {}) {
+  const context = await browser.newContext(scale ? { deviceScaleFactor: scale } : {});
+  if (noShare) {
+    await context.addInitScript(() => {
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined });
+      Object.defineProperty(navigator, 'share', { configurable: true, value: undefined });
+    });
+  }
   await context.addInitScript(() => { try { localStorage.setItem('hoplanes.howto', '1'); } catch (e) {} });
   if (Object.keys(storage).length) {
     await context.addInitScript(entries => {
@@ -124,11 +131,14 @@ test('1c. missions show on the title; the language button switches the texts', a
     assert.equal(lines.length, 3);
     assert.match(lines[0], /COLLECT 10 COINS/);
     assert.match(await page.locator('#mode').textContent(), /^MODE: /);
+    await page.click('#settings');   // language and handicap live in the settings panel
+    await page.locator('#settingsBox').waitFor({ state: 'visible', timeout: T });
     await page.click('#lang');
     assert.equal(await page.locator('#lang').textContent(), 'ES');
     assert.match(await page.locator('#mode').textContent(), /^MODO: /);
     assert.match(await page.locator('#missions h3').textContent(), /MISIONES/);
     assert.match(await page.locator('#start').textContent(), /INICIO/);
+    assert.match(await page.locator('#settingsTitle').textContent(), /AJUSTES/);
     await page.click('#lang');
     assert.equal(await page.locator('#lang').textContent(), 'DE');
     await page.click('#lang');
@@ -137,6 +147,18 @@ test('1c. missions show on the title; the language button switches the texts', a
     // the handicap button cycles and is saved
     await page.click('#handicap');
     assert.equal(await page.locator('#handicap').textContent(), 'SHIELD: P1');
+    // the other settings switch and are saved; Escape closes the panel
+    await page.click('#buzz');
+    assert.equal(await page.locator('#buzz').textContent(), 'VIBRATION: OFF');
+    assert.equal(await page.evaluate(() => localStorage.getItem('hoplanes.buzz')), '0');
+    await page.click('#motion');
+    assert.equal(await page.locator('#motion').textContent(), 'MOTION: LESS');
+    await page.click('#sound');
+    assert.equal(await page.locator('#sound').textContent(), 'SOUND: OFF');
+    assert.equal(await hop(page, () => window.hopLanes.muted), true);
+    await page.keyboard.press('Escape');
+    assert.equal(await page.locator('#settingsBox').isHidden(), true, 'Escape closes the settings');
+    assert.equal(await hop(page, () => window.hopLanes.state), 'attract');
     assert.deepEqual(errors, []);
   } finally { await context.close(); }
 });
@@ -310,6 +332,14 @@ test('6b. a finished game posts its score (today, mode) and the world best shows
     const d = new Date(), today = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
     assert.equal(top[0].day, today, 'the day is a plain YYYY-MM-DD');
     assert.match(await page.locator('#world').textContent(), new RegExp('WORLD BEST ' + score + ' · FROG'));
+    // back on the title the TOP 10 button lists the same score
+    await page.keyboard.press('Space');
+    await waitState(page, 'attract');
+    await page.click('#board');
+    await page.waitForFunction(() => document.querySelectorAll('#boardList li').length === 1, null, { timeout: T });
+    assert.match(await page.locator('#boardList li').textContent(), new RegExp('FROG [A-Z2-9]{4}' + score));
+    await page.click('#closeBoard');
+    assert.equal(await page.locator('#boardBox').isHidden(), true);
     assert.deepEqual(errors, []);
   } finally { await context.close(); srv.kill(); fs.rmSync(dir, { recursive: true, force: true }); }
 });
@@ -331,5 +361,95 @@ test('7. new all-time best shows confetti and a note', async () => {
     assert.match(await page.locator('#resBest').textContent(), /NEW ALL TIME BEST/);
     assert.equal(await page.locator('#resBest').isVisible(), true, 'the best line shows');
     assert.deepEqual(errors, []);
+  } finally { await context.close(); }
+});
+
+// ---- regression tests for the review fixes ----
+test('8a. a tap on the copy-by-hand text box does not restart the game', async () => {
+  const { context, page, errors } = await open(INDEX, { noShare: true });
+  try {
+    await waitState(page, 'attract');
+    await page.keyboard.press('KeyW');
+    await waitState(page, 'play');
+    await waitState(page, 'over', 90000);
+    await resultsVisible(page);
+    await page.locator('#share').waitFor({ state: 'visible', timeout: T });
+    await page.click('#share');
+    await page.locator('#shareText').waitFor({ state: 'visible', timeout: T });
+    assert.match(await page.locator('#share').textContent(), /SELECT AND COPY/);
+    await page.click('#shareText');
+    await page.keyboard.press('Space');
+    await page.waitForTimeout(600);
+    assert.equal(await hop(page, () => window.hopLanes.state), 'over', 'still on the results');
+    assert.deepEqual(errors, []);
+  } finally { await context.close(); }
+});
+
+test('8b. pause during the countdown: the number shows again on resume; the pause menu restarts', async () => {
+  const { context, page, errors } = await open(INDEX);
+  try {
+    await waitState(page, 'attract');
+    await page.keyboard.press('KeyW');
+    await waitState(page, 'countdown');
+    await page.waitForFunction(() => /^\d$/.test(document.querySelector('#banner h2').textContent), null, { timeout: T });
+    await page.keyboard.press('KeyP');
+    await waitState(page, 'paused');
+    await page.locator('#pauseBox').waitFor({ state: 'visible', timeout: T });
+    assert.match(await page.locator('#banner h2').textContent(), /PAUSED/);
+    await page.keyboard.press('KeyP');
+    await waitState(page, 'countdown');
+    await page.waitForFunction(() => /^\d$/.test(document.querySelector('#banner h2').textContent), null, { timeout: 3000 });
+    assert.equal(await page.locator('#pauseBox').isHidden(), true);
+    await waitState(page, 'play');
+    assert.match(await page.locator('#live').textContent(), /GO!/, 'the announcer said go');
+    await page.keyboard.press('KeyP');
+    await waitState(page, 'paused');
+    await page.click('#restartBtn');
+    await waitState(page, 'attract');
+    assert.deepEqual(errors, []);
+  } finally { await context.close(); }
+});
+
+test('8c. the title tune starts with the first tap on the title', async () => {
+  const { context, page, errors } = await open(INDEX);
+  try {
+    await waitState(page, 'attract');
+    await page.waitForTimeout(800);   // past the old 0.5 s window
+    assert.equal(await hop(page, () => window.hopLanes.tune), false);
+    await page.click('#mute'); await page.click('#mute');   // two gestures, sound back on
+    await page.waitForFunction(() => window.hopLanes.tune === true, null, { timeout: 5000 });
+    assert.deepEqual(errors, []);
+  } finally { await context.close(); }
+});
+
+test('8d. the quality ladder lowers the pixel ratio twice when it helps, and keeps it', { timeout: 240000 }, async () => {
+  const { context, page, errors } = await open(INDEX, { scale: 1.5 });   // a dense screen: the software renderer is slow here, so the waits are long
+  try {
+    await waitState(page, 'attract');
+    assert.equal(await hop(page, () => window.hopLanes.ladder.ratio), 1.5);
+    await page.keyboard.press('KeyW');
+    await waitState(page, 'play', 120000);
+    // slow frames: the first rung (pixel ratio -0.25); then faster ones: the rung helped, so it is taken again
+    assert.equal(await hop(page, () => { const L = window.hopLanes.ladder; for (let i = 0; i < 60; i++) L.feed(0.05); return L.ratio; }), 1.25);
+    assert.equal(await hop(page, () => { const L = window.hopLanes.ladder; for (let i = 0; i < 90; i++) L.feed(0.03); return L.ratio; }), 1);
+    await hop(page, () => { const h = window.hopLanes; h.kill(h.players[0], 'test'); });
+    await waitState(page, 'over', 60000);
+    await resultsVisible(page);   // a restart counts only once the results are up
+    await page.keyboard.press('Space');
+    await waitState(page, 'attract', 120000);
+    assert.equal(await hop(page, () => window.hopLanes.ladder.ratio), 1, 'a slow device keeps the lower setting for the next game');
+    assert.deepEqual(errors, []);
+  } finally { await context.close(); }
+});
+
+test('8e. a script error shows the crash notice instead of a frozen screen', async () => {
+  const { context, page, errors } = await open(INDEX);
+  try {
+    await waitState(page, 'attract');
+    await hop(page, () => window.hopLanes.boom());
+    await page.waitForFunction(() => /SOMETHING BROKE/.test(document.querySelector('#banner h2').textContent), null, { timeout: T });
+    assert.equal(await page.locator('#deck').isHidden(), true);
+    assert.equal(errors.length, 1, 'the error is logged once, not thrown to the page');
+    assert.match(errors[0], /^console: Error: test crash/);
   } finally { await context.close(); }
 });

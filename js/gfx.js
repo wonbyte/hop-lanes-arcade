@@ -1,3 +1,4 @@
+import { MOTION_KEY, loadText } from './storage.js';
 import { $, G, NIGHT_FULL, NIGHT_START, fail } from './core.js';
 import { glowU } from './voxel.js';
 
@@ -5,7 +6,7 @@ import { glowU } from './voxel.js';
 // ---------- three.js setup ----------
 const lowGpu = matchMedia('(pointer: coarse)').matches;              // phones/tablets: cheaper shadows and resolution
 const touchQuery = matchMedia('(pointer: coarse)');                  // touch hints follow the current input
-const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches || loadText(MOTION_KEY) === '1';   // the settings panel can ask for less
 const BLINK_STEPS = reduceMotion ? 2.5 : 8;                          // rail light on/off changes per second
 const stage = $('stage'), marquee = $('marquee');
 let renderer;

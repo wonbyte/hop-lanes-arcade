@@ -1,36 +1,14 @@
-import { MODES, difficultyAt } from './rules.js';
+import { BEHIND_LIMIT, COIN_CHANCE, COMBO_EVERY, COMBO_GAP, COUNTDOWN, DIFF_ROWS, EAGLE_IDLE, EAGLE_SWOOP, EAGLE_WARN, EDGE_DEATH, FIRST_ROW, HIT_PAD, HOP_TIME, MAGNET_REACH, MAGNET_TIME, MODES, PLAY_HALF, POWER_CHANCE, SHIELD_TIME, STEP, TRAIN_SPEED, TRAIN_WARN, WRAP, difficulty } from './rules.js';
 
 // Shared constants, the game state object and the one "can not load" screen.
 // ---------- tuning ----------
-const PLAY_HALF = 4;          // playable columns: -4..4
-const EDGE_DEATH = 5.4;       // carried this far on a log = swept away
-const WRAP = 15;              // traffic wraps at +-WRAP
-const HOP_TIME = 0.12;
-const HIT_PAD = 0.28;         // extra hit width around cars and trains
-const TRAIN_SPEED = 26;
-const TRAIN_WARN = 1.3;       // seconds the signal flashes before a train
+// what decides a run lives in rules.js (pure: sim.js and the score server use it too); the rest is here
 const LANES_AHEAD = 22, LANES_BEHIND = 12;
-const FIRST_ROW = -8;         // rows behind the start line that are built for scenery
-const BEHIND_LIMIT = 4.5;     // fall this far behind the scroll line and you are out
-const COUNTDOWN = 3;
 const RESULTS_DELAY = 1.1;    // seconds from last death to the results panel (and restart)
 const GO_TIME = 0.6;
 const WIPE_MS = 130;          // restart fade; the new world is built while the screen is covered
-const EAGLE_IDLE = 6;         // seconds without a hop before the eagle comes for you
-const EAGLE_SWOOP = 0.9;      // seconds the eagle takes to reach the player
-const EAGLE_WARN = 1.5;       // seconds before the swoop a warning sounds
-const COIN_CHANCE = { grass: 0.28, road: 0.18, lily: 0.4, mud: 0.3 };   // chance of a coin on a lane
 const PRIZE_COST = 50;        // coins for one turn of the prize machine
 const NIGHT_START = 90, NIGHT_FULL = 150;   // rows over which day turns into night
-const STEP = 1 / 120;         // the game steps at a fixed rate, so a replay plays back the same run
-const POWER_CHANCE = 0.05;    // chance of a power-up (shield or magnet) on a lane past row 10
-const COMBO_GAP = 0.45;       // seconds between hops that keep a combo alive
-const COMBO_EVERY = 5;        // hops of combo per bonus coin
-const SHIELD_TIME = 1.2;      // seconds a rescued player can not be hit
-const MAGNET_TIME = 8;        // seconds the magnet pulls coins
-const MAGNET_REACH = 1.6;     // columns the magnet reaches
-const DIFF_ROWS = 140;        // rows until the game reaches full difficulty
-const difficulty = r => difficultyAt(r, DIFF_ROWS);
 const TAU = Math.PI * 2;
 const $ = id => document.getElementById(id);
 
@@ -47,6 +25,7 @@ const G = {
   tick: 0,             // fixed steps since boot
   worldTick: 0,        // fixed steps since the world was built: traffic and trains run on this
   startTick: 0,        // worldTick when play began (saved in replays)
+  boom: false,         // #debug: hopLanes.boom() makes the next step throw (the crash notice test)
   countKey: '',        // the countdown banner that is showing (cleared to redraw it, e.g. after a pause)
   redraw: false,       // paused: draw one frame (the pause banner, a resize)
   playTick: 0,         // fixed steps since play began (replay time base)

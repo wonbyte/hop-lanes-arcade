@@ -10,6 +10,8 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="modulepreload" href="js/main.js">
 <link rel="modulepreload" href="js/rules.js">
+<link rel="modulepreload" href="js/gen.js">
+<link rel="modulepreload" href="js/sim.js">
 <link rel="modulepreload" href="js/core.js">
 <link rel="modulepreload" href="js/missions.js">
 <link rel="modulepreload" href="js/replay.js">
@@ -23,6 +25,7 @@
 <link rel="modulepreload" href="js/world.js">
 <link rel="modulepreload" href="js/players.js">
 <link rel="modulepreload" href="js/screens.js">
+<link rel="modulepreload" href="js/panels.js">
 <link rel="modulepreload" href="js/input.js">
 <link rel="modulepreload" href="js/app.js">
 <meta name="mobile-web-app-capable" content="yes">
@@ -53,8 +56,8 @@
     <div id="menu">
       <button type="button" id="mode">MODE: CLASSIC</button>
       <button type="button" id="prize">PRIZE &#183; 50 COINS</button>
-      <button type="button" id="handicap">HANDICAP: OFF</button>
-      <button type="button" id="lang" aria-label="Language">EN</button>
+      <button type="button" id="board" hidden data-i18n="TOP 10">TOP 10</button>
+      <button type="button" id="settings" data-i18n="SETTINGS">SETTINGS</button>
       <button type="button" id="install" hidden data-i18n="ADD TO HOME SCREEN">ADD TO HOME SCREEN</button>
       <div id="missions"><h3>MISSIONS</h3><ul><li></li><li></li><li></li></ul></div>
     </div>
@@ -63,13 +66,46 @@
     <div id="fps" hidden aria-hidden="true"></div>
     <div id="confetti" aria-hidden="true"></div>
     <div id="banner" hidden aria-live="polite"><h2></h2><p></p></div>
-    <div id="howto" role="dialog" aria-modal="true" aria-label="How to play" hidden>
+    <div id="howto" class="dialog" role="dialog" aria-modal="true" aria-label="How to play" hidden>
       <div class="box">
         <h2 data-i18n="HOW TO PLAY">HOW TO PLAY</h2>
         <p></p>
-        <button type="button" id="gotit" data-i18n="GOT IT">GOT IT</button>
+        <button type="button" id="gotit" class="go" data-i18n="GOT IT">GOT IT</button>
       </div>
     </div>
+    <div id="settingsBox" class="dialog" role="dialog" aria-modal="true" aria-labelledby="settingsTitle" hidden>
+      <div class="box">
+        <h2 id="settingsTitle" data-i18n="SETTINGS">SETTINGS</h2>
+        <div class="opts">
+          <button type="button" id="sound">SOUND: ON</button>
+          <button type="button" id="buzz">VIBRATION: ON</button>
+          <div class="opt"><span data-i18n="LANGUAGE">LANGUAGE</span><button type="button" id="lang" aria-label="Language">EN</button></div>
+          <button type="button" id="handicap">HANDICAP: OFF</button>
+          <button type="button" id="motion">MOTION: AUTO</button>
+          <p id="motionNote" data-i18n="MOTION CHANGES AFTER A RELOAD">MOTION CHANGES AFTER A RELOAD</p>
+        </div>
+        <button type="button" id="closeSettings" class="go" data-i18n="CLOSE">CLOSE</button>
+      </div>
+    </div>
+    <div id="boardBox" class="dialog" role="dialog" aria-modal="true" aria-labelledby="boardTitle" hidden>
+      <div class="box">
+        <h2 id="boardTitle" data-i18n="TOP 10">TOP 10</h2>
+        <ol id="boardList"></ol>
+        <p id="boardNote" hidden></p>
+        <button type="button" id="closeBoard" class="go" data-i18n="CLOSE">CLOSE</button>
+      </div>
+    </div>
+    <div id="pauseBox" class="dialog" role="dialog" aria-modal="true" aria-labelledby="pauseTitle" hidden>
+      <div class="box">
+        <h2 id="pauseTitle" data-i18n="PAUSED">PAUSED</h2>
+        <div class="opts">
+          <button type="button" id="resumeBtn" class="go" data-i18n="CONTINUE">CONTINUE</button>
+          <button type="button" id="restartBtn" data-i18n="RESTART">RESTART</button>
+          <button type="button" id="pauseMute">SOUND: ON</button>
+        </div>
+      </div>
+    </div>
+    <div id="live" class="sr-only" aria-live="polite"></div>
     <div id="wipe" aria-hidden="true"></div>
     <div id="results" hidden aria-live="polite">
       <h2 id="resTitle">GAME OVER</h2>

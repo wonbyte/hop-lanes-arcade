@@ -3,6 +3,7 @@ import { $, G, RESULTS_DELAY } from './core.js';
 import { stage } from './gfx.js';
 import { players, queueMove } from './players.js';
 import { cycleChar, hideHowto, join, pauseGame, restart, resumeGame } from './screens.js';
+import { closeDialog, dialogOpen } from './panels.js';
 
 // Input: keyboard, the on-screen buttons, and taps and swipes on the field.
 // ---------- input ----------
@@ -38,6 +39,8 @@ window.addEventListener('keydown', e => {
   const k = KEYS[e.code], start = e.code === 'Space' || e.code === 'Enter';
   // the first-run help closes on a game key (Tab and Shift still reach its button)
   if ((k || start || e.code === 'Escape') && hideHowto()) { e.preventDefault(); return; }
+  if (e.code === 'Escape' && G.state !== 'paused' && closeDialog()) { e.preventDefault(); return; }   // settings, top 10
+  if (dialogOpen() && G.state !== 'paused') return;   // a panel is open: keys go to its buttons
   if (k) { e.preventDefault(); press(...k); }
   else if (start) { e.preventDefault(); pressStart(); }
   else if (e.code === 'KeyP' || e.code === 'Escape') { if (G.state === 'paused') { audio(); resumeGame(); } else pauseGame(); }
@@ -86,7 +89,7 @@ function touchRing(clientX, clientY, i, r) {
   setTimeout(gone, 500);   // also without animations (reduced motion)
 }
 stage.addEventListener('pointerdown', e => {
-  if (e.button > 0 || e.target.closest('#cards, #howto, #menu, #results button, #results textarea, #mute')) return;
+  if (e.button > 0 || e.target.closest('#cards, #howto, #menu, #results button, #results textarea, #mute, .dialog .box')) return;
   const r = stage.getBoundingClientRect();   // one layout read per touch
   const i = fieldPlayer(e.clientX, r);
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, i, done: false });

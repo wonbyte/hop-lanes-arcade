@@ -1,9 +1,13 @@
-import { idleAudio, isMuted, sfx, startTune } from './audio.js';
+import { idleAudio, isMuted, sfx, startTune, stopTune, tuneOn } from './audio.js';
 import { $, COUNTDOWN, DEBUG, G, REPLAY_CODE, RESULTS_DELAY, STEP } from './core.js';
 import { pollGamepads } from './input.js';   // also sets up every input listener
 import { decodeReplay } from './replay.js';
+import { creepCamera } from './sim.js';
 import { CHARACTERS, LIGHT_OFF, lightGeo } from './models.js';
 import { CAM_OFF, SUN_OFF, camera, focus, getPixelRatio, renderer, scene, setNight, shadowCadence, sun, touchQuery, viewInfo, watchFrameTime } from './gfx.js';
+import { announceFrame } from './panels.js';   // also sets up the settings, pause and top-10 panels
+import { keepAwake } from './device.js';
+import { flushBank } from './storage.js';
 import { applyMoves, blobGeo, blobMat, bubbleGeo, bubbleMat, giveShield, kill, players, updateParts, updatePlayer } from './players.js';
 import { join, resultsEl, setBanner, setModeLabel, showHowto, startPlay, toAttract } from './screens.js';
 import { HOWTO_KEY, dailySeed, loadText, owned } from './storage.js';
@@ -30,9 +34,7 @@ function updateCamera(dt) {
   if (G.goT > 0 && (G.goT -= dt) <= 0) setBanner('');
   let lead = -Infinity;
   for (const p of players) if (p.joined && p.alive) lead = Math.max(lead, p.row);
-  // the camera creeps forward on its own, and catches up fast to a player who runs ahead
-  G.camRow += Math.min(1.1, 0.3 + G.playT * 0.006) * dt;
-  if (lead - 2 > G.camRow) G.camRow += (lead - 2 - G.camRow) * Math.min(1, dt * 3);
+  G.camRow = creepCamera(G.camRow, G.playT, lead, dt);   // the one copy of the creep rule (sim.js)
 }
 function placeCamera() {
   focus.set(0, 0, -(G.camRow + G.camLead));
@@ -48,6 +50,7 @@ function placeCamera() {
 
 // one fixed step of the game: the same hops on the same ticks give the same run (replays)
 function step(dt) {
+  if (DEBUG && G.boom) { G.boom = false; throw new Error('test crash'); }   // hopLanes.boom(): the crash notice test
   G.tick++; G.worldTick++; G.stateT += dt;
   if (G.state === 'countdown') updateCountdown(dt);
   else if (G.state === 'play') { G.playTick++; applyMoves(); updateCamera(dt); }
@@ -58,7 +61,26 @@ function step(dt) {
 }
 const DRAW_INTERVAL = 1000 / 60, MAX_STEPS = 6;   // after a long stall, time is dropped rather than caught up
 let lastT = performance.now(), nextDraw = 0, lastDraw = 0, acc = 0;
+// A script error must not leave a frozen screen: say so, and the next tap or key reloads the page.
+let crashed = false;
+function crash(err) {
+  if (crashed) return;
+  crashed = true;
+  try { console.error(err); } catch (e) {}
+  try { stopTune(); keepAwake(false); flushBank(); } catch (e) {}
+  for (const id of ['cards', 'deck', 'menu', 'results', 'howto', 'settingsBox', 'boardBox', 'pauseBox']) { const el = $(id); if (el) el.hidden = true; }
+  setBanner(t('SOMETHING BROKE'), t('TAP TO RESTART'));
+  const again = () => location.reload();
+  window.addEventListener('pointerdown', again, { once: true, capture: true });
+  window.addEventListener('keydown', again, { once: true, capture: true });
+}
+window.addEventListener('error', e => crash(e.error || e.message));
+window.addEventListener('unhandledrejection', e => crash(e.reason));
 function frame(now) {
+  if (crashed) return;
+  try { frameBody(now); } catch (err) { crash(err); }
+}
+function frameBody(now) {
   const rawDt = (now - lastT) / 1000;
   const dt = Math.max(0, Math.min(0.05, rawDt));
   lastT = now;
@@ -88,6 +110,7 @@ function frame(now) {
     spinAll(now);
     updateFarLanes();
     placeCamera();
+    announceFrame();
     shadowCadence(idle);
     renderer.render(scene, camera);
     if (lastDraw) watchFrameTime((now - lastDraw) / 1000);   // judge drawn frames only
@@ -128,7 +151,10 @@ if (DEBUG) {
     get startTick() { return G.startTick; },
     get replay() { return G.replay; },
     get weather() { return G.weather; },
-    get view() { return viewInfo(); }
+    get view() { return viewInfo(); },
+    get tune() { return tuneOn(); },
+    boom() { G.boom = true; },   // throw inside the next step: the crash notice
+    ladder: { feed: watchFrameTime, get ratio() { return getPixelRatio(); }, get shadow() { return sun.shadow.mapSize.x; } }
   };
 }
 // a replay link: the same world, the same animals, the same hops (a link with an unknown animal is ignored)

@@ -91,19 +91,32 @@ body {
 }
 #mute[aria-pressed="true"] { background: rgba(29,59,107,.5); color: #fff; }
 
-/* first-run help */
-#howto {
+/* dialogs: first-run help, settings, top 10, pause menu */
+.dialog {
   position: absolute; inset: 0; z-index: 9; background: var(--shade);
   display: flex; align-items: center; justify-content: center; padding: 16px;
 }
-#howto .box {
-  background: var(--deck); border-radius: 16px; padding: 20px 18px; max-width: 380px;
+.dialog .box {
+  background: var(--deck); border-radius: 16px; padding: 20px 18px; max-width: 380px; width: min(100%, 380px); box-sizing: border-box;
   font-family: var(--font-pixel); font-size: 9px; line-height: 2.1; text-align: center; box-shadow: 0 8px 0 rgba(0,0,0,.35);
 }
-#howto h2 { margin: 0 0 10px; font-size: 14px; color: var(--gold); }
-#howto p { margin: 0 0 14px; white-space: pre-line; }
-#gotit { font-family: var(--font-pixel); font-size: 10px; padding: 12px 18px; border-radius: 10px; background: var(--gold); color: #10131c; box-shadow: 0 4px 0 #a88a1c; }
-#gotit:active { transform: translateY(3px); box-shadow: 0 1px 0 #a88a1c; }
+.dialog h2 { margin: 0 0 10px; font-size: 14px; color: var(--gold); }
+.dialog p { margin: 0 0 14px; white-space: pre-line; }
+.dialog .go { font-family: var(--font-pixel); font-size: 10px; padding: 12px 18px; border-radius: 10px; background: var(--gold); color: #10131c; box-shadow: 0 4px 0 #a88a1c; }
+.dialog .go:active { transform: translateY(3px); box-shadow: 0 1px 0 #a88a1c; }
+.dialog .opts { display: flex; flex-direction: column; gap: 8px; margin: 0 0 14px; }
+.dialog .opts button:not(.go), .dialog .opt button {
+  font-family: var(--font-pixel); font-size: 8px; min-height: 36px; padding: 8px 12px; border-radius: 10px;
+  background: rgba(10,12,20,.6); color: var(--gold); box-shadow: 0 3px 0 rgba(0,0,0,.5); white-space: nowrap;
+}
+.dialog .opt { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 4px; }
+.dialog .opt button { min-width: 64px; }
+.dialog .opts p { margin: 0; font-size: 8px; opacity: .8; }
+#boardList { margin: 0 0 10px; padding: 0 4px; list-style: none; counter-reset: rank; text-align: left; }
+#boardList li { display: flex; justify-content: space-between; gap: 10px; counter-increment: rank; }
+#boardList li::before { content: counter(rank) '.'; color: var(--gold); min-width: 2.2em; }
+#boardList li span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#boardList li b { font-variant-numeric: tabular-nums; }
 #world { color: var(--gold); }
 
 /* title menu: mode and prize machine, under the logo */

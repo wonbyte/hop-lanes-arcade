@@ -28,6 +28,7 @@ const DAILY_KEY = 'hoplanes.dailychal.';
 const COINS_KEY = 'hoplanes.coins', OWNED_KEY = 'hoplanes.owned', PICK_KEY = 'hoplanes.pick';
 const HOWTO_KEY = 'hoplanes.howto', MUTE_KEY = 'hoplanes.mute', MODE_KEY = 'hoplanes.mode', INSTALL_KEY = 'hoplanes.install';
 const MISSIONS_KEY = 'hoplanes.missions', HANDICAP_KEY = 'hoplanes.handicap', ROOM_KEY = 'hoplanes.room';
+const MOTION_KEY = 'hoplanes.motion';   // '1': less motion, whatever the system setting says
 function loadText(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
 G.bank = load(COINS_KEY);   // coins collected over all games
 const owned = new Set(loadText(OWNED_KEY).split(',').filter(Boolean));
@@ -70,4 +71,4 @@ setBank(G.bank);
 // a game left open past midnight starts a new "today"
 setInterval(() => { if (dayKey() !== shownDay) { dropOldDays(); refreshBests(); } }, 60000);
 
-export { BEST_KEY, COINS_KEY, DAILY_KEY, DAY_PREFIX, HANDICAP_KEY, HOWTO_KEY, INSTALL_KEY, MISSIONS_KEY, ROOM_KEY, MODE_KEY, MUTE_KEY, OWNED_KEY, PICK_KEY, dailySeed, dayKey, deviceTag, dropOldDays, flushBank, load, loadText, owned, refreshBests, save, savedMode, setBank, today };
+export { BEST_KEY, COINS_KEY, DAILY_KEY, DAY_PREFIX, HANDICAP_KEY, HOWTO_KEY, INSTALL_KEY, MISSIONS_KEY, MOTION_KEY, ROOM_KEY, MODE_KEY, MUTE_KEY, OWNED_KEY, PICK_KEY, dailySeed, dayKey, deviceTag, dropOldDays, flushBank, load, loadText, owned, refreshBests, save, savedMode, setBank, today };

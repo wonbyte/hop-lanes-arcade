@@ -13,6 +13,8 @@ Dependency-free Node 20 server for an online top-10 list.
 | `MAX_SCORE` | `5000` | highest accepted score (override is meant for tests) |
 | `RATE_MAX` | `10` | POSTs per minute per client (override is meant for tests) |
 | `TRUST_PROXY` | unset | set to `1` behind a reverse proxy or TLS terminator: the rate limit then keys on the last `X-Forwarded-For` hop instead of the socket address (without it, every player behind the proxy shares one budget) |
+| `VERIFY` | unset | set to `1` to check every posted score by replaying the run (see below) |
+| `VERIFY_MS` | `1000` | wall-clock budget for replaying one run; a run that takes longer is rejected |
 | `SAVE_DELAY_MS` | `1000` | accepted POSTs are written to disk at most this often, and on exit (`0` writes at once) |
 
 ## Endpoints
@@ -28,7 +30,11 @@ Per-day boards: POST may also carry `day` (string `YYYY-MM-DD`) and `mode` (`cla
     curl 'http://localhost:8787/scores?day=2026-01-01&mode=daily'
     # {"top":[{"name":"Ann","score":120,"at":"2026-01-01T00:00:00.000Z","day":"2026-01-01","mode":"daily"}]}
 
-POST rules: name 1-16 chars (letters, digits, spaces), score integer 0..5000 (`MAX_SCORE`; 5001 gets 400), `day` no later than tomorrow (UTC), body at most 1 KB, 10 POSTs/min per IP (429 after that). IPv6 clients are limited per /64. If `POST_TOKEN` is set, POST must carry the header `X-Hop-Token` with that value (compared in constant time), else 401 `{"error":"bad token"}` (checked before the rate limit, so junk posts do not use up the budget); GET is unaffected. Bad input returns 400, other paths 404.
+POST rules: name 1-16 chars (letters, digits, spaces), score integer 0..5000 (`MAX_SCORE`; 5001 gets 400), `day` no later than tomorrow (UTC), body at most 24 KB, 10 POSTs/min per IP (429 after that). IPv6 clients are limited per /64. If `POST_TOKEN` is set, POST must carry the header `X-Hop-Token` with that value (compared in constant time), else 401 `{"error":"bad token"}` (checked before the rate limit, so junk posts do not use up the budget); GET is unaffected. Bad input returns 400, other paths 404.
+
+Replays: the game posts `replay`, the code of its replay link (`js/replay.js`: seed, mode, animals, handicap, the world tick play began on and every hop with its tick). Without `VERIFY` the field is only checked for shape (a string of at most 16384 URL-safe base64 characters, else 400) and is not stored. With `VERIFY=1` every POST must carry it, and the server plays the run again with `js/sim.js` (the game's own rules, no browser): the score must equal the higher score the replay plays to, the replay's mode must equal `mode`, and a `daily` run must be on that day's world (seed `hashString('hoplanes.day.' + day)`, as the game's `dailySeed()`); classic, race and room runs may be on any seed. Anything else is 400 `{"error":"replay mismatch"}`. A replay is at most an hour of play; the simulation costs about 1 µs per game tick once the server is warm (a 5-minute run is ~40 ms, an hour ~0.4 s) and is cut off after `VERIFY_MS`. Replaying is synchronous: with `VERIFY` keep `RATE_MAX` low. The server imports `../js/rules.js`, `../js/gen.js`, `../js/sim.js` and `../js/replay.js`, so deploy it next to the game's `js/` folder.
+
+This proves the score fits the hops, not that a person made the hops: a bot can still play the game. It stops edited scores and made-up runs that do not play out.
 
 Storage limits, so a flood of fake scores cannot wipe the board:
 

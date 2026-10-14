@@ -1,3 +1,4 @@
+import { TRAIN_CARS, TRAIN_CAR_LEN, TRAIN_GAP, trainLen } from './gen.js';   // car paint and train sizes are world data
 import { owned } from './storage.js';
 import { cachedGeo, voxelMesh } from './voxel.js';
 
@@ -303,7 +304,6 @@ const CHARACTERS = [
 ];
 const PRIZES = CHARACTERS.filter(c => c.prize).map(c => c.key);
 const isOwned = ch => (ch.price === 0 && !ch.prize) || owned.has(ch.key);
-const CAR_COLORS = [0xe8513a, 0x3a8ee8, 0xf2c33a, 0x8f5ae0, 0x3ac27a, 0xf27fb0];
 // the paint (pure white here) is tinted per instance; nothing else may be pure white
 function vehicleBoxes(truck, c = 0xffffff) {
   const len = truck ? 2.4 : 1.4;
@@ -327,8 +327,6 @@ const logBoxes = len => [
   [0.12, 0.27, 0.7, 0xc08a5a, -len / 2 + 0.05, -0.16, 0],
   [0.12, 0.27, 0.7, 0xc08a5a, len / 2 - 0.05, -0.16, 0]
 ];
-const TRAIN_CARS = 4, TRAIN_CAR_LEN = 3, TRAIN_GAP = 0.15;
-const trainLen = cars => cars * TRAIN_CAR_LEN + (cars - 1) * TRAIN_GAP;
 function trainBoxes(dir, cars = TRAIN_CARS) {
   const b = [], len = trainLen(cars), boss = cars > TRAIN_CARS;
   for (let i = 0; i < cars; i++) {
@@ -361,4 +359,4 @@ const LIGHT_TINT = { off: 0x331111, on: 0xff2222, red: 0xff2a2a, blue: 0x3a7bff 
 const LIGHT_OFF = new THREE.MeshLambertMaterial({ color: 0x331111 });
 const lightGeo = new THREE.BoxGeometry(0.38, 0.2, 0.14);
 
-export { CAR_COLORS, CHARACTERS, COLORS, LIGHT_OFF, LIGHT_TINT, PIX, PRIZES, TRAIN_CARS, TRAIN_CAR_LEN, TRAIN_GAP, bunnyBoxes, catBoxes, coinBoxes, drawPix, eagleBoxes, foxBoxes, frogBoxes, isOwned, lightBoxes, lightGeo, logBoxes, magnetBoxes, makeCharacter, penguinBoxes, pigBoxes, policeBoxes, robotBoxes, shieldBoxes, trainBoxes, trainLen, turtleBoxes, vehicleBoxes };
+export { CHARACTERS, COLORS, LIGHT_OFF, LIGHT_TINT, PIX, PRIZES, bunnyBoxes, catBoxes, coinBoxes, drawPix, eagleBoxes, foxBoxes, frogBoxes, isOwned, lightBoxes, lightGeo, logBoxes, magnetBoxes, makeCharacter, penguinBoxes, pigBoxes, policeBoxes, robotBoxes, shieldBoxes, trainBoxes, turtleBoxes, vehicleBoxes };

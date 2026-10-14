@@ -1,11 +1,16 @@
+import { loadText } from './storage.js';
 // Phone extras: vibration and keeping the screen awake. Both are optional.
 // ---------- phone extras: buzz and keep the screen on (both optional) ----------
 // browsers refuse to vibrate before the first touch or key (and log an error), so wait for one
+const BUZZ_KEY = 'hoplanes.buzz';
+let buzzOn = loadText(BUZZ_KEY) !== '0';
+const buzzIsOn = () => buzzOn;
+function setBuzz(on) { buzzOn = on; try { localStorage.setItem(BUZZ_KEY, on ? '1' : '0'); } catch (e) {} }
 let gestured = false;
 const noteGesture = () => { gestured = true; };
 window.addEventListener('pointerdown', noteGesture, { capture: true, once: true });
 window.addEventListener('keydown', noteGesture, { capture: true, once: true });
-function buzz(ms) { try { if (gestured && navigator.vibrate) navigator.vibrate(ms); } catch (e) {} }
+function buzz(ms) { try { if (buzzOn && gestured && navigator.vibrate) navigator.vibrate(ms); } catch (e) {} }
 let wakeLock = null, wakePending = false, wantAwake = false;
 async function keepAwake(on) {
   wantAwake = on;
@@ -24,4 +29,4 @@ document.addEventListener('visibilitychange', () => {
   if (wantAwake && document.visibilityState === 'visible') keepAwake(true);
 });
 
-export { buzz, keepAwake };
+export { buzz, buzzIsOn, keepAwake, setBuzz };

@@ -1,12 +1,16 @@
 // Hop Lanes optional online high-score server. Dependency-free, Node 20+.
 // Run: node server/scores.mjs
 // Env: PORT (8787), DATA_FILE (./scores.json next to this script), ALLOW_ORIGIN ('*'), POST_TOKEN ('' = none), MAX_SCORE (5000), RATE_MAX (10),
-//      TRUST_PROXY ('1' when a reverse proxy sits in front: the rate limit then keys on the client in X-Forwarded-For).
+//      TRUST_PROXY ('1' when a reverse proxy sits in front: the rate limit then keys on the client in X-Forwarded-For),
+//      VERIFY ('1': every POST must carry its replay, and the score must be what the replay plays to; see README.md), VERIFY_MS (1000).
 import http from 'node:http';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { hashString } from '../js/rules.js';
+import { decodeReplay } from '../js/replay.js';
+import { simulate } from '../js/sim.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT ?? 8787);
@@ -14,13 +18,16 @@ const DATA_FILE = process.env.DATA_FILE || path.join(HERE, 'scores.json');
 const ALLOW_ORIGIN = process.env.ALLOW_ORIGIN || '*';
 const POST_TOKEN = process.env.POST_TOKEN || ''; // when set, POSTs must send it as X-Hop-Token (an anti-bot gate, not a secret: the page ships it)
 const TRUST_PROXY = process.env.TRUST_PROXY === '1';
+const VERIFY = process.env.VERIFY === '1';
 const SAVE_DELAY_MS = Number(process.env.SAVE_DELAY_MS ?? 1000); // POSTs are written to disk at most this often (0 = at once)
 
 const MAX_PER_BUCKET = 200;    // entries kept per bucket (mode|day), so a flood in one bucket cannot evict the rest
 const MAX_SCORE = Number(process.env.MAX_SCORE ?? 5000); // highest accepted score (env override is for tests)
 const DAY_KEEP = 14;           // day buckets older than this many days behind the newest day are dropped
 const TOP_N = 10;              // entries returned
-const MAX_BODY = 1024;         // bytes
+const MAX_BODY = 24 * 1024;    // bytes (a replay code is at most MAX_REPLAY)
+const MAX_REPLAY = 16384;      // characters of a replay code: about 3000 hops, far past any real run
+const SIM_MS = Number(process.env.VERIFY_MS ?? 1000); // wall-clock budget for replaying one run (about 1 us per tick once warm: an hour of play is ~0.4 s)
 const RATE_MAX = Number(process.env.RATE_MAX ?? 10); // POSTs per window per IP (env override is for tests)
 const RATE_WINDOW_MS = 60_000;
 
@@ -196,7 +203,23 @@ function validate(obj) {
     if (!MODES.includes(obj.mode)) return null;
     mode = obj.mode;
   }
-  return { name, score, day, mode };
+  let replay = null;
+  if (obj.replay !== undefined) {   // the replay link code of the run (screens.js): checked with VERIFY, else only its shape
+    if (typeof obj.replay !== 'string' || obj.replay.length > MAX_REPLAY || !/^[\w-]+$/.test(obj.replay)) return null;
+    replay = obj.replay;
+  }
+  return { name, score, day, mode, replay };
+}
+
+// VERIFY: play the posted run again (sim.js, the same rules as the game) and accept only the score it plays to.
+// Daily runs must be on that day's world; classic, race and room runs may be on any seed.
+function replayOk(entry) {
+  if (!entry.replay) return false;
+  const rp = decodeReplay(entry.replay);
+  if (!rp || rp.mode !== entry.mode) return false;
+  if (rp.mode === 'daily' && (!entry.day || rp.seed !== hashString('hoplanes.day.' + entry.day))) return false;
+  const run = simulate(rp, { maxMs: SIM_MS });
+  return !!run && run.over && run.score === entry.score;
 }
 
 const server = http.createServer(async (req, res) => {
@@ -222,6 +245,7 @@ const server = http.createServer(async (req, res) => {
       try { parsed = JSON.parse(await readBody(req)); } catch { return send(res, 400, { error: 'bad json' }); }
       const entry = validate(parsed);
       if (!entry) return send(res, 400, { error: 'invalid name, score, day or mode' });
+      if (VERIFY && !replayOk(entry)) return send(res, 400, { error: 'replay mismatch' });
       add(entry.name, entry.score, entry.day, entry.mode);
       return send(res, 200, { top: top() });
     }
@@ -231,4 +255,4 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => console.log(`hop-lanes scores on :${server.address().port} (data: ${DATA_FILE})`));
+server.listen(PORT, () => console.log(`hop-lanes scores on :${server.address().port} (data: ${DATA_FILE})${VERIFY ? ' (verifying replays)' : ''}`));

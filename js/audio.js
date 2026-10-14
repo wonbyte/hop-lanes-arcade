@@ -16,6 +16,7 @@ let muted = loadText(MUTE_KEY) === '1';
 function setMuted(on) {
   muted = on;
   if (on) stopTune();
+  else if (G.state === 'attract') startTune();   // sound back on while on the title: the tune plays
   try { localStorage.setItem(MUTE_KEY, on ? '1' : '0'); } catch (e) {}
   const b = $('mute');
   b.setAttribute('aria-pressed', String(on));
@@ -76,10 +77,11 @@ function startTune() {
   };
   next();
 }
+const tuneOn = () => !!tuneTimer;
 function stopTune() { if (tuneTimer) { clearTimeout(tuneTimer); tuneTimer = 0; } }
 
 const isMuted = () => muted;
 // let the audio device sleep on long idle screens; audio() wakes it on the next input
 function idleAudio() { if (actx && actx.state === 'running') actx.suspend().catch(() => {}); }
 
-export { actx, audio, beep, idleAudio, isMuted, muted, setMuted, sfx, startTune, stopTune };
+export { actx, audio, beep, idleAudio, isMuted, muted, setMuted, sfx, startTune, stopTune, tuneOn };

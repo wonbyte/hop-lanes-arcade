@@ -8,7 +8,7 @@ except the small offline build script. Keep it that way.
 | Command | What it does |
 |---|---|
 | `npm install` | Installs Playwright and Three.js (test and build only; the game itself has no dependencies) |
-| `npm test` | Syntax check, `tests/rules.test.mjs` and `tests/replay.test.mjs` (pure code, instant), then the browser tests `smoke`, `layout`, `ui` and `scores-server` (~6 min) |
+| `npm test` | Syntax check, `tests/rules.test.mjs`, `tests/replay.test.mjs` and `tests/sim.test.mjs` (pure code, instant), then the browser tests `smoke`, `layout`, `ui` and `scores-server` (~6 min) |
 | `npm run check` | Syntax check only (fast) |
 | `npm run build` | Regenerates `hop-lanes-standalone.html` (python3, no network). Fails over 800 KB. CI fails if this file is stale |
 | `npm run build:three` | Regenerates `vendor/three.min.js` with esbuild from `tools/three-entry.js` (the Three.js names the game uses). CI fails if stale |
@@ -25,7 +25,9 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
 | `vendor/three.min.js` | Generated: a tree-shaken Three.js r186 (about 530 KB) exposing only the names the game uses as `window.THREE`. Add a name to `tools/three-entry.js` before using a new THREE class |
 | `css/style.css` | All styles. Media queries: `max-width: 520px` (phones), `max-width: 340px` (tiny phones), `orientation: landscape` (phone held sideways) |
 | `js/main.js` | Entry. Checks `window.THREE`, then `import('./app.js')` |
-| `js/rules.js` | Pure rules with no DOM or Three.js: seeded RNG, `nextLaneKind`, `hopTarget`, `hopTime` (mud), `MODES`, `isoDay` (the local YYYY-MM-DD). Tested by node directly: put logic here when it needs no scene |
+| `js/rules.js` | Pure rules with no DOM or Three.js: the tuning constants that decide a run (`STEP`, `HOP_TIME`, `PLAY_HALF`...; core.js re-exports them), seeded RNG, `nextLaneKind`, `hopTarget`, `hopTime` (mud), `MODES`, `isoDay` (the local YYYY-MM-DD). Tested by node directly: put logic here when it needs no scene |
+| `js/gen.js` | Pure: the world as data. `createWorldGen(seed).lane(r)`: kind (the chain of `nextLaneKind`), direction, speed, cars and logs (`x0`), trees, pads, coins, power-ups, the train schedule (`railStep`), plus the looks drawn from the same rng. `trafficX` (where a car or log is at world time w). The rng draw order here is the world: never reorder a draw |
+| `js/sim.js` | Pure: the rules of a run. `makeRules(W)` (hops, logs, hazards, shield, eagle; players.js calls it with effect hooks), `createSim(replay)` (stepping, countdown included) and `simulate(replay)` (to game over: score, ticks, row, cause). The score server runs it (`VERIFY=1`) |
 | `js/missions.js` | Pure: the mission list and the done/advance logic (`tests/replay.test.mjs`) |
 | `js/replay.js` | Pure: `encodeReplay` / `decodeReplay` for `#replay-<code>` links |
 | `js/i18n.js` | `t(key, args)`: English keys, Spanish and German tables; `data-i18n` for static markup; `#lang` cycles |
@@ -48,6 +50,10 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
 
 ## Conventions
 
+- Game rules live in rules/gen/sim; world.js and players.js only render them. Anything that changes the outcome of a
+  run goes there (tested by node), so the score server's `simulate()` and the browser can never disagree. Smoke test 5c
+  checks a browser replay against `simulate()`; `tests/sim.test.mjs` holds runs the browser played. (app.js
+  `updateCamera` still repeats `creepCamera` from sim.js.)
 - Shared mutable state goes in `G` (`js/core.js`). Modules never assign to an imported binding.
 - Every model is a list of `[w, h, d, color, x, y, z]` boxes (y = bottom). Characters face `-z` (forward).
 - World generation uses `worldRng`, reseeded per row from the world seed and the row number in `addLane`, so a row
@@ -110,7 +116,7 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
   on a state change (`paintSignal`, `o.lightRed`).
 - Phones use `BasicShadowMap` (hard edges, one shadow read per pixel) and a 512 shadow map; desktops `PCFShadowMap`
   (r186 removed `PCFSoftShadowMap`) and 1024. Chosen once at boot. The quality ladder retries a rung that helped
-  (pixel ratio 1.5 → 1.25 → 1.0) and starts over each game (`resetFrameWatch`). On the menus the shadow map is redrawn every other frame (`shadowCadence`).
+  (pixel ratio 1.5 → 1.25 → 1.0); the lowered setting stays for the next game, and every rung may be tried again (`resetFrameWatch`). On the menus the shadow map is redrawn every other frame (`shadowCadence`).
 - The window of built rows follows `visRows` (fewer rows on a sideways phone): `rowsBehind()` and the ahead limit in
   `ensureLanes`.
 - `near()`, `visRows` and `firstNeededRow()` decide which rows exist and sound; keep them in step with the camera.

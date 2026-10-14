@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-HmNfPmvzzPu/s/devQda0fRsGH4CXjvjAcDJi6240Cw=' 'sha256-9Ei81LqmP8rFWWDl6hxds2EcRQlvQvIG4zcV5iyUSNQ='; style-src 'sha256-3CTJE7fMMPkZ+V94de69x6Afg5zy3AwWLsIqeDEOEwg='; font-src data:; img-src data:; connect-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-HmNfPmvzzPu/s/devQda0fRsGH4CXjvjAcDJi6240Cw=' 'sha256-57q7r8M7CiM1buE8WqdkWOJXtTX/tNQaq0iW9V6uXQA='; style-src 'sha256-t95yYLWZ/t59/5EA9VGE29zarG5YVh8NKImkSjPuNWg='; font-src data:; img-src data:; connect-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Hop Lanes Arcade</title>
 <meta name="description" content="Two-player voxel arcade game: Frog vs Fox hop across roads, rivers and train tracks.">
 <meta name="theme-color" content="#10131c">
@@ -102,19 +102,32 @@ body {
 }
 #mute[aria-pressed="true"] { background: rgba(29,59,107,.5); color: #fff; }
 
-/* first-run help */
-#howto {
+/* dialogs: first-run help, settings, top 10, pause menu */
+.dialog {
   position: absolute; inset: 0; z-index: 9; background: var(--shade);
   display: flex; align-items: center; justify-content: center; padding: 16px;
 }
-#howto .box {
-  background: var(--deck); border-radius: 16px; padding: 20px 18px; max-width: 380px;
+.dialog .box {
+  background: var(--deck); border-radius: 16px; padding: 20px 18px; max-width: 380px; width: min(100%, 380px); box-sizing: border-box;
   font-family: var(--font-pixel); font-size: 9px; line-height: 2.1; text-align: center; box-shadow: 0 8px 0 rgba(0,0,0,.35);
 }
-#howto h2 { margin: 0 0 10px; font-size: 14px; color: var(--gold); }
-#howto p { margin: 0 0 14px; white-space: pre-line; }
-#gotit { font-family: var(--font-pixel); font-size: 10px; padding: 12px 18px; border-radius: 10px; background: var(--gold); color: #10131c; box-shadow: 0 4px 0 #a88a1c; }
-#gotit:active { transform: translateY(3px); box-shadow: 0 1px 0 #a88a1c; }
+.dialog h2 { margin: 0 0 10px; font-size: 14px; color: var(--gold); }
+.dialog p { margin: 0 0 14px; white-space: pre-line; }
+.dialog .go { font-family: var(--font-pixel); font-size: 10px; padding: 12px 18px; border-radius: 10px; background: var(--gold); color: #10131c; box-shadow: 0 4px 0 #a88a1c; }
+.dialog .go:active { transform: translateY(3px); box-shadow: 0 1px 0 #a88a1c; }
+.dialog .opts { display: flex; flex-direction: column; gap: 8px; margin: 0 0 14px; }
+.dialog .opts button:not(.go), .dialog .opt button {
+  font-family: var(--font-pixel); font-size: 8px; min-height: 36px; padding: 8px 12px; border-radius: 10px;
+  background: rgba(10,12,20,.6); color: var(--gold); box-shadow: 0 3px 0 rgba(0,0,0,.5); white-space: nowrap;
+}
+.dialog .opt { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 4px; }
+.dialog .opt button { min-width: 64px; }
+.dialog .opts p { margin: 0; font-size: 8px; opacity: .8; }
+#boardList { margin: 0 0 10px; padding: 0 4px; list-style: none; counter-reset: rank; text-align: left; }
+#boardList li { display: flex; justify-content: space-between; gap: 10px; counter-increment: rank; }
+#boardList li::before { content: counter(rank) '.'; color: var(--gold); min-width: 2.2em; }
+#boardList li span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#boardList li b { font-variant-numeric: tabular-nums; }
 #world { color: var(--gold); }
 
 /* title menu: mode and prize machine, under the logo */
@@ -354,8 +367,8 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
     <div id="menu">
       <button type="button" id="mode">MODE: CLASSIC</button>
       <button type="button" id="prize">PRIZE &#183; 50 COINS</button>
-      <button type="button" id="handicap">HANDICAP: OFF</button>
-      <button type="button" id="lang" aria-label="Language">EN</button>
+      <button type="button" id="board" hidden data-i18n="TOP 10">TOP 10</button>
+      <button type="button" id="settings" data-i18n="SETTINGS">SETTINGS</button>
       <button type="button" id="install" hidden data-i18n="ADD TO HOME SCREEN">ADD TO HOME SCREEN</button>
       <div id="missions"><h3>MISSIONS</h3><ul><li></li><li></li><li></li></ul></div>
     </div>
@@ -364,13 +377,46 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
     <div id="fps" hidden aria-hidden="true"></div>
     <div id="confetti" aria-hidden="true"></div>
     <div id="banner" hidden aria-live="polite"><h2></h2><p></p></div>
-    <div id="howto" role="dialog" aria-modal="true" aria-label="How to play" hidden>
+    <div id="howto" class="dialog" role="dialog" aria-modal="true" aria-label="How to play" hidden>
       <div class="box">
         <h2 data-i18n="HOW TO PLAY">HOW TO PLAY</h2>
         <p></p>
-        <button type="button" id="gotit" data-i18n="GOT IT">GOT IT</button>
+        <button type="button" id="gotit" class="go" data-i18n="GOT IT">GOT IT</button>
       </div>
     </div>
+    <div id="settingsBox" class="dialog" role="dialog" aria-modal="true" aria-labelledby="settingsTitle" hidden>
+      <div class="box">
+        <h2 id="settingsTitle" data-i18n="SETTINGS">SETTINGS</h2>
+        <div class="opts">
+          <button type="button" id="sound">SOUND: ON</button>
+          <button type="button" id="buzz">VIBRATION: ON</button>
+          <div class="opt"><span data-i18n="LANGUAGE">LANGUAGE</span><button type="button" id="lang" aria-label="Language">EN</button></div>
+          <button type="button" id="handicap">HANDICAP: OFF</button>
+          <button type="button" id="motion">MOTION: AUTO</button>
+          <p id="motionNote" data-i18n="MOTION CHANGES AFTER A RELOAD">MOTION CHANGES AFTER A RELOAD</p>
+        </div>
+        <button type="button" id="closeSettings" class="go" data-i18n="CLOSE">CLOSE</button>
+      </div>
+    </div>
+    <div id="boardBox" class="dialog" role="dialog" aria-modal="true" aria-labelledby="boardTitle" hidden>
+      <div class="box">
+        <h2 id="boardTitle" data-i18n="TOP 10">TOP 10</h2>
+        <ol id="boardList"></ol>
+        <p id="boardNote" hidden></p>
+        <button type="button" id="closeBoard" class="go" data-i18n="CLOSE">CLOSE</button>
+      </div>
+    </div>
+    <div id="pauseBox" class="dialog" role="dialog" aria-modal="true" aria-labelledby="pauseTitle" hidden>
+      <div class="box">
+        <h2 id="pauseTitle" data-i18n="PAUSED">PAUSED</h2>
+        <div class="opts">
+          <button type="button" id="resumeBtn" class="go" data-i18n="CONTINUE">CONTINUE</button>
+          <button type="button" id="restartBtn" data-i18n="RESTART">RESTART</button>
+          <button type="button" id="pauseMute">SOUND: ON</button>
+        </div>
+      </div>
+    </div>
+    <div id="live" class="sr-only" aria-live="polite"></div>
     <div id="wipe" aria-hidden="true"></div>
     <div id="results" hidden aria-live="polite">
       <h2 id="resTitle">GAME OVER</h2>
@@ -4677,6 +4723,31 @@ function hashString(s) {
 }
 const difficultyAt = (r, rows) => Math.min(1, Math.max(0, r) / rows);
 
+// ---------- tuning: everything that decides a run (core.js re-exports these for the browser modules) ----------
+const PLAY_HALF = 4;          // playable columns: -4..4
+const EDGE_DEATH = 5.4;       // carried this far on a log = swept away
+const WRAP = 15;              // traffic wraps at +-WRAP
+const HOP_TIME = 0.12;
+const HIT_PAD = 0.28;         // extra hit width around cars and trains
+const TRAIN_SPEED = 26;
+const TRAIN_WARN = 1.3;       // seconds the signal flashes before a train
+const FIRST_ROW = -8;         // rows behind the start line that are built for scenery
+const BEHIND_LIMIT = 4.5;     // fall this far behind the scroll line and you are out
+const COUNTDOWN = 3;
+const EAGLE_IDLE = 6;         // seconds without a hop before the eagle comes for you
+const EAGLE_SWOOP = 0.9;      // seconds the eagle takes to reach the player
+const EAGLE_WARN = 1.5;       // seconds before the swoop a warning sounds
+const COIN_CHANCE = { grass: 0.28, road: 0.18, lily: 0.4, mud: 0.3 };   // chance of a coin on a lane
+const STEP = 1 / 120;         // the game steps at a fixed rate, so a replay plays back the same run
+const POWER_CHANCE = 0.05;    // chance of a power-up (shield or magnet) on a lane past row 10
+const COMBO_GAP = 0.45;       // seconds between hops that keep a combo alive
+const COMBO_EVERY = 5;        // hops of combo per bonus coin
+const SHIELD_TIME = 1.2;      // seconds a rescued player can not be hit
+const MAGNET_TIME = 8;        // seconds the magnet pulls coins
+const MAGNET_REACH = 1.6;     // columns the magnet reaches
+const DIFF_ROWS = 140;        // rows until the game reaches full difficulty
+const difficulty = r => difficultyAt(r, DIFF_ROWS);
+
 // ---------- lanes ----------
 const LANE_KINDS = ['grass', 'road', 'river', 'lily', 'mud', 'rail'];
 const STREAK_MAX = { road: 4, river: 3, lily: 2, mud: 2, rail: 3 };   // longest run of one kind
@@ -4716,37 +4787,474 @@ const MODES = ['classic', 'race', 'daily', 'room'];
 // a local calendar day as YYYY-MM-DD, built by hand (locale date formats are not stable across browsers)
 const pad2 = n => String(n).padStart(2, '0');
 const isoDay = (d = new Date()) => d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+// World generation as data: no DOM, no Three.js. For a world seed and a row this gives everything about that row
+// that decides a run (kind, direction, speed, cars, logs, pads, trees, coins, power-ups, the train schedule) plus the
+// looks that use the same generator (tree heights, puddles, car paint), so the rng draws stay in one order.
+// world.js turns this data into meshes; sim.js (and the score server) play a run on it without a browser.
+
+const CAR_COLORS = [0xe8513a, 0x3a8ee8, 0xf2c33a, 0x8f5ae0, 0x3ac27a, 0xf27fb0];
+const TRAIN_CARS = 4, TRAIN_CAR_LEN = 3, TRAIN_GAP = 0.15;
+const trainLen = cars => cars * TRAIN_CAR_LEN + (cars - 1) * TRAIN_GAP;
+const LANE_SPAN = WRAP * 2 + 4;   // moving things in a lane wrap over this width
+const genRand = (r, a, b) => a + r() * (b - a);
+const genPick = (r, arr) => arr[Math.floor(r() * arr.length)];
+const playColumns = () => Array.from({ length: PLAY_HALF * 2 + 1 }, (_, i) => i - PLAY_HALF);
+
+// every row has its own generator from the seed and the row: a row is the same whatever rows were built before it
+const rowRng = (seed, r) => mulberry32((seed ^ Math.imul(r + 4096, 0x9e3779b1)) >>> 0);
+// the train schedule of a rail row has a generator of its own (it runs on world time, see railStep)
+const railSeed = (seed, r) => (seed ^ Math.imul(r + 1000, 0x9e3779b1)) >>> 0;
+// rain or snow, by 40-row chunk from row 20 on (world.js picks snow or rain; either makes traffic faster)
+function wetAt(seed, r) {
+  if (r < 20) return false;
+  const chunk = Math.floor(r / 40);
+  return mulberry32((seed ^ Math.imul(chunk + 7, 0x85ebca6b)) >>> 0)() < 0.25;
+}
+
+function placeCoin(rng, lane, cols) {
+  if (!cols.length) return;
+  lane.coins.set(genPick(rng, cols), true);
+}
+// a power-up (shield or magnet) on a free column, now and then past row 10
+function placePower(rng, lane, cols) {
+  if (lane.r <= 10 || !cols.length || rng() >= POWER_CHANCE) return;
+  const kind = rng() < 0.5 ? 'shield' : 'magnet';
+  const x = genPick(rng, cols.filter(c => !lane.coins.has(c)));
+  if (x === undefined) return;
+  lane.power = { x, kind };
+}
+// moving things in a lane share one wrap span so their gaps never drift; x0 is where one is at world time 0
+function fillObjs(rng, lane, count, make) {
+  const spacing = lane.span / count;
+  const x0 = genRand(rng, -lane.span / 2, -lane.span / 2 + 3);
+  for (let i = 0; i < count; i++) {
+    const o = make(spacing);
+    o.x = o.x0 = x0 + i * spacing + (o.jitter || 0);
+    lane.objs.push(o);
+  }
+}
+
+// One builder per lane kind. The order of the rng draws here IS the world: never reorder or add a draw before
+// another one, or every seed (and every saved replay) changes.
+const ROW_BUILDERS = {
+  grass(rng, lane) {
+    const { r, diff } = lane;
+    // now and then a hidden column just past the edge holds a coin worth three
+    lane.secret = r > 5 && rng() < 0.12 ? (rng() < 0.5 ? -1 : 1) * (PLAY_HALF + 1) : null;
+    lane.treeH = [];
+    let inPlay = 0;
+    for (let x = -12; x <= 12; x++) {
+      const out = Math.abs(x) > PLAY_HALF;
+      // column 0 never gets a tree, so there is always a way forward
+      const tree = out ? x !== lane.secret && rng() < 0.85
+        : r > 1 && x !== 0 && inPlay < 4 && rng() < 0.16 + diff * 0.08;
+      if (!tree) continue;
+      if (!out) inPlay++;
+      lane.trees.add(x);
+      lane.treeH.push([x, genPick(rng, [0.6, 0.9, 1.2, 1.5])]);
+    }
+    const free = playColumns().filter(x => !lane.trees.has(x));
+    if (r >= 1 && rng() < COIN_CHANCE.grass) placeCoin(rng, lane, free);
+    if (lane.secret !== null) placeCoin(rng, lane, [lane.secret]);
+    placePower(rng, lane, free);
+  },
+  road(rng, lane) {
+    const diff = lane.diff;
+    lane.speed = (genRand(rng, 1.6, 2.8) + diff * 2.4) * (lane.wet ? 1.1 : 1);   // rain or snow: drivers hurry
+    // further out, some roads are police chases: faster, with flashing lights
+    lane.police = diff > 0.3 && rng() < 0.22;
+    if (lane.police) lane.speed += 1.6;
+    const truck = !lane.police && rng() < 0.3, len = truck ? 2.4 : 1.4;
+    lane.truck = truck;
+    const rot = lane.dir > 0 ? Math.PI : 0;   // vehicle models face -x; turn them to face where they drive
+    fillObjs(rng, lane, Math.floor(genRand(rng, 2, 4) + diff * 1.5), spacing => {
+      const color = genPick(rng, CAR_COLORS);
+      return { rot, len, color, jitter: genRand(rng, 0, spacing * 0.35) };
+    });
+    if (rng() < COIN_CHANCE.road) placeCoin(rng, lane, playColumns());
+    placePower(rng, lane, playColumns());
+  },
+  river(rng, lane) {   // a river after a river flows the other way (the chain sets lane.dir)
+    const diff = lane.diff;
+    lane.speed = (genRand(rng, 1.0, 1.9) + diff * 1.0) * (lane.wet ? 1.2 : 1);   // rain or snow: faster water
+    fillObjs(rng, lane, Math.max(3, Math.floor(genRand(rng, 4, 6) - diff * 2)), () => {
+      const len = genPick(rng, [2, 3, 3, 4]) - (diff > 0.6 && rng() < 0.5 ? 1 : 0);
+      return { len };
+    });
+  },
+  // lily pads: still water with pads at a few columns; land on water and you sink
+  lily(rng, lane) {
+    lane.pads = new Set();
+    const cols = playColumns();
+    const count = Math.floor(genRand(rng, 3, 6));
+    while (lane.pads.size < count) lane.pads.add(genPick(rng, cols));
+    if (rng() < COIN_CHANCE.lily) placeCoin(rng, lane, [...lane.pads]);
+  },
+  // mud: safe, but a hop out of it is slow (rules.js hopTime). Puddles and reeds are looks, drawn from the same rng.
+  mud(rng, lane) {
+    lane.mudLooks = [];   // in draw order: { w, x, dz } a puddle, { reed: height, x } a reed
+    for (let x = -12; x <= 12; x++) {
+      if (rng() < 0.35) { const w = genPick(rng, [0.5, 0.7, 0.9]), dx = genRand(rng, -0.3, 0.3); lane.mudLooks.push({ w, x: x + dx, dz: genRand(rng, -0.25, 0.25) }); }
+      if (Math.abs(x) > PLAY_HALF && rng() < 0.5) lane.mudLooks.push({ reed: genPick(rng, [0.3, 0.5]), x });
+    }
+    if (rng() < COIN_CHANCE.mud) placeCoin(rng, lane, playColumns());
+    placePower(rng, lane, playColumns());
+  },
+  rail(rng, lane, seed) {
+    // the first rail past each 100 rows carries the boss train: twice as long, faster, more warning (set by the chain)
+    lane.cars = lane.boss ? TRAIN_CARS * 2 : TRAIN_CARS;
+    const len = trainLen(lane.cars);
+    lane.speed = TRAIN_SPEED * (lane.boss ? 1.25 : 1);
+    const first = genRand(rng, 2, 6);
+    // the schedule is seeded per lane and runs on world time: trains come at the same moments in a replay
+    Object.assign(lane, { timer: first, warned: false, rng: mulberry32(railSeed(seed, lane.r)), warn: TRAIN_WARN * (lane.boss ? 1.7 : 1),
+      pass: (2 * WRAP + len + 5) / lane.speed, nextStart: first });   // pass: seconds a train is on the track
+    lane.nextEnd = lane.nextStart + lane.pass;
+    lane.train = { len, x: 99, active: false };
+  }
+};
+
+// The rows of one world. A row depends on the row before it (runs of one kind, rivers that alternate, one boss train
+// per 100 rows), so the chain is walked from row 3 (rows below 4 are always grass) and remembered.
+// lane(r) returns a new data object every call: the caller owns its moving state (o.x, coins, the train schedule).
+function createWorldGen(seed) {
+  const heads = [];   // heads[r - 3]: { kind, streak, dir, bossChunk } after row r
+  const GRASS = { kind: 'grass', streak: 1, dir: 1, bossChunk: 0 };
+  const headOf = r => {
+    if (r < 3) return GRASS;
+    while (heads.length <= r - 3) {
+      const row = heads.length + 3;
+      heads.push(row === 3 ? GRASS : build(row, heads[heads.length - 1], true));
+    }
+    return heads[r - 3];
+  };
+  // headOnly: just the chain state (the kind and the direction are the first draws of a row)
+  function build(r, prev, headOnly) {
+    const rng = rowRng(seed, r);
+    const diff = difficulty(r);
+    const kind = nextLaneKind(r, diff, prev, rng);
+    let dir = rng() < 0.5 ? 1 : -1;
+    if (kind === 'river' && prev.kind === 'river') dir = -prev.dir;
+    const boss = kind === 'rail' && r >= 100 && Math.floor(r / 100) > prev.bossChunk;
+    if (headOnly) return { kind, streak: kind === prev.kind ? prev.streak + 1 : 1, dir, bossChunk: boss ? Math.floor(r / 100) : prev.bossChunk };
+    const lane = {
+      r, kind, diff, dir, speed: 0, span: LANE_SPAN, wet: wetAt(seed, r), prevKind: prev.kind, boss,
+      objs: [], trees: new Set(), coins: new Map(), secret: null, power: null
+    };
+    ROW_BUILDERS[kind](rng, lane, seed);
+    return lane;
+  }
+  return {
+    seed,
+    lane: r => build(r, headOf(r - 1), false),
+    kind: r => headOf(r).kind
+  };
+}
+
+// ---------- moving things: a function of the world clock (w = worldTick * STEP seconds) ----------
+// traffic and logs at world time w: where it started plus speed x time, wrapped
+function trafficX(lane, o, w) {
+  const half = lane.span / 2, x = o.x0 + lane.dir * lane.speed * w + half;
+  return x - Math.floor(x / lane.span) * lane.span - half;
+}
+// the rail at world time w: walk the seeded schedule forward (its draws depend on w only, so it is the same however
+// often this runs), then the train is either waiting or passing. Sets lane.train.x while passing; returns whether it is.
+function railStep(lane, w) {
+  while (w >= lane.nextEnd) {   // trains that have passed; far out, trains come twice as often
+    lane.nextStart = lane.nextEnd + genRand(lane.rng, 3.5 - lane.diff * 2, 8 - lane.diff * 4);
+    lane.nextEnd = lane.nextStart + lane.pass;
+    lane.warned = false;
+  }
+  const active = w >= lane.nextStart;
+  if (active) lane.train.x = -lane.dir * (WRAP + lane.train.len / 2 + 2) + lane.dir * lane.speed * (w - lane.nextStart);
+  return active;
+}
+// The run itself, without a screen: hops, logs, cars, trains, water, the eagle, the shield and the scroll line.
+// No DOM, no Three.js. players.js plays these rules in the browser (makeRules with effect hooks that move meshes and
+// make sounds); simulate() plays a replay with no effects, so the score server can check a posted score.
+// Everything here is step-driven (fixed STEP), so the browser and simulate() give the same run tick for tick.
+
+const START_X = [-2, 2];   // the columns the two players start on
+const RULE_HOOKS = ['hop', 'combo', 'kill', 'rescue', 'shield', 'power', 'coin', 'land', 'hopPose', 'stand', 'warn', 'eagle', 'swoop', 'label'];
+// a player's run state, as it is when the animal appears on row 0
+function resetPlayer(p) {
+  Object.assign(p, {
+    x: START_X[p.id], row: 0, alive: true, hop: null, queue: null, score: 0, idleT: 0, warned: false, eagle: null,
+    facing: 0, cause: '', log: null, logOff: 0, trainDir: 0, combo: 0, lastHop: -9, shield: false, safeT: 0, magnetT: 0
+  });
+}
+// the camera's scroll line: it creeps forward on its own, and catches up fast to a player who runs ahead.
+// (app.js updateCamera does the same in the browser; smoke test 5c checks the two agree.)
+function creepCamera(camRow, playT, lead, dt) {
+  camRow += Math.min(1.1, 0.3 + playT * 0.006) * dt;
+  if (lead - 2 > camRow) camRow += (lead - 2 - camRow) * Math.min(1, dt * 3);
+  return camRow;
+}
+// the rows whose lanes a player can touch this step (collisions and landings read cars, logs and trains only there)
+function touchRows(players, into) {
+  into.clear();
+  for (const p of players) {
+    if (!p.joined) continue;
+    for (let r = p.row - 1; r <= p.row + 1; r++) into.add(r);
+    if (p.hop) into.add(p.hop.fromRow);
+  }
+  return into;
+}
+// the replay feed: every hop due by this play tick, in order
+function feedReplay(rp, playTick, move) {
+  while (rp.i < rp.events.length && rp.events[rp.i][0] <= playTick) { const [, i, dx, dr] = rp.events[rp.i++]; move(i, dx, dr); }
+}
+
+// The rules of a player. W = { G, lane(r), coins(n), over(), fx }: G holds state, camRow, playT and run (stats or null);
+// lane(r) is the lane data of row r (gen.js plus the moving state: o.x, train.x/active, coins, power);
+// fx holds optional effect hooks (meshes, sounds, particles), called at the points where the old code made them.
+function makeRules(W) {
+  const G = W.G, fx = {};
+  for (const k of RULE_HOOKS) fx[k] = (W.fx && W.fx[k]) || (() => {});
+
+  function giveShield(p) { p.shield = true; fx.shield(p); }
+  function pickPower(p, lane) {
+    const pw = lane.power;
+    lane.power = null;
+    if (pw.kind === 'shield') giveShield(p); else p.magnetT = MAGNET_TIME;
+    if (G.run) G.run.powers++;
+    fx.power(p, lane, pw);
+  }
+  function collectCoin(p, lane, x, coin) {
+    lane.coins.delete(x);
+    const secret = lane.secret === x;
+    W.coins(secret ? 3 : 1);
+    if (secret && G.run) G.run.secrets++;
+    fx.coin(p, lane, x, coin, secret);
+  }
+  // the shield takes one hit: the player hops back to the nearest solid row behind and can not be hit for a moment.
+  // Returns false (the hit kills after all) when there is no solid row behind.
+  function rescue(p) {
+    let r = null;
+    for (let k = p.row - 1; k >= G.camRow - BEHIND_LIMIT; k--) {
+      const l = W.lane(k);
+      if (l && l.kind !== 'river' && l.kind !== 'lily') { r = k; break; }
+    }
+    if (r === null) return false;
+    p.shield = false;
+    p.safeT = SHIELD_TIME;
+    const tx = Math.max(-PLAY_HALF, Math.min(PLAY_HALF, Math.round(p.x)));
+    p.hop = { t: 0, dur: HOP_TIME * 2, fromRow: p.row, fx: p.x, fz: -p.row, tx, tz: -r, carry: null, carryX0: 0, span: 0 };
+    fx.rescue(p);   // before the row changes: the effect starts where the animal was
+    p.queue = null; p.log = null; p.row = r;
+    return true;
+  }
+  function updateMagnet(p, dt) {
+    p.magnetT = Math.max(0, p.magnetT - dt);
+    if (!p.magnetT) return;
+    for (let r = p.row - 1; r <= p.row + 1; r++) {
+      const lane = W.lane(r);
+      if (!lane) continue;
+      for (const [x, coin] of lane.coins) if (Math.abs(x - p.x) <= MAGNET_REACH) collectCoin(p, lane, x, coin);
+    }
+  }
+  function tryMove(p, dx, dr) {
+    if (!p.alive || p.eagle) return;   // once the eagle is coming there is no escape
+    if (p.hop) { p.queue = [dx, dr]; return; }
+    // facing: 0 = forward (-z), PI = back, +PI/2 = left, -PI/2 = right
+    p.facing = dr > 0 ? 0 : dr < 0 ? Math.PI : (dx > 0 ? -Math.PI / 2 : Math.PI / 2);
+    const tx = hopTarget(W.lane(p.row + dr), p.x, dx, PLAY_HALF);
+    if (tx === null) return;
+    if (p.row + dr < G.camRow - BEHIND_LIMIT) return;
+    const from = W.lane(p.row);
+    p.hop = {
+      t: 0, dur: hopTime(from && from.kind, HOP_TIME), fromRow: p.row, fx: p.x, fz: -p.row, tx, tz: -(p.row + dr),
+      carry: p.log, carryX0: p.log ? p.log.x : 0, span: p.log ? from.span : 0
+    };
+    p.row += dr;
+    p.idleT = 0; p.warned = false;
+    if (p.row > p.score) { p.score = p.row; if (G.run) G.run.row = Math.max(G.run.row, p.score); }
+    if (G.run) G.run.hops++;
+    // quick hops in a row build a combo; every COMBO_EVERY hops of it pay a coin
+    p.combo = G.playT - p.lastHop < COMBO_GAP ? p.combo + 1 : 1;
+    p.lastHop = G.playT;
+    if (G.run) G.run.combo = Math.max(G.run.combo, p.combo);
+    if (p.combo >= COMBO_EVERY && p.combo % COMBO_EVERY === 0) { W.coins(1); fx.combo(p); }
+    fx.hop(p);
+  }
+  function kill(p, cause) {
+    if (!p.alive) return;
+    // just after a rescue cars and trains pass through you, but water still does not hold you up
+    if ((cause === 'squash' || cause === 'train') && p.safeT > 0) return;
+    if ((cause === 'squash' || cause === 'train' || cause === 'splash') && p.shield && rescue(p)) return;
+    p.alive = false; p.cause = cause; p.hop = null;
+    fx.kill(p, cause);
+    W.over();
+  }
+  // returns false if the landing killed the player
+  function land(p, lane) {
+    const from = W.lane(p.hop.fromRow);
+    p.hop = null;
+    p.log = null;
+    if (lane && lane.kind === 'river') {
+      const log = lane.objs.find(o => Math.abs(o.x - p.x) < o.len / 2 + 0.05);
+      if (!log) { kill(p, 'splash'); return p.alive; }
+      // snap to the centre of the nearest log segment so standing feels solid
+      const k = (log.len - 1) / 2;
+      p.logOff = Math.max(-k, Math.min(k, Math.round(p.x - log.x + k) - k));
+      p.log = log;
+      if (G.run) G.run.logs++;
+    } else {
+      p.x = Math.round(p.x);
+      if (lane && lane.kind === 'lily' && !lane.pads.has(p.x)) { kill(p, 'splash'); return p.alive; }
+      if (G.run && from && from.kind === 'river' && lane && lane.r > from.r) G.run.rivers++;   // crossed a river
+      const coin = lane && lane.coins.get(p.x);
+      if (coin) collectCoin(p, lane, p.x, coin);
+      if (lane && lane.power && lane.power.x === p.x) pickPower(p, lane);
+    }
+    fx.land(p, lane);
+    if (p.queue) { const [qx, qr] = p.queue; p.queue = null; tryMove(p, qx, qr); }
+    return true;
+  }
+  function stepHop(p, lane, dt) {
+    const h = p.hop;
+    h.t += dt / h.dur;
+    const t = Math.min(1, h.t);
+    let drift = 0;
+    if (h.carry) {   // a hop that starts on a log moves with the log
+      drift = h.carry.x - h.carryX0;
+      if (Math.abs(drift) > h.span / 2) drift -= Math.sign(drift) * h.span;   // the log wrapped around
+    }
+    p.x = h.fx + (h.tx - h.fx) * t + drift;
+    fx.hopPose(p, t);
+    return t < 1 || land(p, lane);
+  }
+  // standing still (or riding a log); returns false if the log carried the player off the edge
+  function stand(p, dt) {
+    if (p.log) p.x = p.log.x + p.logOff;
+    fx.stand(p, dt);
+    if (p.log && Math.abs(p.x) > EDGE_DEATH) { kill(p, 'swept'); return false; }
+    return true;
+  }
+  function checkHazards(p, lane) {
+    // until mid-hop the player is still over the row they left
+    const hz = p.hop && p.hop.t < 0.5 ? W.lane(p.hop.fromRow) : lane;
+    if (hz && hz.kind === 'road') {
+      for (const o of hz.objs) if (Math.abs(o.x - p.x) < o.len / 2 + HIT_PAD) { kill(p, 'squash'); return; }
+    } else if (hz && hz.kind === 'rail' && hz.train.active) {
+      if (Math.abs(hz.train.x - p.x) < hz.train.len / 2 + HIT_PAD) { p.trainDir = hz.dir; kill(p, 'train'); return; }
+    }
+    if (p.row < G.camRow - BEHIND_LIMIT) kill(p, 'slow');
+  }
+  // one fixed step of a live player (the browser calls it from updatePlayer, simulate() directly)
+  function stepPlayer(p, dt) {
+    if (p.safeT > 0) p.safeT = Math.max(0, p.safeT - dt);
+    const ok = p.hop ? stepHop(p, W.lane(p.row), dt) : stand(p, dt);
+    if (ok && p.alive && !p.safeT) checkHazards(p, W.lane(p.row));
+    if (!p.alive || G.state !== 'play') return;
+    if (p.magnetT) { updateMagnet(p, dt); if (!p.magnetT) fx.label(p); }
+    if (p.combo && !p.hop && G.playT - p.lastHop > COMBO_GAP + 0.2) { p.combo = 0; fx.label(p); }
+    if (!p.hop) p.idleT += dt;
+    if (!p.warned && p.idleT > EAGLE_IDLE - EAGLE_SWOOP - EAGLE_WARN) { p.warned = true; fx.warn(p); }   // move, or the eagle comes
+    if (!p.eagle && p.idleT > EAGLE_IDLE - EAGLE_SWOOP) { p.eagle = { t: 0 }; fx.eagle(p); }
+    if (p.eagle) {   // the eagle swoops down; when it arrives it carries the player away
+      p.eagle.t = Math.min(1, p.eagle.t + dt / EAGLE_SWOOP);
+      fx.swoop(p);
+      if (p.eagle.t >= 1) kill(p, 'eagle');
+    }
+  }
+  return { giveShield, kill, stepPlayer, tryMove };
+}
+
+// is the game over? race: the first to die loses, at once; otherwise the game ends when nobody is left
+function runOver(players, mode) {
+  const both = players[0].joined && players[1].joined;
+  const race = mode === 'race' && both && players.some(p => p.joined && !p.alive);
+  return race || !players.some(p => p.joined && p.alive);
+}
+const topScore = players => Math.max(players[0].joined ? players[0].score : 0, players[1].joined ? players[1].score : 0);
+
+// A replay as a stepping simulation, from the countdown on, exactly as the browser plays it (app.js step()).
+// step() advances one fixed STEP and returns false once the game is over. players[i] are the live player states
+// (row, x, alive, score, hop { t, dur, fromRow, fx, fz, tx, tz } or null, log, cause): a renderer can draw a ghost
+// from them. end is set at game over: { score (the higher score, as posted), scores, endTick (play ticks) }.
+function createSim(rp) {
+  const gen = createWorldGen(rp.seed);
+  const lanes = new Map();
+  const lane = r => {
+    let l = lanes.get(r);
+    if (!l) { l = gen.lane(r); lanes.set(r, l); }
+    return l;
+  };
+  const S = { state: 'countdown', countdown: COUNTDOWN, camRow: 0, playT: 0, run: null };
+  // the browser starts the world clock so the countdown ends on the recorded tick (startPlay then sets it exactly)
+  let worldTick = Math.max(0, rp.startTick - Math.ceil(COUNTDOWN / STEP)), playTick = 0, end = null;
+  const players = [0, 1].map(id => ({ id, joined: !!rp.joined[id], alive: false, row: 0, x: 0, score: 0, hop: null, cause: '' }));
+  const rules = makeRules({
+    G: S, lane, coins() {},
+    over() {
+      if (S.state !== 'play' || !runOver(players, rp.mode)) return;
+      S.state = 'over';
+      end = { score: topScore(players), scores: players.map(p => (p.joined ? p.score : 0)), endTick: playTick };
+    }
+  });
+  for (const p of players) if (p.joined) { resetPlayer(p); if (rp.handicap === p.id + 1) rules.giveShield(p); }
+  const hot = new Set();
+  const feed = { events: rp.events, i: 0 };
+  function step() {
+    if (S.state === 'over') return false;
+    worldTick++;
+    if (S.state === 'countdown') {
+      S.countdown -= STEP;
+      if (S.countdown <= 0) { S.state = 'play'; S.playT = 0; playTick = 0; worldTick = rp.startTick; }   // screens.js startPlay
+    } else {
+      playTick++;
+      feedReplay(feed, playTick, (i, dx, dr) => rules.tryMove(players[i], dx, dr));
+      S.playT += STEP;
+      let lead = -Infinity;
+      for (const p of players) if (p.joined && p.alive) lead = Math.max(lead, p.row);
+      S.camRow = creepCamera(S.camRow, S.playT, lead, STEP);
+    }
+    const w = worldTick * STEP;
+    for (const r of touchRows(players, hot)) {
+      const l = lane(r);
+      if (l.kind === 'rail') l.train.active = railStep(l, w);
+      else if (l.kind === 'road' || l.kind === 'river') for (const o of l.objs) o.x = trafficX(l, o, w);
+    }
+    for (const p of players) if (p.joined && p.alive) rules.stepPlayer(p, STEP);
+    return S.state !== 'over';
+  }
+  return {
+    step, players, lane,
+    get tick() { return playTick; }, get worldTick() { return worldTick; }, get state() { return S.state; },
+    get camRow() { return S.camRow; }, get end() { return end; }
+  };
+}
+
+// Play a decoded replay (replay.js) to game over. Returns { score (the higher score, as posted), scores, endTick
+// (play ticks), row, cause (of the first joined player), over, players: [{ joined, row, x, score, alive, cause }] },
+// or null when the run does not end within maxTicks play ticks or takes longer than maxMs of wall-clock time.
+// until: stop at that play tick if the run is still on (over: false).
+function simulate(rp, { maxTicks = 120 * 60 * 61, maxMs = Infinity, until = Infinity } = {}) {
+  const sim = createSim(rp);
+  const t0 = maxMs < Infinity ? Date.now() : 0;
+  let res;
+  for (let n = 1; ; n++) {
+    if (!sim.step()) { res = { ...sim.end, over: true }; break; }
+    if (sim.state !== 'play') continue;
+    if (sim.tick >= until) { res = { score: topScore(sim.players), scores: sim.players.map(p => (p.joined ? p.score : 0)), endTick: sim.tick, over: false }; break; }
+    if (sim.tick >= maxTicks || (t0 && (n & 1023) === 0 && Date.now() - t0 > maxMs)) return null;
+  }
+  const players = sim.players, first = players[0].joined ? players[0] : players[1];
+  return {
+    ...res, row: first.row, cause: first.cause,
+    players: players.map(p => ({ joined: p.joined, row: p.row, x: p.x, score: p.score, alive: p.alive, cause: p.cause }))
+  };
+}
 // Shared constants, the game state object and the one "can not load" screen.
 // ---------- tuning ----------
-const PLAY_HALF = 4;          // playable columns: -4..4
-const EDGE_DEATH = 5.4;       // carried this far on a log = swept away
-const WRAP = 15;              // traffic wraps at +-WRAP
-const HOP_TIME = 0.12;
-const HIT_PAD = 0.28;         // extra hit width around cars and trains
-const TRAIN_SPEED = 26;
-const TRAIN_WARN = 1.3;       // seconds the signal flashes before a train
+// what decides a run lives in rules.js (pure: sim.js and the score server use it too); the rest is here
 const LANES_AHEAD = 22, LANES_BEHIND = 12;
-const FIRST_ROW = -8;         // rows behind the start line that are built for scenery
-const BEHIND_LIMIT = 4.5;     // fall this far behind the scroll line and you are out
-const COUNTDOWN = 3;
 const RESULTS_DELAY = 1.1;    // seconds from last death to the results panel (and restart)
 const GO_TIME = 0.6;
 const WIPE_MS = 130;          // restart fade; the new world is built while the screen is covered
-const EAGLE_IDLE = 6;         // seconds without a hop before the eagle comes for you
-const EAGLE_SWOOP = 0.9;      // seconds the eagle takes to reach the player
-const EAGLE_WARN = 1.5;       // seconds before the swoop a warning sounds
-const COIN_CHANCE = { grass: 0.28, road: 0.18, lily: 0.4, mud: 0.3 };   // chance of a coin on a lane
 const PRIZE_COST = 50;        // coins for one turn of the prize machine
 const NIGHT_START = 90, NIGHT_FULL = 150;   // rows over which day turns into night
-const STEP = 1 / 120;         // the game steps at a fixed rate, so a replay plays back the same run
-const POWER_CHANCE = 0.05;    // chance of a power-up (shield or magnet) on a lane past row 10
-const COMBO_GAP = 0.45;       // seconds between hops that keep a combo alive
-const COMBO_EVERY = 5;        // hops of combo per bonus coin
-const SHIELD_TIME = 1.2;      // seconds a rescued player can not be hit
-const MAGNET_TIME = 8;        // seconds the magnet pulls coins
-const MAGNET_REACH = 1.6;     // columns the magnet reaches
-const DIFF_ROWS = 140;        // rows until the game reaches full difficulty
-const difficulty = r => difficultyAt(r, DIFF_ROWS);
 const TAU = Math.PI * 2;
 const $ = id => document.getElementById(id);
 
@@ -4763,6 +5271,7 @@ const G = {
   tick: 0,             // fixed steps since boot
   worldTick: 0,        // fixed steps since the world was built: traffic and trains run on this
   startTick: 0,        // worldTick when play began (saved in replays)
+  boom: false,         // #debug: hopLanes.boom() makes the next step throw (the crash notice test)
   countKey: '',        // the countdown banner that is showing (cleared to redraw it, e.g. after a pause)
   redraw: false,       // paused: draw one frame (the pause banner, a resize)
   playTick: 0,         // fixed steps since play began (replay time base)
@@ -4904,6 +5413,7 @@ const DAILY_KEY = 'hoplanes.dailychal.';
 const COINS_KEY = 'hoplanes.coins', OWNED_KEY = 'hoplanes.owned', PICK_KEY = 'hoplanes.pick';
 const HOWTO_KEY = 'hoplanes.howto', MUTE_KEY = 'hoplanes.mute', MODE_KEY = 'hoplanes.mode', INSTALL_KEY = 'hoplanes.install';
 const MISSIONS_KEY = 'hoplanes.missions', HANDICAP_KEY = 'hoplanes.handicap', ROOM_KEY = 'hoplanes.room';
+const MOTION_KEY = 'hoplanes.motion';   // '1': less motion, whatever the system setting says
 function loadText(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
 G.bank = load(COINS_KEY);   // coins collected over all games
 const owned = new Set(loadText(OWNED_KEY).split(',').filter(Boolean));
@@ -4968,6 +5478,10 @@ const ES = {
   'Player 1: W A S D.  Player 2: arrow keys.\nCollect coins to unlock animals.\nStand still too long and the eagle gets you!':
     'Jugador 1: W A S D.  Jugador 2: flechas.\nJunta monedas para abrir animales.\n¡Si te quedas quieto, el águila te atrapa!',
   'HOW TO PLAY': 'CÓMO JUGAR', 'GOT IT': 'ENTENDIDO', BEST: 'RÉCORD', TODAY: 'HOY', COINS: 'MONEDAS', TAP: 'TAP', 'PLAYER 1': 'JUGADOR 1', 'PLAYER 2': 'JUGADOR 2',
+  SETTINGS: 'AJUSTES', 'SOUND: ON': 'SONIDO: SÍ', 'SOUND: OFF': 'SONIDO: NO', 'VIBRATION: ON': 'VIBRACIÓN: SÍ', 'VIBRATION: OFF': 'VIBRACIÓN: NO',
+  LANGUAGE: 'IDIOMA', 'MOTION: AUTO': 'MOVIMIENTO: AUTO', 'MOTION: LESS': 'MOVIMIENTO: MENOS', 'MOTION CHANGES AFTER A RELOAD': 'EL MOVIMIENTO CAMBIA AL RECARGAR',
+  CLOSE: 'CERRAR', CONTINUE: 'CONTINUAR', RESTART: 'REINICIAR', 'TOP 10': 'TOP 10', 'TODAY TOP 10': 'TOP 10 DE HOY', 'NO SCORES YET': 'AÚN NO HAY PUNTOS',
+  'COULD NOT LOAD THE LIST': 'NO SE PUDO CARGAR LA LISTA', 'SOMETHING BROKE': 'ALGO FALLÓ', 'TAP TO RESTART': 'TOCA PARA REINICIAR', 'PLAYER {n} ROW {m}': 'JUGADOR {n} FILA {m}',
   START: 'INICIO', P1: 'J1', P2: 'J2', 'P1 W A S D': 'J1 W A S D', 'P2 ARROWS': 'J2 FLECHAS', 'SPACE START': 'ESPACIO INICIO', 'SOUND ON': 'SONIDO SÍ', 'SOUND OFF': 'SONIDO NO',
   'ADD TO HOME SCREEN': 'AÑADIR A INICIO', 'TAP SHARE IN SAFARI, THEN "ADD TO HOME SCREEN"': 'TOCA COMPARTIR EN SAFARI Y LUEGO "AÑADIR A INICIO"',
   MAGNET: 'IMÁN', 'HANDICAP: OFF': 'VENTAJA: NO', 'SHIELD: P1': 'ESCUDO: J1', 'SHIELD: P2': 'ESCUDO: J2', 'ROOM CODE (4 LETTERS)': 'CÓDIGO DE SALA (4 LETRAS)',
@@ -4996,6 +5510,10 @@ const DE = {
   'Player 1: W A S D.  Player 2: arrow keys.\nCollect coins to unlock animals.\nStand still too long and the eagle gets you!':
     'Spieler 1: W A S D.  Spieler 2: Pfeiltasten.\nSammle Münzen für neue Tiere.\nStehst du zu lange still, holt dich der Adler!',
   'HOW TO PLAY': 'SO GEHT ES', 'GOT IT': 'ALLES KLAR', BEST: 'REKORD', TODAY: 'HEUTE', COINS: 'MÜNZEN', TAP: 'TAP', 'PLAYER 1': 'SPIELER 1', 'PLAYER 2': 'SPIELER 2',
+  SETTINGS: 'EINSTELLUNGEN', 'SOUND: ON': 'TON: AN', 'SOUND: OFF': 'TON: AUS', 'VIBRATION: ON': 'VIBRATION: AN', 'VIBRATION: OFF': 'VIBRATION: AUS',
+  LANGUAGE: 'SPRACHE', 'MOTION: AUTO': 'BEWEGUNG: AUTO', 'MOTION: LESS': 'BEWEGUNG: WENIGER', 'MOTION CHANGES AFTER A RELOAD': 'BEWEGUNG ÄNDERT SICH NACH NEULADEN',
+  CLOSE: 'SCHLIESSEN', CONTINUE: 'WEITER', RESTART: 'NEUSTART', 'TOP 10': 'TOP 10', 'TODAY TOP 10': 'TOP 10 HEUTE', 'NO SCORES YET': 'NOCH KEINE PUNKTE',
+  'COULD NOT LOAD THE LIST': 'LISTE KONNTE NICHT GELADEN WERDEN', 'SOMETHING BROKE': 'ETWAS IST KAPUTT', 'TAP TO RESTART': 'TIPPEN FÜR NEUSTART', 'PLAYER {n} ROW {m}': 'SPIELER {n} REIHE {m}',
   START: 'START', P1: 'S1', P2: 'S2', 'P1 W A S D': 'S1 W A S D', 'P2 ARROWS': 'S2 PFEILE', 'SPACE START': 'LEERTASTE START', 'SOUND ON': 'TON AN', 'SOUND OFF': 'TON AUS',
   'ADD TO HOME SCREEN': 'ZUM STARTBILDSCHIRM', 'TAP SHARE IN SAFARI, THEN "ADD TO HOME SCREEN"': 'IN SAFARI AUF TEILEN, DANN "ZUM HOME-BILDSCHIRM"',
   MAGNET: 'MAGNET', 'HANDICAP: OFF': 'HANDICAP: AUS', 'SHIELD: P1': 'SCHILD: S1', 'SHIELD: P2': 'SCHILD: S2', 'ROOM CODE (4 LETTERS)': 'RAUMCODE (4 BUCHSTABEN)',
@@ -5049,6 +5567,7 @@ let muted = loadText(MUTE_KEY) === '1';
 function setMuted(on) {
   muted = on;
   if (on) stopTune();
+  else if (G.state === 'attract') startTune();   // sound back on while on the title: the tune plays
   try { localStorage.setItem(MUTE_KEY, on ? '1' : '0'); } catch (e) {}
   const b = $('mute');
   b.setAttribute('aria-pressed', String(on));
@@ -5109,6 +5628,7 @@ function startTune() {
   };
   next();
 }
+const tuneOn = () => !!tuneTimer;
 function stopTune() { if (tuneTimer) { clearTimeout(tuneTimer); tuneTimer = 0; } }
 
 const isMuted = () => muted;
@@ -5117,11 +5637,15 @@ function idleAudio() { if (actx && actx.state === 'running') actx.suspend().catc
 // Phone extras: vibration and keeping the screen awake. Both are optional.
 // ---------- phone extras: buzz and keep the screen on (both optional) ----------
 // browsers refuse to vibrate before the first touch or key (and log an error), so wait for one
+const BUZZ_KEY = 'hoplanes.buzz';
+let buzzOn = loadText(BUZZ_KEY) !== '0';
+const buzzIsOn = () => buzzOn;
+function setBuzz(on) { buzzOn = on; try { localStorage.setItem(BUZZ_KEY, on ? '1' : '0'); } catch (e) {} }
 let gestured = false;
 const noteGesture = () => { gestured = true; };
 window.addEventListener('pointerdown', noteGesture, { capture: true, once: true });
 window.addEventListener('keydown', noteGesture, { capture: true, once: true });
-function buzz(ms) { try { if (gestured && navigator.vibrate) navigator.vibrate(ms); } catch (e) {} }
+function buzz(ms) { try { if (buzzOn && gestured && navigator.vibrate) navigator.vibrate(ms); } catch (e) {} }
 let wakeLock = null, wakePending = false, wantAwake = false;
 async function keepAwake(on) {
   wantAwake = on;
@@ -5506,7 +6030,6 @@ const CHARACTERS = [
 ];
 const PRIZES = CHARACTERS.filter(c => c.prize).map(c => c.key);
 const isOwned = ch => (ch.price === 0 && !ch.prize) || owned.has(ch.key);
-const CAR_COLORS = [0xe8513a, 0x3a8ee8, 0xf2c33a, 0x8f5ae0, 0x3ac27a, 0xf27fb0];
 // the paint (pure white here) is tinted per instance; nothing else may be pure white
 function vehicleBoxes(truck, c = 0xffffff) {
   const len = truck ? 2.4 : 1.4;
@@ -5530,8 +6053,6 @@ const logBoxes = len => [
   [0.12, 0.27, 0.7, 0xc08a5a, -len / 2 + 0.05, -0.16, 0],
   [0.12, 0.27, 0.7, 0xc08a5a, len / 2 - 0.05, -0.16, 0]
 ];
-const TRAIN_CARS = 4, TRAIN_CAR_LEN = 3, TRAIN_GAP = 0.15;
-const trainLen = cars => cars * TRAIN_CAR_LEN + (cars - 1) * TRAIN_GAP;
 function trainBoxes(dir, cars = TRAIN_CARS) {
   const b = [], len = trainLen(cars), boss = cars > TRAIN_CARS;
   for (let i = 0; i < cars; i++) {
@@ -5567,7 +6088,7 @@ const lightGeo = new THREE.BoxGeometry(0.38, 0.2, 0.14);
 // ---------- three.js setup ----------
 const lowGpu = matchMedia('(pointer: coarse)').matches;              // phones/tablets: cheaper shadows and resolution
 const touchQuery = matchMedia('(pointer: coarse)');                  // touch hints follow the current input
-const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches || loadText(MOTION_KEY) === '1';   // the settings panel can ask for less
 const BLINK_STEPS = reduceMotion ? 2.5 : 8;                          // rail light on/off changes per second
 const stage = $('stage'), marquee = $('marquee');
 let renderer;
@@ -5745,29 +6266,19 @@ function shadowCadence(idle) {
 }
 // test hook: how the view was fitted
 const viewInfo = () => { const sc = sun.shadow.camera; return { shadowW: sc.right - sc.left, shadowH: sc.top - sc.bottom, fogNear: scene.fog.near, fogFar: scene.fog.far, mapSize: sun.shadow.mapSize.x }; };
-// Lanes: building, scrolling, traffic, trains and coins. Seeded, so a seed always gives the same world.
+// Lanes: building, scrolling, traffic, trains and coins: the meshes of the world gen.js describes.
 // ---------- random ----------
-// The world is built from a seeded generator (rules.js), so a seed always gives the same lanes.
+// What is in a row comes from gen.js (seeded per row), so a seed always gives the same lanes; this file only draws them.
 // Traffic and trains are a function of the world clock (G.worldTick), not of frames: a lane built late, on a
 // bigger screen or in a replay is exactly where it would be anyway. Effects (particles) use Math.random.
-let worldSeed = 0, worldRng = Math.random;
-const rand = (a, b, r = worldRng) => a + r() * (b - a);
-const pick = (arr, r = worldRng) => arr[Math.floor(r() * arr.length)];
-const fxRand = (a, b) => rand(a, b, Math.random);
+let worldSeed = 0, worldGen = createWorldGen(0);
+const fxRand = (a, b) => a + Math.random() * (b - a);
 
 // ---------- world ----------
 const lanes = new Map();
 let maxRow = FIRST_ROW - 1;
 const worldGroup = new THREE.Group();
 scene.add(worldGroup);
-let lastKind = 'grass', streak = 0, bossChunk = 0;
-
-function laneKind(r) {
-  const k = nextLaneKind(r, difficulty(r), { kind: lastKind, streak }, worldRng);
-  streak = k === lastKind ? streak + 1 : 1;
-  lastKind = k;
-  return k;
-}
 
 // ---------- the fleet: every car, log and train of one model is one instanced draw call ----------
 // A plain mesh per vehicle meant ~100 draw calls (x2 with the shadow pass). An InstancedMesh draws all
@@ -5835,16 +6346,12 @@ class Inst {
   }
 }
 
-// moving things in a lane share one wrap span so their gaps never drift
-function fillTraffic(lane, count, z, makeObj) {
-  const spacing = lane.span / count;
-  const x0 = rand(-lane.span / 2, -lane.span / 2 + 3);
-  for (let i = 0; i < count; i++) {
-    const o = makeObj(spacing);
-    o.x = o.x0 = x0 + i * spacing + (o.jitter || 0);   // x0: where it is at world time 0
+// the cars or logs of a lane (gen.js placed them: x0 is where one is at world time 0)
+function placeTraffic(lane, z, makeInst) {
+  for (const o of lane.objs) {
+    o.inst = makeInst(o);
     o.z = z;
     o.inst.set(o.x, 0, z, o.rot || 0);
-    lane.objs.push(o);
   }
 }
 
@@ -5862,32 +6369,21 @@ function spinAll(now) {
   const rot = now / 300;
   for (const s of spinners) if (s.lane.shown) s.inst.set(s.x, 0, s.z, rot);
 }
-function placeCoin(lane, z, cols) {
-  if (!cols.length) return;
-  const x = pick(cols);
-  lane.coins.set(x, spinner(lane, 'coin', coinBoxes, x, z));
+// the coins (and a power-up) gen.js put on the lane: lane.coins maps a column to its spinner
+function placeCoins(lane, z) {
+  for (const x of lane.coins.keys()) lane.coins.set(x, spinner(lane, 'coin', coinBoxes, x, z));
+  const pw = lane.power;
+  if (pw) pw.s = spinner(lane, pw.kind, pw.kind === 'shield' ? shieldBoxes : magnetBoxes, pw.x, z);   // turns like a coin
 }
 const rippleBoxes = () => [[0.5, 0.02, 0.07, 0xd8f3ff, 0, -0.15, 0], [0.22, 0.02, 0.07, 0xd8f3ff, 0.5, -0.15, 0]];
-const playColumns = () => Array.from({ length: PLAY_HALF * 2 + 1 }, (_, i) => i - PLAY_HALF);
-// a power-up (shield or magnet) on a free column, now and then past row 10
-function placePower(lane, r, z, cols) {
-  if (r <= 10 || !cols.length || worldRng() >= POWER_CHANCE) return;
-  const kind = worldRng() < 0.5 ? 'shield' : 'magnet';
-  const x = pick(cols.filter(c => !lane.coins.has(c)));
-  if (x === undefined) return;
-  lane.power = { x, kind, s: spinner(lane, kind, kind === 'shield' ? shieldBoxes : magnetBoxes, x, z) };   // turns like a coin
-}
-// weather by 40-row chunk, seeded: rain (snow in December) from row 20 on; it changes the look and the traffic
+// weather by 40-row chunk, seeded (gen.js wetAt): rain (snow in December) from row 20 on; it changes the look and the traffic
 let snowSeason = new Date().getMonth() === 11;
 const weatherCache = new Map();   // 40-row chunk -> weather (asked every drawn frame; cleared with the world)
 function weatherAt(r) {
   if (r < 20) return '';
   const chunk = Math.floor(r / 40);
   let w = weatherCache.get(chunk);
-  if (w === undefined) {
-    const roll = mulberry32((worldSeed ^ Math.imul(chunk + 7, 0x85ebca6b)) >>> 0)();
-    weatherCache.set(chunk, w = roll < 0.25 ? (snowSeason ? 'snow' : 'rain') : '');
-  }
+  if (w === undefined) weatherCache.set(chunk, w = wetAt(worldSeed, r) ? (snowSeason ? 'snow' : 'rain') : '');
   return w;
 }
 // signal lights (rail crossing, police) are instances of one light model, painted per instance (LIGHT_TINT)
@@ -5895,59 +6391,29 @@ const LIGHT_Y_CAR = 0.88, LIGHT_Y_RAIL = 1.1, POLE_X = PLAY_HALF + 0.6, POLE_DZ 
 const newLight = tintKey => new Inst('light', lightBoxes, false, LIGHT_TINT[tintKey]);
 const carLightX = (lane, o) => o.x + (lane.dir > 0 ? -0.08 : 0.08);
 
-// One builder per lane type. Each adds its static boxes to `ground` (merged into one mesh later)
-// and its moving parts to lane.group / lane.objs.
+// One builder per lane type: the look of a row gen.js made. Each adds its static boxes to `ground` (merged into one
+// mesh later) and its moving parts to lane.objs. No random draws here: everything random is in the lane data.
 const LANE_BUILDERS = {
-  grass(lane, { r, z, diff, ground }) {
+  grass(lane, { r, z, ground }) {
     const snow = weatherAt(r) === 'snow';
     ground.push([40, 0.3, 1, snow ? (r % 2 ? 0xe6eef7 : 0xdbe6f2) : r % 2 ? 0xb7e05a : 0xaedb4f, 0, -0.3, z]);
-    // now and then a hidden column just past the edge holds a coin worth three
-    lane.secret = r > 5 && worldRng() < 0.12 ? (worldRng() < 0.5 ? -1 : 1) * (PLAY_HALF + 1) : null;
-    let inPlay = 0;
-    for (let x = -12; x <= 12; x++) {
-      const out = Math.abs(x) > PLAY_HALF;
-      // column 0 never gets a tree, so there is always a way forward
-      const tree = out ? x !== lane.secret && worldRng() < 0.85
-        : r > 1 && x !== 0 && inPlay < 4 && worldRng() < 0.16 + diff * 0.08;
-      if (!tree) continue;
-      if (!out) inPlay++;
-      lane.trees.add(x);
-      ground.push([0.3, 0.3, 0.3, 0x7a4b2a, x, 0, z], [0.72, pick([0.6, 0.9, 1.2, 1.5]), 0.72, snow ? 0xd4e6ec : 0xa9cf3a, x, 0.3, z]);
-    }
-    const free = playColumns().filter(x => !lane.trees.has(x));
-    if (r >= 1 && worldRng() < COIN_CHANCE.grass) placeCoin(lane, z, free);
-    if (lane.secret !== null) placeCoin(lane, z, [lane.secret]);
-    placePower(lane, r, z, free);
+    for (const [x, h] of lane.treeH) ground.push([0.3, 0.3, 0.3, 0x7a4b2a, x, 0, z], [0.72, h, 0.72, snow ? 0xd4e6ec : 0xa9cf3a, x, 0.3, z]);
   },
-  road(lane, { z, diff, prev, ground }) {
+  road(lane, { z, ground }) {
     ground.push([40, 0.3, 1, 0x4a4f5c, 0, -0.3, z]);
-    if (prev && prev.kind === 'road')
+    if (lane.prevKind === 'road')
       for (let x = -12; x <= 12; x += 2) ground.push([0.8, 0.02, 0.08, 0xe8e8e8, x, 0, z + 0.5]);
-    lane.speed = (rand(1.6, 2.8) + diff * 2.4) * (weatherAt(lane.r) ? 1.1 : 1);   // rain or snow: drivers hurry (same in any month)
     // further out, some roads are police chases: faster, with flashing lights
-    lane.police = diff > 0.3 && worldRng() < 0.22;
-    if (lane.police) lane.speed += 1.6;
-    const truck = !lane.police && worldRng() < 0.3, len = truck ? 2.4 : 1.4;
-    const rot = lane.dir > 0 ? Math.PI : 0;   // vehicle models face -x; turn them to face where they drive
-    fillTraffic(lane, Math.floor(rand(2, 4) + diff * 1.5), z, spacing => {
-      const c = pick(CAR_COLORS);
-      const inst = lane.police ? new Inst('police', policeBoxes, true) : new Inst(truck ? 'truck' : 'car', () => vehicleBoxes(truck), true, c);
-      const o = { inst, rot, len, jitter: rand(0, spacing * 0.35) };
+    placeTraffic(lane, z, o => {
+      const inst = lane.police ? new Inst('police', policeBoxes, true) : new Inst(lane.truck ? 'truck' : 'car', () => vehicleBoxes(lane.truck), true, o.color);
       if (lane.police) { o.light = newLight('red'); o.lightRed = true; }
-      return o;
+      return inst;
     });
     for (const o of lane.objs) if (o.light) o.light.set(carLightX(lane, o), LIGHT_Y_CAR, z);
-    if (worldRng() < COIN_CHANCE.road) placeCoin(lane, z, playColumns());
-    placePower(lane, lane.r, z, playColumns());
   },
-  river(lane, { z, diff, prev, ground }) {
+  river(lane, { z, ground }) {
     ground.push([40, 0.3, 1, 0x5ec8f0, 0, -0.45, z], [40, 0.02, 0.16, 0x74d3f5, 0, -0.16, z + 0.3]);   // a lighter streak: depth
-    if (prev && prev.kind === 'river') lane.dir = -prev.dir;
-    lane.speed = (rand(1.0, 1.9) + diff * 1.0) * (weatherAt(lane.r) ? 1.2 : 1);   // rain or snow: faster water
-    fillTraffic(lane, Math.max(3, Math.floor(rand(4, 6) - diff * 2)), z, () => {
-      const len = pick([2, 3, 3, 4]) - (diff > 0.6 && worldRng() < 0.5 ? 1 : 0);
-      return { inst: new Inst('log' + len, () => logBoxes(len), false), len };   // flat on the water, no shadow
-    });
+    placeTraffic(lane, z, o => new Inst('log' + o.len, () => logBoxes(o.len), false));   // flat on the water, no shadow
     // light ripples drift with the current (looks only: placed without the world generator, so seeds stay the same)
     lane.ripples = [0, 1, 2].map(i => {
       const q = { inst: new Inst('ripple', rippleBoxes, false), x0: -lane.span / 2 + (i + (lane.r * 0.37) % 1) * lane.span / 3, x: 0, z: z + (i - 1) * 0.24 };
@@ -5958,56 +6424,38 @@ const LANE_BUILDERS = {
   // lily pads: still water with pads at a few columns; land on water and you sink
   lily(lane, { z, ground }) {
     ground.push([40, 0.3, 1, 0x5ec8f0, 0, -0.45, z], [40, 0.02, 0.16, 0x74d3f5, 0, -0.16, z + 0.3]);
-    lane.pads = new Set();
-    const cols = playColumns();
-    const count = Math.floor(rand(3, 6));
-    while (lane.pads.size < count) lane.pads.add(pick(cols));
     for (const x of lane.pads) ground.push([0.78, 0.08, 0.78, 0x3f9f4a, x, -0.12, z], [0.2, 0.09, 0.2, 0xe66d8c, x + 0.2, -0.12, z - 0.2]);
-    if (worldRng() < COIN_CHANCE.lily) placeCoin(lane, z, [...lane.pads]);
   },
   // mud: safe, but a hop out of it is slow (rules.js hopTime), so the scroll line catches up
   mud(lane, { r, z, ground }) {
     ground.push([40, 0.3, 1, r % 2 ? 0x7a5536 : 0x74502f, 0, -0.3, z]);
-    for (let x = -12; x <= 12; x++) {
-      if (worldRng() < 0.35) ground.push([pick([0.5, 0.7, 0.9]), 0.02, 0.5, 0x5e3f24, x + rand(-0.3, 0.3), 0, z + rand(-0.25, 0.25)]);   // puddles
-      if (Math.abs(x) > PLAY_HALF && worldRng() < 0.5) ground.push([0.3, pick([0.3, 0.5]), 0.3, 0x8a7a3a, x, 0, z]);   // reeds
-    }
-    if (worldRng() < COIN_CHANCE.mud) placeCoin(lane, z, playColumns());
-    placePower(lane, r, z, playColumns());
+    for (const m of lane.mudLooks)
+      if (m.reed) ground.push([0.3, m.reed, 0.3, 0x8a7a3a, m.x, 0, z]);   // reeds
+      else ground.push([m.w, 0.02, 0.5, 0x5e3f24, m.x, 0, z + m.dz]);      // puddles
   },
-  rail(lane, { r, z, ground }) {
+  rail(lane, { z, ground }) {
     ground.push([40, 0.3, 1, 0x7b6f6a, 0, -0.3, z]);
-    // the first rail past each 100 rows carries the boss train: twice as long, faster, more warning
-    lane.boss = r >= 100 && Math.floor(r / 100) > bossChunk;
-    if (lane.boss) bossChunk = Math.floor(r / 100);
-    const cars = lane.boss ? TRAIN_CARS * 2 : TRAIN_CARS;
+    // the first rail past each 100 rows carries the boss train (lane.boss): twice as long, faster, more warning
     for (let x = -14; x <= 14; x += 0.7) ground.push([0.18, 0.06, 0.9, 0x5a3d2a, x, 0, z]);
     ground.push([40, 0.06, 0.08, 0x9aa3b5, 0, 0.05, z - 0.28], [40, 0.06, 0.08, 0x9aa3b5, 0, 0.05, z + 0.28],
                 [0.12, 1.3, 0.12, 0xeeeeee, POLE_X, 0, z + POLE_DZ]);
     lane.light = newLight('off'); lane.lightOn = false; lane.lightWant = false;   // lightOn: as painted; lightWant: the schedule's state
     lane.light.set(POLE_X, LIGHT_Y_RAIL, z + POLE_DZ);
-    // the train schedule is seeded per lane and runs on world time: trains come at the same moments in a replay
-    const rng = mulberry32((worldSeed ^ Math.imul(r + 1000, 0x9e3779b1)) >>> 0);
-    const speed = TRAIN_SPEED * (lane.boss ? 1.25 : 1), len = trainLen(cars);
-    const first = rand(2, 6);
-    Object.assign(lane, { timer: first, warned: false, lastBell: -1, rng, speed, warn: TRAIN_WARN * (lane.boss ? 1.7 : 1),
-      pass: (2 * WRAP + len + 5) / speed, nextStart: first });   // pass: seconds a train is on the track
-    lane.nextEnd = lane.nextStart + lane.pass;
-    lane.train = { inst: new Inst('train' + lane.dir + cars, () => trainBoxes(lane.dir, cars), true), len, x: 99, active: false };
+    lane.lastBell = -1;
+    // the train schedule (gen.js) is seeded per lane and runs on world time: trains come at the same moments in a replay
+    lane.train.inst = new Inst('train' + lane.dir + lane.cars, () => trainBoxes(lane.dir, lane.cars), true);
   }
 };
 
 function addLane(r) {
   // every row has its own generator from the seed and the row: a row is the same whatever rows were built
-  // before it (the first built row depends on the screen size), so a replay or a shared seed never drifts
-  worldRng = mulberry32((worldSeed ^ Math.imul(r + 4096, 0x9e3779b1)) >>> 0);
-  const kind = laneKind(r);
-  const lane = {
-    r, kind, group: new THREE.Group(), objs: [], trees: new Set(), coins: new Map(), shown: true,
-    dir: worldRng() < 0.5 ? 1 : -1, speed: 0, span: WRAP * 2 + 4
-  };
+  // before it (the first built row depends on the screen size)
+  // (gen.js), so a replay or a shared seed never drifts
+  const lane = worldGen.lane(r), kind = lane.kind;
+  lane.group = new THREE.Group(); lane.shown = true;
   const ground = [];
-  LANE_BUILDERS[kind](lane, { r, z: -r, diff: difficulty(r), prev: lanes.get(r - 1), ground });
+  LANE_BUILDERS[kind](lane, { r, z: -r, ground });
+  placeCoins(lane, -r);
   // unique per lane, disposed with the lane; flat ground does not cast shadows, trees and the rail pole do
   lane.ground = voxelMesh(mergeBoxes(ground), kind === 'grass' ? lane.trees.size > 0 : kind === 'rail');
   lane.ground.matrixAutoUpdate = false;
@@ -6097,8 +6545,7 @@ const near = r => G.state === 'play' && Math.abs(r - (G.camRow + G.camLead)) < G
 function moveTraffic(lane, w) {
   const half = lane.span / 2, travel = lane.dir * lane.speed * w, river = lane.kind === 'river', now = w * 1000;
   for (const o of lane.objs) {
-    const x = o.x0 + travel + half;
-    o.x = x - Math.floor(x / lane.span) * lane.span - half;
+    o.x = trafficX(lane, o, w);   // gen.js: the one formula (sim.js reads the same positions)
     o.inst.move(o.x, river ? Math.sin(now / 400 + o.x) * 0.02 : 0, o.z);
     if (o.light) {
       o.light.move(carLightX(lane, o), LIGHT_Y_CAR, o.z);
@@ -6115,18 +6562,12 @@ function moveTraffic(lane, w) {
     }
   }
 }
-// the rail at world time w: walk the seeded schedule forward, then the train is either waiting or passing.
-// The schedule (and its rng draws) depends on w only, so it is the same however often this runs.
+// the rail at world time w: gen.js railStep walks the seeded schedule forward (it depends on w only, so it is the
+// same however often this runs) and places a passing train; this adds the signal, the sounds and the meshes.
 // draw = false (a hidden lane): the schedule and the sounds still advance, nothing is written to the instances.
 function updateRail(lane, w, draw = true) {
   const tr = lane.train;
-  while (w >= lane.nextEnd) {   // trains that have passed; far out, trains come twice as often
-    const diff = difficulty(lane.r);
-    lane.nextStart = lane.nextEnd + rand(3.5 - diff * 2, 8 - diff * 4, lane.rng);
-    lane.nextEnd = lane.nextStart + lane.pass;
-    lane.warned = false;
-  }
-  const active = w >= lane.nextStart;
+  const active = railStep(lane, w);
   let on;
   if (!active) {
     lane.timer = lane.nextStart - w;
@@ -6135,7 +6576,6 @@ function updateRail(lane, w, draw = true) {
     if (lane.timer < lane.warn && !lane.warned) { lane.warned = true; if (near(lane.r)) { sfx.horn(); if (lane.boss) setTimeout(sfx.horn, 600); } }
     if (on && blink !== lane.lastBell && near(lane.r)) { lane.lastBell = blink; sfx.bell(); }
   } else {
-    tr.x = -lane.dir * (WRAP + tr.len / 2 + 2) + lane.dir * lane.speed * (w - lane.nextStart);
     on = Math.floor(w * BLINK_STEPS) % 2 === 1;
   }
   lane.lightWant = on;
@@ -6157,16 +6597,11 @@ function updateLane(lane, w, draw) {
 // outcome is exact whatever the screen or the frame rate. The rest of the lanes move once per drawn frame
 // (updateFarLanes); positions are a function of the world clock, so they are where they would be anyway.
 // `players`: the player objects (joined, row, hop.fromRow); without them every lane steps, as before.
-const hot = new Set();   // rows stepped by updateLanes
+const hot = new Set();   // rows stepped by updateLanes (sim.js touchRows: the same rows the simulation steps)
 function updateLanes(players = null) {
   const w = G.worldTick * STEP;
   if (!players) { for (const lane of lanes.values()) updateLane(lane, w, true); return; }
-  hot.clear();
-  for (const p of players) {
-    if (!p.joined) continue;
-    for (let r = p.row - 1; r <= p.row + 1; r++) hot.add(r);
-    if (p.hop) hot.add(p.hop.fromRow);
-  }
+  touchRows(players, hot);
   for (const r of hot) { const lane = lanes.get(r); if (lane) updateLane(lane, w, true); }
 }
 // once per drawn frame, before placeCamera(): the lanes no player can touch. A hidden lane gets no position
@@ -6205,7 +6640,8 @@ function resetWorld() {
   G.worldTick = 0;
   snowSeason = new Date().getMonth() === 11;
   weatherCache.clear();
-  maxRow = Math.min(FIRST_ROW, firstNeededRow()) - 1; lastKind = 'grass'; streak = 0; bossChunk = 0;
+  worldGen = createWorldGen(worldSeed);
+  maxRow = Math.min(FIRST_ROW, firstNeededRow()) - 1;
   while (maxRow < lastNeededRow()) addLane(maxRow + 1);
 }
 function ensureLanes() {
@@ -6225,7 +6661,8 @@ function laneKinds() {   // lane types for rows 0..30 (builds missing rows ahead
   for (let r = 0; r <= 30; r++) out.push(lanes.get(r).kind);
   return out;
 }
-// The two players: spawning, hopping, riding logs, coins, deaths and the eagle.
+// The two players: spawning, meshes, sounds and effects. The rules of a run (hops, logs, hazards, the shield, the
+// eagle) are sim.js makeRules, the same code the score server replays; the hooks below only draw and play sounds.
 // ---------- players ----------
 // the character each player picked last time (saved per player slot)
 function pickIndex(i, fallback) {
@@ -6250,11 +6687,8 @@ function spawn(p) {
   p.blob = new THREE.Mesh(blobGeo, blobMat);
   p.blob.visible = false;
   scene.add(p.blob);
-  Object.assign(p, {
-    x: p.startX, row: 0, alive: true, hop: null, queue: null, score: 0, idleT: 0, warned: false, eagle: null, breath: p.id * 1.7,
-    facing: 0, cause: '', log: null, logOff: 0, trainDir: 0,
-    combo: 0, lastHop: -9, shield: false, safeT: 0, magnetT: 0, label: ''
-  });
+  resetPlayer(p);
+  p.breath = p.id * 1.7; p.label = '';
   p.mesh.position.set(p.x, 0, 0);
   p.scoreEl.textContent = '0';
   setLabel(p);
@@ -6268,47 +6702,9 @@ function setLabel(p) {
 // ---------- power-ups ----------
 const bubbleMat = new THREE.MeshLambertMaterial({ color: 0x4fb8ff, transparent: true, opacity: 0.35 });
 const bubbleGeo = new THREE.BoxGeometry(1.05, 1.05, 1.05);
-function giveShield(p) {
-  p.shield = true;
+function showBubble(p) {
   if (!p.mesh.userData.bubble) { const b = new THREE.Mesh(bubbleGeo, bubbleMat); b.position.y = 0.5; p.mesh.add(b); p.mesh.userData.bubble = b; }
   p.mesh.userData.bubble.visible = true;
-}
-function pickPower(p, lane) {
-  const pw = lane.power;
-  lane.power = null;
-  dropSpinner(pw.s);
-  if (pw.kind === 'shield') giveShield(p); else p.magnetT = MAGNET_TIME;
-  if (G.run) G.run.powers++;
-  sfx.prize(); buzz(20);
-  burst(p.x, -p.row, pw.kind === 'shield' ? SPLASH : COIN_FX, 8);
-}
-// the shield takes one hit: the player hops back to the nearest solid row behind and can not be hit for a moment.
-// Returns false (the hit kills after all) when there is no solid row behind.
-function rescue(p) {
-  let r = null;
-  for (let k = p.row - 1; k >= G.camRow - BEHIND_LIMIT; k--) {
-    const l = lanes.get(k);
-    if (l && l.kind !== 'river' && l.kind !== 'lily') { r = k; break; }
-  }
-  if (r === null) return false;
-  p.shield = false;
-  p.mesh.userData.bubble.visible = false;
-  p.safeT = SHIELD_TIME;
-  sfx.eagle(); buzz(40);
-  burst(p.mesh.position.x, p.mesh.position.z, SPLASH, 10);
-  const tx = Math.max(-PLAY_HALF, Math.min(PLAY_HALF, Math.round(p.x)));
-  p.hop = { t: 0, dur: HOP_TIME * 2, fromRow: p.row, fx: p.x, fz: p.mesh.position.z, tx, tz: -r, carry: null, carryX0: 0, span: 0 };
-  p.queue = null; p.log = null; p.row = r;
-  return true;
-}
-function updateMagnet(p, dt) {
-  p.magnetT = Math.max(0, p.magnetT - dt);
-  if (!p.magnetT) return;
-  for (let r = p.row - 1; r <= p.row + 1; r++) {
-    const lane = lanes.get(r);
-    if (!lane) continue;
-    for (const [x, coin] of lane.coins) if (Math.abs(x - p.x) <= MAGNET_REACH) collectCoin(p, lane, x, coin);
-  }
 }
 function despawn(p) {
   if (p.mesh) { scene.remove(p.mesh); p.mesh = null; }
@@ -6317,28 +6713,26 @@ function despawn(p) {
   p.alive = false;
 }
 
-// ---------- the eagle: stand still too long and it carries you away ----------
+// ---------- the eagle: stand still too long and it carries you away (sim.js sends it; this draws it) ----------
 function sendEagle(p) {
   const mesh = voxelMesh(cachedGeo('eagle', eagleBoxes));
   const from = new THREE.Vector3(p.x, 6, -p.row - 5);
   mesh.position.copy(from);
   scene.add(mesh);
-  p.eagle = { mesh, from, t: 0 };
+  Object.assign(p.eagle, { mesh, from });
   sfx.eagle();
 }
-function updateEagle(p, dt) {
+function swoop(p) {   // swoop down to the player
   const e = p.eagle, m = e.mesh, pm = p.mesh;
-  if (p.alive) {                                 // swoop down to the player
-    e.t = Math.min(1, e.t + dt / EAGLE_SWOOP);
-    const k = e.t * e.t;
-    m.position.set(e.from.x + (pm.position.x - e.from.x) * k, e.from.y + (0.55 - e.from.y) * k, e.from.z + (pm.position.z - e.from.z) * k);
-    m.rotation.x = -0.5 * (1 - e.t);
-    if (e.t >= 1) kill(p, 'eagle');
-  } else {                                       // fly off with the player in its claws
-    m.position.y += dt * 5; m.position.z -= dt * 7;
-    pm.position.set(m.position.x, m.position.y - 0.5, m.position.z);
-    pm.rotation.z += dt * 2;
-  }
+  const k = e.t * e.t;
+  m.position.set(e.from.x + (pm.position.x - e.from.x) * k, e.from.y + (0.55 - e.from.y) * k, e.from.z + (pm.position.z - e.from.z) * k);
+  m.rotation.x = -0.5 * (1 - e.t);
+}
+function flyOff(p, dt) {   // fly off with the player in its claws
+  const m = p.eagle.mesh, pm = p.mesh;
+  m.position.y += dt * 5; m.position.z -= dt * 7;
+  pm.position.set(m.position.x, m.position.y - 0.5, m.position.z);
+  pm.rotation.z += dt * 2;
 }
 
 // hops are queued and applied at the start of the next fixed step, so a replay can play them on the same ticks
@@ -6347,7 +6741,7 @@ function queueMove(i, dx, dr) { moveQ.push([i, dx, dr]); }
 function applyMoves() {
   const rp = G.replay;
   if (rp) {   // a replay drives the players; the queue is dropped
-    while (rp.i < rp.events.length && rp.events[rp.i][0] <= G.playTick) { const [, i, dx, dr] = rp.events[rp.i++]; tryMove(players[i], dx, dr); }
+    feedReplay(rp, G.playTick, (i, dx, dr) => tryMove(players[i], dx, dr));
     moveQ.length = 0;
     return;
   }
@@ -6359,48 +6753,7 @@ function applyMoves() {
   }
   moveQ.length = 0;
 }
-function tryMove(p, dx, dr) {
-  if (!p.alive || p.eagle) return;   // once the eagle is coming there is no escape
-  if (p.hop) { p.queue = [dx, dr]; return; }
-  // rotation.y: 0 = forward (-z), PI = back, +PI/2 = left, -PI/2 = right
-  p.facing = dr > 0 ? 0 : dr < 0 ? Math.PI : (dx > 0 ? -Math.PI / 2 : Math.PI / 2);
-  const tx = hopTarget(lanes.get(p.row + dr), p.x, dx, PLAY_HALF);
-  if (tx === null) return;
-  if (p.row + dr < G.camRow - BEHIND_LIMIT) return;
-  const from = lanes.get(p.row);
-  p.hop = {
-    t: 0, dur: hopTime(from && from.kind, HOP_TIME), fromRow: p.row, fx: p.x, fz: -p.row, tx, tz: -(p.row + dr),
-    carry: p.log, carryX0: p.log ? p.log.x : 0, span: p.log ? from.span : 0
-  };
-  p.row += dr;
-  p.idleT = 0; p.warned = false;
-  if (p.row > p.score) { p.score = p.row; p.scoreEl.textContent = p.score; if (G.run) G.run.row = Math.max(G.run.row, p.score); }
-  if (G.run) G.run.hops++;
-  // quick hops in a row build a combo; every COMBO_EVERY hops of it pay a coin
-  p.combo = G.playT - p.lastHop < COMBO_GAP ? p.combo + 1 : 1;
-  p.lastHop = G.playT;
-  if (G.run) G.run.combo = Math.max(G.run.combo, p.combo);
-  if (p.combo >= COMBO_EVERY && p.combo % COMBO_EVERY === 0) { addCoins(1); sfx.coin(); burst(p.x, -p.row, COIN_FX, 4); }
-  setLabel(p);
-  if (p.hop.dur > HOP_TIME) sfx.mud(); else sfx.hop(p.id);
-  buzz(8);
-}
-
 const DEATH_SOUND = { splash: sfx.splash, slow: sfx.fall, eagle: sfx.fall };
-function kill(p, cause) {
-  if (!p.alive) return;
-  // just after a rescue cars and trains pass through you, but water still does not hold you up
-  if ((cause === 'squash' || cause === 'train') && p.safeT > 0) return;
-  if ((cause === 'squash' || cause === 'train' || cause === 'splash') && p.shield && rescue(p)) return;
-  p.alive = false; p.cause = cause; p.hop = null;
-  buzz(70);
-  (DEATH_SOUND[cause] || sfx.squash)();
-  const { x, z } = p.mesh.position;
-  if (cause === 'squash') { p.mesh.position.y = 0; p.mesh.userData.body.scale.set(1.35, 0.15, 1.35); }
-  else if (cause === 'splash') burst(x, z, SPLASH, 12);
-  else if (cause === 'slow') burst(x, z, DUST, 8);
-  checkOver();
-}
 
 // small particle bursts: water for splashes, dust when a player is left behind
 // the meshes are pooled: a death makes no garbage, so no collector pause
@@ -6429,7 +6782,7 @@ function updateParts(dt) {
     else q.inst.move(q.x, q.y, q.z);
   }
 }
-// coins from play go to the bank (saved at game over); a replay pays nothing
+// coins from play go to the bank (saved at game over); a replay pays nothing (the stats count them)
 function addCoins(n) {
   if (G.run) G.run.coins += n;
   if (!G.replay) setBank(G.bank + n, true);
@@ -6451,101 +6804,83 @@ function animateDeath(p, dt) {
     m.position.y = Math.max(-0.6, m.position.y - dt * 0.8);
   }
 }
-function collectCoin(p, lane, x, coin) {
-  lane.coins.delete(x);
-  dropSpinner(coin);
-  const secret = lane.secret === x;
-  addCoins(secret ? 3 : 1);
-  if (secret && G.run) G.run.secrets++;
-  sfx.coin();
-  buzz(15);
-  burst(x, -lane.r, COIN_FX, secret ? 14 : 6);
-}
-// returns false if the landing killed the player
-function land(p, lane) {
-  const from = lanes.get(p.hop.fromRow);
-  p.hop = null;
-  p.log = null;
-  if (lane && lane.kind === 'river') {
-    const log = lane.objs.find(o => Math.abs(o.x - p.x) < o.len / 2 + 0.05);
-    if (!log) { kill(p, 'splash'); return p.alive; }
-    // snap to the centre of the nearest log segment so standing feels solid
-    const k = (log.len - 1) / 2;
-    p.logOff = THREE.MathUtils.clamp(Math.round(p.x - log.x + k) - k, -k, k);
-    p.log = log;
-    if (G.run) G.run.logs++;
-  } else {
-    p.x = Math.round(p.x);
-    if (lane && lane.kind === 'lily' && !lane.pads.has(p.x)) { kill(p, 'splash'); return p.alive; }
-    if (G.run && from && from.kind === 'river' && lane && lane.r > from.r) G.run.rivers++;   // crossed a river
-    const coin = lane && lane.coins.get(p.x);
-    if (coin) collectCoin(p, lane, p.x, coin);
-    if (lane && lane.power && lane.power.x === p.x) pickPower(p, lane);
+// what the rules do, shown: meshes, sounds, particles. Called by sim.js makeRules at the points where things happen.
+const playRules = makeRules({
+  G, lane: r => lanes.get(r), coins: addCoins, over: () => checkOver(),
+  fx: {
+    hop(p) {
+      p.scoreEl.textContent = p.score;
+      setLabel(p);
+      if (p.hop.dur > HOP_TIME) sfx.mud(); else sfx.hop(p.id);
+      buzz(8);
+    },
+    combo(p) { sfx.coin(); burst(p.x, -p.row, COIN_FX, 4); },
+    kill(p, cause) {
+      buzz(70);
+      (DEATH_SOUND[cause] || sfx.squash)();
+      const { x, z } = p.mesh.position;
+      if (cause === 'squash') { p.mesh.position.y = 0; p.mesh.userData.body.scale.set(1.35, 0.15, 1.35); }
+      else if (cause === 'splash') burst(x, z, SPLASH, 12);
+      else if (cause === 'slow') burst(x, z, DUST, 8);
+    },
+    rescue(p) {   // the hop back starts where the animal is drawn
+      p.mesh.userData.bubble.visible = false;
+      p.hop.fz = p.mesh.position.z;
+      sfx.eagle(); buzz(40);
+      burst(p.mesh.position.x, p.mesh.position.z, SPLASH, 10);
+    },
+    shield: showBubble,
+    power(p, lane, pw) {
+      dropSpinner(pw.s);
+      sfx.prize(); buzz(20);
+      burst(p.x, -p.row, pw.kind === 'shield' ? SPLASH : COIN_FX, 8);
+    },
+    coin(p, lane, x, coin, secret) {
+      dropSpinner(coin);
+      sfx.coin();
+      buzz(15);
+      burst(x, -lane.r, COIN_FX, secret ? 14 : 6);
+    },
+    land(p, lane) {
+      p.mesh.userData.body.scale.set(1.15, 0.8, 1.15);
+      // a small puff where the feet land: dust on land, mud in mud, a splash on a log or a pad
+      const wet = lane && (lane.kind === 'river' || lane.kind === 'lily');
+      if (!reduceMotion) burst(p.x, -p.row, wet ? SPLASH : lane && lane.kind === 'mud' ? MUD_FX : DUST, 3, 0.4);
+    },
+    hopPose(p, t) {
+      const h = p.hop, m = p.mesh;
+      m.position.set(p.x, Math.sin(t * Math.PI) * 0.45, h.fz + (h.tz - h.fz) * t);
+      const stretch = Math.sin(t * Math.PI) * 0.16;   // taller in the air, a little thinner
+      m.userData.body.scale.set(1 - stretch * 0.5, 1 + stretch, 1 - stretch * 0.5);
+    },
+    stand(p, dt) {   // standing still (or riding a log)
+      const m = p.mesh;
+      m.userData.body.scale.lerp(ONE, Math.min(1, dt * 14));
+      p.breath += dt;
+      m.userData.body.scale.y += Math.sin(p.breath * 5) * 0.02;   // a slow breath while standing
+      if (!p.log) { m.position.y = 0; return; }
+      m.position.x = p.x; m.position.y = 0.1;
+    },
+    warn() { sfx.warn(); },   // move, or the eagle comes
+    eagle: sendEagle,
+    swoop,
+    label: setLabel
   }
-  p.mesh.userData.body.scale.set(1.15, 0.8, 1.15);
-  // a small puff where the feet land: dust on land, mud in mud, a splash on a log or a pad
-  const wet = lane && (lane.kind === 'river' || lane.kind === 'lily');
-  if (!reduceMotion) burst(p.x, -p.row, wet ? SPLASH : lane && lane.kind === 'mud' ? MUD_FX : DUST, 3, 0.4);
-  if (p.queue) { const [qx, qr] = p.queue; p.queue = null; tryMove(p, qx, qr); }
-  return true;
-}
-function stepHop(p, lane, dt) {
-  const h = p.hop, m = p.mesh;
-  h.t += dt / h.dur;
-  const t = Math.min(1, h.t);
-  let drift = 0;
-  if (h.carry) {   // a hop that starts on a log moves with the log
-    drift = h.carry.x - h.carryX0;
-    if (Math.abs(drift) > h.span / 2) drift -= Math.sign(drift) * h.span;   // the log wrapped around
-  }
-  p.x = h.fx + (h.tx - h.fx) * t + drift;
-  m.position.set(p.x, Math.sin(t * Math.PI) * 0.45, h.fz + (h.tz - h.fz) * t);
-  const stretch = Math.sin(t * Math.PI) * 0.16;   // taller in the air, a little thinner
-  m.userData.body.scale.set(1 - stretch * 0.5, 1 + stretch, 1 - stretch * 0.5);
-  return t < 1 || land(p, lane);
-}
-// standing still (or riding a log); returns false if the log carried the player off the edge
-function stand(p, dt) {
-  const m = p.mesh;
-  m.userData.body.scale.lerp(ONE, Math.min(1, dt * 14));
-  p.breath += dt;
-  m.userData.body.scale.y += Math.sin(p.breath * 5) * 0.02;   // a slow breath while standing
-  if (!p.log) { m.position.y = 0; return true; }
-  p.x = p.log.x + p.logOff;
-  m.position.x = p.x; m.position.y = 0.1;
-  if (Math.abs(p.x) > EDGE_DEATH) { kill(p, 'swept'); return false; }
-  return true;
-}
-function checkHazards(p, lane) {
-  // until mid-hop the player is still over the row they left
-  const hz = p.hop && p.hop.t < 0.5 ? lanes.get(p.hop.fromRow) : lane;
-  if (hz && hz.kind === 'road') {
-    for (const o of hz.objs) if (Math.abs(o.x - p.x) < o.len / 2 + HIT_PAD) { kill(p, 'squash'); return; }
-  } else if (hz && hz.kind === 'rail' && hz.train.active) {
-    if (Math.abs(hz.train.x - p.x) < hz.train.len / 2 + HIT_PAD) { p.trainDir = hz.dir; kill(p, 'train'); return; }
-  }
-  if (p.row < G.camRow - BEHIND_LIMIT) kill(p, 'slow');
-}
+});
+const { giveShield, kill, tryMove } = playRules;
+
 function updatePlayer(p, dt) {
   if (!p.mesh) return;
   // standing a while, the animal looks around
   const look = p.alive && !p.hop && !p.eagle && p.idleT > 1.2 ? Math.sin((p.idleT - 1.2) * 1.8) * 0.4 : 0;
   turnToward(p.mesh, p.facing + look, dt);
-  if (!p.alive) { if (p.eagle) updateEagle(p, dt); else animateDeath(p, dt); return; }
-  if (p.safeT > 0) { p.safeT = Math.max(0, p.safeT - dt); p.mesh.visible = !p.safeT || Math.floor(p.safeT * 12) % 2 === 0; }
-  const lane = lanes.get(p.row);
-  const ok = p.hop ? stepHop(p, lane, dt) : stand(p, dt);
-  const air = p.hop && p.mesh.position.y > 0.08;   // the blob shows only while the animal is up
+  if (!p.alive) { if (p.eagle) flyOff(p, dt); else animateDeath(p, dt); return; }
+  playRules.stepPlayer(p, dt);
+  if (!p.mesh) return;
+  p.mesh.visible = !p.safeT || Math.floor(p.safeT * 12) % 2 === 0;
+  const air = p.alive && p.hop && p.mesh.position.y > 0.08;   // the blob shows only while the animal is up
   p.blob.visible = !!air;
   if (air) p.blob.position.set(p.mesh.position.x, 0.02, p.mesh.position.z);
-  if (ok && p.alive && !p.safeT) checkHazards(p, lanes.get(p.row));
-  if (!p.alive || G.state !== 'play') return;
-  if (p.magnetT) { updateMagnet(p, dt); if (!p.magnetT) setLabel(p); }
-  if (p.combo && !p.hop && G.playT - p.lastHop > COMBO_GAP + 0.2) { p.combo = 0; setLabel(p); }
-  if (!p.hop) p.idleT += dt;
-  if (!p.warned && p.idleT > EAGLE_IDLE - EAGLE_SWOOP - EAGLE_WARN) { p.warned = true; sfx.warn(); }   // move, or the eagle comes
-  if (!p.eagle && p.idleT > EAGLE_IDLE - EAGLE_SWOOP) sendEagle(p);
-  if (p.eagle) updateEagle(p, dt);
 }
 // Screens and flow: join cards and the shop, countdown, results, restart, pause, first-run help, online scores.
 // ---------- screens ----------
@@ -6648,6 +6983,7 @@ function payMissions() {   // at game over: which missions this run finished; re
 // everything that shows text in the current language
 function refreshTexts() {
   setModeLabel(); updatePrize(); setHandicap(G.handicap); showMissions(); setCards(); setMuted(isMuted());
+  document.dispatchEvent(new Event('hoplanes:lang'));   // panels.js relabels its buttons
   if (G.state === 'over') $('share').textContent = t('SHARE');
 }
 let menuNote = 0;
@@ -6848,7 +7184,8 @@ async function postScore(name, score) {
     const daily = G.mode === 'daily';
     const res = await fetch(SCORES_URL, {
       method: 'POST', headers: { 'Content-Type': 'application/json', ...(SCORES_TOKEN ? { 'X-Hop-Token': SCORES_TOKEN } : {}) },
-      body: JSON.stringify({ name, score, day: today(), mode: G.mode }), signal: ctrl.signal
+      // the run's replay code (the one in the replay link): a server with VERIFY=1 plays it again to check the score
+      body: JSON.stringify({ name, score, day: today(), mode: G.mode, replay: encodeReplay({ seed: getSeed(), mode: G.mode, chars: players.map(q => charOf(q).key), joined: players.map(q => q.joined), handicap: G.handicap, startTick: G.startTick, events: G.record }) }), signal: ctrl.signal
     });
     if (!res.ok) return;
     let top = (await res.json()).top;
@@ -6872,11 +7209,14 @@ function pauseGame() {
   pausedFrom = G.state; G.state = 'paused'; G.redraw = true;
   keepAwake(false);
   setBanner(t('PAUSED'), t(touchQuery.matches ? 'TAP TO CONTINUE' : 'PRESS ANY KEY'));
+  $('pauseBox').hidden = false;   // the pause menu (panels.js labels it)
+  document.dispatchEvent(new Event('hoplanes:pause'));
 }
 function resumeGame() {
   if (G.state !== 'paused') return;
   G.state = pausedFrom; G.goT = 0; G.countKey = '';   // the countdown number is drawn again
   setBanner('');
+  $('pauseBox').hidden = true;
   if (G.state === 'play') keepAwake(true);
 }
 document.addEventListener('visibilitychange', () => { if (document.hidden) pauseGame(); });
@@ -6921,6 +7261,111 @@ function hideHowto() {
   return true;
 }
 $('gotit').addEventListener('click', hideHowto);
+// Small panels over the field: settings, the pause menu, the online top 10, and the screen-reader announcer.
+// ---------- dialogs (one open at a time; Escape and the close button close it) ----------
+let openBox = null;
+function openDialog(id) {
+  closeDialog();
+  openBox = $(id); openBox.hidden = false;
+  const first = openBox.querySelector('button');
+  if (first) try { first.focus({ preventScroll: true }); } catch (e) {}
+}
+function closeDialog() {
+  if (!openBox) return false;
+  openBox.hidden = true; openBox = null;
+  return true;
+}
+const dialogOpen = () => !!openBox && !openBox.hidden;
+
+// ---------- settings: sound, vibration, language, handicap, motion ----------
+const motionLess = () => loadText(MOTION_KEY) === '1';
+function labelSettings() {
+  $('sound').textContent = t(isMuted() ? 'SOUND: OFF' : 'SOUND: ON');
+  $('buzz').textContent = t(buzzIsOn() ? 'VIBRATION: ON' : 'VIBRATION: OFF');
+  $('motion').textContent = t(motionLess() ? 'MOTION: LESS' : 'MOTION: AUTO');
+  $('settingsBox').querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+  $('settings').textContent = t('SETTINGS');
+  $('motionNote').textContent = t('MOTION CHANGES AFTER A RELOAD');
+}
+$('settings').addEventListener('click', () => { audio(); sfx.tick(); labelSettings(); openDialog('settingsBox'); });
+$('closeSettings').addEventListener('click', () => { sfx.tick(); closeDialog(); });
+$('sound').addEventListener('click', () => { audio(); setMuted(!isMuted()); labelSettings(); });
+$('buzz').addEventListener('click', () => { sfx.tick(); setBuzz(!buzzIsOn()); labelSettings(); });
+$('motion').addEventListener('click', () => { sfx.tick(); save(MOTION_KEY, motionLess() ? 0 : 1); labelSettings(); });
+$('lang').addEventListener('click', labelSettings);   // after screens.js has switched the language
+document.addEventListener('hoplanes:lang', labelSettings);
+
+// ---------- pause menu ----------
+document.addEventListener('hoplanes:pause', () => { labelPause(); openDialog('pauseBox'); });   // screens.js pauseGame() shows the box
+function labelPause() {
+  $('pauseBox').querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+  $('pauseMute').textContent = t(isMuted() ? 'SOUND: OFF' : 'SOUND: ON');
+}
+$('resumeBtn').addEventListener('click', () => { audio(); resumeGame(); });
+$('restartBtn').addEventListener('click', () => { audio(); sfx.tick(); closeDialog(); restart(); });
+$('pauseMute').addEventListener('click', () => { audio(); setMuted(!isMuted()); labelPause(); });
+
+// ---------- online top 10 (only when a score server is set) ----------
+const boardBtn = $('board');
+boardBtn.hidden = !SCORES_URL;
+async function openBoard() {
+  audio(); sfx.tick();
+  const daily = G.mode === 'daily';
+  $('boardBox').querySelector('h2').textContent = t(daily ? 'TODAY TOP 10' : 'TOP 10');
+  $('closeBoard').textContent = t('CLOSE');
+  const list = $('boardList');
+  list.textContent = '';
+  const note = $('boardNote');
+  note.textContent = '…'; note.hidden = false;
+  openDialog('boardBox');
+  try {
+    const u = new URL(SCORES_URL, location.href);
+    if (daily) { u.searchParams.set('day', today()); u.searchParams.set('mode', 'daily'); }
+    const ctrl = new AbortController();
+    setTimeout(() => ctrl.abort(), 4000);
+    const top = (await (await fetch(u, { signal: ctrl.signal })).json()).top;
+    if (!Array.isArray(top)) throw new Error('bad list');
+    list.textContent = '';
+    for (const e of top.slice(0, 10)) {
+      const li = document.createElement('li');
+      const name = document.createElement('span'), score = document.createElement('b');
+      name.textContent = String(e.name); score.textContent = String(e.score);
+      li.append(name, score); list.appendChild(li);
+    }
+    note.hidden = top.length > 0;
+    note.textContent = t('NO SCORES YET');
+  } catch (e) { note.textContent = t('COULD NOT LOAD THE LIST'); note.hidden = false; }
+}
+boardBtn.addEventListener('click', openBoard);
+$('closeBoard').addEventListener('click', () => { sfx.tick(); closeDialog(); });
+boardBtn.textContent = t('TOP 10');
+document.addEventListener('hoplanes:lang', () => { boardBtn.textContent = t('TOP 10'); });
+
+// ---------- screen reader announcer: the state changes and every 10 rows ----------
+const live = $('live');
+let liveText = '';
+function announce(text) {
+  if (text === liveText) text += ' ';   // the same text again is still an update
+  liveText = text; live.textContent = text;
+}
+let lastState = '', lastRows = [0, 0];
+function announceFrame() {
+  if (G.state !== lastState) {
+    lastState = G.state;
+    if (G.state === 'play') { lastRows = [0, 0]; announce(t('GO!')); }
+    else if (G.state === 'over') {
+      const parts = players.filter(p => p.joined).map(p => t('PLAYER {n}', { n: p.id + 1 }) + ' ' + p.score);
+      announce(t('GAME OVER') + '. ' + parts.join(', ') + '. ' + $('resNote').textContent);
+    } else if (G.state === 'paused') announce(t('PAUSED'));
+    return;
+  }
+  if (G.state !== 'play') return;
+  for (const p of players) {
+    if (!p.joined) continue;
+    const tens = Math.floor(p.score / 10);
+    if (tens > lastRows[p.id]) { lastRows[p.id] = tens; announce(t('PLAYER {n} ROW {m}', { n: p.id + 1, m: tens * 10 })); }
+  }
+}
 // Input: keyboard, the on-screen buttons, and taps and swipes on the field.
 // ---------- input ----------
 const canRestart = () => G.state === 'over' && G.stateT > RESULTS_DELAY && !G.restarting;
@@ -6955,6 +7400,8 @@ window.addEventListener('keydown', e => {
   const k = KEYS[e.code], start = e.code === 'Space' || e.code === 'Enter';
   // the first-run help closes on a game key (Tab and Shift still reach its button)
   if ((k || start || e.code === 'Escape') && hideHowto()) { e.preventDefault(); return; }
+  if (e.code === 'Escape' && G.state !== 'paused' && closeDialog()) { e.preventDefault(); return; }   // settings, top 10
+  if (dialogOpen() && G.state !== 'paused') return;   // a panel is open: keys go to its buttons
   if (k) { e.preventDefault(); press(...k); }
   else if (start) { e.preventDefault(); pressStart(); }
   else if (e.code === 'KeyP' || e.code === 'Escape') { if (G.state === 'paused') { audio(); resumeGame(); } else pauseGame(); }
@@ -7003,7 +7450,7 @@ function touchRing(clientX, clientY, i, r) {
   setTimeout(gone, 500);   // also without animations (reduced motion)
 }
 stage.addEventListener('pointerdown', e => {
-  if (e.button > 0 || e.target.closest('#cards, #howto, #menu, #results button, #results textarea, #mute')) return;
+  if (e.button > 0 || e.target.closest('#cards, #howto, #menu, #results button, #results textarea, #mute, .dialog .box')) return;
   const r = stage.getBoundingClientRect();   // one layout read per touch
   const i = fieldPlayer(e.clientX, r);
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, i, done: false });
@@ -7080,9 +7527,7 @@ function updateCamera(dt) {
   if (G.goT > 0 && (G.goT -= dt) <= 0) setBanner('');
   let lead = -Infinity;
   for (const p of players) if (p.joined && p.alive) lead = Math.max(lead, p.row);
-  // the camera creeps forward on its own, and catches up fast to a player who runs ahead
-  G.camRow += Math.min(1.1, 0.3 + G.playT * 0.006) * dt;
-  if (lead - 2 > G.camRow) G.camRow += (lead - 2 - G.camRow) * Math.min(1, dt * 3);
+  G.camRow = creepCamera(G.camRow, G.playT, lead, dt);   // the one copy of the creep rule (sim.js)
 }
 function placeCamera() {
   focus.set(0, 0, -(G.camRow + G.camLead));
@@ -7098,6 +7543,7 @@ function placeCamera() {
 
 // one fixed step of the game: the same hops on the same ticks give the same run (replays)
 function step(dt) {
+  if (DEBUG && G.boom) { G.boom = false; throw new Error('test crash'); }   // hopLanes.boom(): the crash notice test
   G.tick++; G.worldTick++; G.stateT += dt;
   if (G.state === 'countdown') updateCountdown(dt);
   else if (G.state === 'play') { G.playTick++; applyMoves(); updateCamera(dt); }
@@ -7108,7 +7554,26 @@ function step(dt) {
 }
 const DRAW_INTERVAL = 1000 / 60, MAX_STEPS = 6;   // after a long stall, time is dropped rather than caught up
 let lastT = performance.now(), nextDraw = 0, lastDraw = 0, acc = 0;
+// A script error must not leave a frozen screen: say so, and the next tap or key reloads the page.
+let crashed = false;
+function crash(err) {
+  if (crashed) return;
+  crashed = true;
+  try { console.error(err); } catch (e) {}
+  try { stopTune(); keepAwake(false); flushBank(); } catch (e) {}
+  for (const id of ['cards', 'deck', 'menu', 'results', 'howto', 'settingsBox', 'boardBox', 'pauseBox']) { const el = $(id); if (el) el.hidden = true; }
+  setBanner(t('SOMETHING BROKE'), t('TAP TO RESTART'));
+  const again = () => location.reload();
+  window.addEventListener('pointerdown', again, { once: true, capture: true });
+  window.addEventListener('keydown', again, { once: true, capture: true });
+}
+window.addEventListener('error', e => crash(e.error || e.message));
+window.addEventListener('unhandledrejection', e => crash(e.reason));
 function frame(now) {
+  if (crashed) return;
+  try { frameBody(now); } catch (err) { crash(err); }
+}
+function frameBody(now) {
   const rawDt = (now - lastT) / 1000;
   const dt = Math.max(0, Math.min(0.05, rawDt));
   lastT = now;
@@ -7138,6 +7603,7 @@ function frame(now) {
     spinAll(now);
     updateFarLanes();
     placeCamera();
+    announceFrame();
     shadowCadence(idle);
     renderer.render(scene, camera);
     if (lastDraw) watchFrameTime((now - lastDraw) / 1000);   // judge drawn frames only
@@ -7178,7 +7644,10 @@ if (DEBUG) {
     get startTick() { return G.startTick; },
     get replay() { return G.replay; },
     get weather() { return G.weather; },
-    get view() { return viewInfo(); }
+    get view() { return viewInfo(); },
+    get tune() { return tuneOn(); },
+    boom() { G.boom = true; },   // throw inside the next step: the crash notice
+    ladder: { feed: watchFrameTime, get ratio() { return getPixelRatio(); }, get shadow() { return sun.shadow.mapSize.x; } }
   };
 }
 // a replay link: the same world, the same animals, the same hops (a link with an unknown animal is ignored)

@@ -111,6 +111,7 @@ function payMissions() {   // at game over: which missions this run finished; re
 // everything that shows text in the current language
 function refreshTexts() {
   setModeLabel(); updatePrize(); setHandicap(G.handicap); showMissions(); setCards(); setMuted(isMuted());
+  document.dispatchEvent(new Event('hoplanes:lang'));   // panels.js relabels its buttons
   if (G.state === 'over') $('share').textContent = t('SHARE');
 }
 let menuNote = 0;
@@ -311,7 +312,8 @@ async function postScore(name, score) {
     const daily = G.mode === 'daily';
     const res = await fetch(SCORES_URL, {
       method: 'POST', headers: { 'Content-Type': 'application/json', ...(SCORES_TOKEN ? { 'X-Hop-Token': SCORES_TOKEN } : {}) },
-      body: JSON.stringify({ name, score, day: today(), mode: G.mode }), signal: ctrl.signal
+      // the run's replay code (the one in the replay link): a server with VERIFY=1 plays it again to check the score
+      body: JSON.stringify({ name, score, day: today(), mode: G.mode, replay: encodeReplay({ seed: getSeed(), mode: G.mode, chars: players.map(q => charOf(q).key), joined: players.map(q => q.joined), handicap: G.handicap, startTick: G.startTick, events: G.record }) }), signal: ctrl.signal
     });
     if (!res.ok) return;
     let top = (await res.json()).top;
@@ -335,11 +337,14 @@ function pauseGame() {
   pausedFrom = G.state; G.state = 'paused'; G.redraw = true;
   keepAwake(false);
   setBanner(t('PAUSED'), t(touchQuery.matches ? 'TAP TO CONTINUE' : 'PRESS ANY KEY'));
+  $('pauseBox').hidden = false;   // the pause menu (panels.js labels it)
+  document.dispatchEvent(new Event('hoplanes:pause'));
 }
 function resumeGame() {
   if (G.state !== 'paused') return;
   G.state = pausedFrom; G.goT = 0; G.countKey = '';   // the countdown number is drawn again
   setBanner('');
+  $('pauseBox').hidden = true;
   if (G.state === 'play') keepAwake(true);
 }
 document.addEventListener('visibilitychange', () => { if (document.hidden) pauseGame(); });
