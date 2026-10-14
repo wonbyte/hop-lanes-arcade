@@ -2,10 +2,10 @@
 
 `index.html` loads Three.js from a CDN. The fonts are in `fonts/`. `hop-lanes-standalone.html` contains copies of all of them.
 
-## Three.js r128 (three@0.128.0)
+## Three.js r186 (three@0.186.1)
 
 Copyright 2010-2021 Three.js Authors. MIT License.
-https://github.com/mrdoob/three.js/blob/r128/LICENSE
+https://github.com/mrdoob/three.js/blob/r186/LICENSE
 
 ## Press Start 2P
 

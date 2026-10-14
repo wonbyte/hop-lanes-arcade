@@ -11,7 +11,6 @@ import { encodeReplay } from '../js/replay.js';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let INDEX = '';   // served over http (set in before): module scripts do not load from file://
 const STANDALONE = pathToFileURL(path.join(ROOT, 'hop-lanes-standalone.html')).href;
-const THREE = path.join(ROOT, 'node_modules/three/build/three.min.js');
 const ARGS = ['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist'];
 const T = 60000; // generous per-wait timeout
 

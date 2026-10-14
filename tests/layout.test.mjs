@@ -9,7 +9,6 @@ import { serve } from './serve.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let INDEX = '';   // served over http (set in before): module scripts do not load from file://
-const THREE = path.join(ROOT, 'node_modules/three/build/three.min.js');
 const ARGS = ['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist'];
 const T = 60000;
 

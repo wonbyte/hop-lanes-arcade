@@ -1,6 +1,6 @@
 # Hop Lanes: notes for Claude Code and other contributors
 
-A two-player voxel lane-crossing game. Plain HTML, CSS and ES modules on Three.js r128. No framework, no bundler
+A two-player voxel lane-crossing game. Plain HTML, CSS and ES modules on Three.js r186. No framework, no bundler
 except the small offline build script. Keep it that way.
 
 ## Commands
@@ -22,7 +22,7 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
 | Path | Role |
 |---|---|
 | `index.html` | Markup only. The Content-Security-Policy meta is strict: `script-src 'self'`, no inline scripts or styles. A `modulepreload` link per module (add one for a new module) |
-| `vendor/three.min.js` | Generated: a tree-shaken Three.js r128 (501 KB) exposing only the names the game uses as `window.THREE`. Add a name to `tools/three-entry.js` before using a new THREE class |
+| `vendor/three.min.js` | Generated: a tree-shaken Three.js r186 (about 530 KB) exposing only the names the game uses as `window.THREE`. Add a name to `tools/three-entry.js` before using a new THREE class |
 | `css/style.css` | All styles. Media queries: `max-width: 520px` (phones), `max-width: 340px` (tiny phones), `orientation: landscape` (phone held sideways) |
 | `js/main.js` | Entry. Checks `window.THREE`, then `import('./app.js')` |
 | `js/rules.js` | Pure rules with no DOM or Three.js: seeded RNG, `nextLaneKind`, `hopTarget`, `hopTime` (mud). Tested by node directly: put logic here when it needs no scene |
@@ -89,9 +89,11 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
   `inst.move()` writes only the position; `showLane()` hides a far lane's instances; `drop()` moves the last instance
   into the freed slot (slots stay packed), so never use a handle after dropping it. The paint color is a per-instance
   tint that applies only to pure white (`0xffffff`) boxes, so no other box in an instanced model may be pure white.
-  Every fleet mesh carries `instanceColor`: r128 picks the shader per material, so a mesh without it would crash.
+  Every fleet mesh carries `instanceColor` (an `InstancedBufferAttribute`), so all fleet meshes share one shader.
 - `voxelMat.onBeforeCompile` sees the shader before `#include` parts are expanded: replace whole `#include <...>` lines,
-  never text from inside a part (that silently matched nothing once, and every box of a car got the paint).
+  never text from inside a part (that silently matched nothing once, and every box of a car got the paint). The
+  replacement mirrors r186's `color_vertex` (`vColor` is a vec4): check it again after a Three.js upgrade.
+- Light intensities are physical (r155+): the values are the old ones times PI.
 - Every geometry drawn with `voxelMat` needs the `ao` attribute (bottom-of-box shade); `mergeBoxes` and `joinGeos` add
   it. A geometry without it reads 0 and draws black. A box's 8th value is a night glow (headlights): `ao` above 1,
   scaled by the `glow` uniform that `setNight` sets.

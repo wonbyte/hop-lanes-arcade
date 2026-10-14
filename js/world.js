@@ -38,9 +38,8 @@ const tmpM = new THREE.Matrix4(), tmpQ = new THREE.Quaternion(), tmpP = new THRE
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
 function fleetMesh(geo, cap, cast) {
   const mesh = new THREE.InstancedMesh(geo, voxelMat, cap);
-  // every fleet mesh carries instance colors (white = no tint): r128 picks the shader per material, not per
-  // mesh, so a mesh without them would get a shader that expects them. Sized for cap, not count.
-  mesh.instanceColor = new THREE.BufferAttribute(new Float32Array(cap * 3).fill(1), 3);
+  // every fleet mesh carries instance colors (white = no tint), so all of them share one shader. Sized for cap, not count.
+  mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3).fill(1), 3);
   mesh.castShadow = cast; mesh.receiveShadow = true;
   mesh.frustumCulled = false;   // instances spread over many rows; the camera decides per vertex
   mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);

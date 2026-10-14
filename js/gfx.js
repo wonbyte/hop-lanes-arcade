@@ -32,17 +32,18 @@ const CAM_OFF = new THREE.Vector3(3.2, 12, 7.5);
 const focus = new THREE.Vector3();
 const ONE = new THREE.Vector3(1, 1, 1);
 
-const hemi = new THREE.HemisphereLight(0xffffff, 0x8899aa, 0.65);
+const hemi = new THREE.HemisphereLight(0xffffff, 0x8899aa, 0.65 * Math.PI);
 scene.add(hemi);
-const sun = new THREE.DirectionalLight(0xffffff, 0.6);
+const sun = new THREE.DirectionalLight(0xffffff, 0.6 * Math.PI);
 sun.castShadow = true;
 sun.shadow.mapSize.setScalar(lowGpu ? 512 : 1024);   // phone screens are small: 512 looks the same there and costs a quarter
 Object.assign(sun.shadow.camera, { top: 15, bottom: -15, near: 1, far: 50 });   // fitted to the view in resize()
 scene.add(sun, sun.target);
 
 // day turns into night as the players get far: sky, ambient and sun blend toward a blue dusk
-const DAY = { sky: new THREE.Color(0x74d3f2), sun: new THREE.Color(0xffffff), hemi: 0.65, sunI: 0.6 };
-const NIGHT = { sky: new THREE.Color(0x1b2242), sun: new THREE.Color(0x9fb3ff), hemi: 0.28, sunI: 0.42 };
+// light strengths are in physical units since Three.js r155: the old values times PI give the same picture
+const DAY = { sky: new THREE.Color(0x74d3f2), sun: new THREE.Color(0xffffff), hemi: 0.65 * Math.PI, sunI: 0.6 * Math.PI };
+const NIGHT = { sky: new THREE.Color(0x1b2242), sun: new THREE.Color(0x9fb3ff), hemi: 0.28 * Math.PI, sunI: 0.42 * Math.PI };
 const RAIN_SKY = new THREE.Color(0x6b8294), SNOW_SKY = new THREE.Color(0xd6e2ec);
 let nightT = -1, wetT = 0, shownWeather = '';
 const weatherEl = $('weather');

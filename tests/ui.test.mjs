@@ -8,7 +8,6 @@ import { chromium } from 'playwright';
 import { serve } from './serve.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const THREE = path.join(ROOT, 'node_modules/three/build/three.min.js');
 const ARGS = ['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist'];
 const T = 60000;
 const SLOW = 120000; // whole-test budget for tests that wait through a game

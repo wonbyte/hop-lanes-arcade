@@ -14,13 +14,13 @@ voxelMat.onBeforeCompile = shader => {
   shader.uniforms.glow = glowU;
   shader.vertexShader = shader.vertexShader
     .replace('#include <common>', '#include <common>\nattribute float ao;\nuniform float glow;')
-    .replace('#include <color_vertex>', [
-      '#if defined( USE_COLOR ) || defined( USE_INSTANCING_COLOR )', 'vColor = vec3( 1.0 );', '#endif',
-      '#ifdef USE_COLOR', 'vColor *= color;', '#endif',
+    .replace('#include <color_vertex>', [   // the r186 part, with the tint rule and the shade/glow added
+      'vColor = vec4( 1.0 );',
+      'vColor.rgb *= color;',
       '#ifdef USE_INSTANCING_COLOR',
-      'if ( color.r > 0.999 && color.g > 0.999 && color.b > 0.999 ) vColor *= instanceColor;',
+      'if ( color.r > 0.999 && color.g > 0.999 && color.b > 0.999 ) vColor.rgb *= instanceColor.rgb;',
       '#endif',
-      'vColor *= ao <= 1.0 ? ao : 1.0 + ( ao - 1.0 ) * glow;'
+      'vColor.rgb *= ao <= 1.0 ? ao : 1.0 + ( ao - 1.0 ) * glow;'
     ].join('\n'));
 };
 const AO_BOTTOM = 0.72;   // shade at the bottom of a box (the top stays 1); flat boxes get none
