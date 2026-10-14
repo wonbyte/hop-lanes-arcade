@@ -2,16 +2,18 @@
 // No DOM, no Three.js. players.js plays these rules in the browser (makeRules with effect hooks that move meshes and
 // make sounds); simulate() plays a replay with no effects, so the score server can check a posted score.
 // Everything here is step-driven (fixed STEP), so the browser and simulate() give the same run tick for tick.
-import { BEHIND_LIMIT, COMBO_EVERY, COUNTDOWN, COMBO_GAP, EAGLE_IDLE, EAGLE_SWOOP, EAGLE_WARN, EDGE_DEATH, HIT_PAD, HOP_TIME, MAGNET_REACH, MAGNET_TIME, PLAY_HALF, SHIELD_TIME, SLIDE_TIME, STEP, PLANK_BACK, PLANK_BREAK, hopTarget, hopTime, isWater, plankState } from './rules.js';
+import { BEHIND_LIMIT, COMBO_EVERY, COUNTDOWN, COMBO_GAP, EAGLE_IDLE, EAGLE_SWOOP, EAGLE_WARN, EDGE_DEATH, HIT_PAD, HOP_TIME, MAGNET_REACH, MAGNET_TIME, NEAR_MISS, PLAY_HALF, SHIELD_TIME, SLIDE_TIME, STEP, PLANK_BACK, PLANK_BREAK, TAG_BOOST, hopTarget, hopTime, isWater, plankState, traitOf } from './rules.js';
 import { createWorldGen, railStep, trafficX } from './gen.js';
 
 const START_X = [-2, 2];   // the columns the two players start on
-const RULE_HOOKS = ['hop', 'combo', 'kill', 'rescue', 'shield', 'power', 'coin', 'land', 'hopPose', 'stand', 'warn', 'eagle', 'swoop', 'label'];
-// a player's run state, as it is when the animal appears on row 0
+const RULE_HOOKS = ['hop', 'combo', 'kill', 'rescue', 'shield', 'power', 'coin', 'land', 'hopPose', 'stand', 'warn', 'eagle', 'swoop', 'label', 'near', 'lives'];
+// a player's run state, as it is when the animal appears on row 0. p.trait (rules.js traitOf) is set by the caller first.
 function resetPlayer(p) {
+  p.trait = p.trait || {};
   Object.assign(p, {
     x: START_X[p.id], row: 0, alive: true, hop: null, queue: null, score: 0, idleT: 0, warned: false, eagle: null,
-    facing: 0, cause: '', log: null, logOff: 0, trainDir: 0, combo: 0, lastHop: -9, shield: false, safeT: 0, magnetT: 0
+    facing: 0, cause: '', log: null, logOff: 0, trainDir: 0, combo: 0, lastHop: -9, shield: false, safeT: 0, magnetT: 0,
+    coins: 0, lives: p.trait.lives || 0, nearLast: null
   });
 }
 // the camera's scroll line: it creeps forward on its own, and catches up fast to a player who runs ahead.
@@ -36,25 +38,28 @@ function feedReplay(rp, playTick, move) {
   while (rp.i < rp.events.length && rp.events[rp.i][0] <= playTick) { const [, i, dx, dr] = rp.events[rp.i++]; move(i, dx, dr); }
 }
 
-// The rules of a player. W = { G, lane(r), coins(n), over(), fx }: G holds state, camRow, playT, worldTick and run (stats or null);
+// The rules of a player. W = { G, lane(r), coins(n), over(), players, fx }: G holds state, mode, camRow, playT, worldTick and run (stats or null);
 // lane(r) is the lane data of row r (gen.js plus the moving state: o.x, train.x/active, coins, power);
 // fx holds optional effect hooks (meshes, sounds, particles), called at the points where the old code made them.
 function makeRules(W) {
   const G = W.G, fx = {};
   for (const k of RULE_HOOKS) fx[k] = (W.fx && W.fx[k]) || (() => {});
 
+  const others = p => (W.players || []).filter(q => q !== p && q.joined && q.alive);
+  const behindLimit = p => BEHIND_LIMIT + (p.trait.behind || 0);
   function giveShield(p) { p.shield = true; fx.shield(p); }
+  function payCoins(p, n) { p.coins += n; W.coins(n); }
   function pickPower(p, lane) {
     const pw = lane.power;
     lane.power = null;
-    if (pw.kind === 'shield') giveShield(p); else p.magnetT = MAGNET_TIME;
+    if (pw.kind === 'shield') giveShield(p); else p.magnetT = MAGNET_TIME * (p.trait.magnet || 1);
     if (G.run) G.run.powers++;
     fx.power(p, lane, pw);
   }
   function collectCoin(p, lane, x, coin) {
     lane.coins.delete(x);
     const secret = lane.secret === x;
-    W.coins(secret ? 3 : 1);
+    payCoins(p, secret ? 3 : 1);
     if (secret && G.run) G.run.secrets++;
     fx.coin(p, lane, x, coin, secret);
   }
@@ -62,7 +67,7 @@ function makeRules(W) {
   // Returns false (the hit kills after all) when there is no solid row behind.
   function rescue(p) {
     let r = null;
-    for (let k = p.row - 1; k >= G.camRow - BEHIND_LIMIT; k--) {
+    for (let k = p.row - 1; k >= G.camRow - behindLimit(p); k--) {
       const l = W.lane(k);
       if (l && !isWater(l.kind)) { r = k; break; }
     }
@@ -91,10 +96,12 @@ function makeRules(W) {
     p.facing = dr > 0 ? 0 : dr < 0 ? Math.PI : (dx > 0 ? -Math.PI / 2 : Math.PI / 2);
     const tx = hopTarget(W.lane(p.row + dr), p.x, dx, PLAY_HALF);
     if (tx === null) return;
-    if (p.row + dr < G.camRow - BEHIND_LIMIT) return;
+    if (p.row + dr < G.camRow - behindLimit(p)) return;
     const from = W.lane(p.row);
+    let dur = hopTime(from && from.kind, HOP_TIME) * (p.trait.hop || 1);
+    if (G.mode === 'tag' && others(p).some(q => q.row > p.row)) dur *= TAG_BOOST;   // tag: the one behind is faster
     p.hop = {
-      t: 0, dur: hopTime(from && from.kind, HOP_TIME), fromRow: p.row, fx: p.x, fz: -p.row, tx, tz: -(p.row + dr),
+      t: 0, dur, fromRow: p.row, fx: p.x, fz: -p.row, tx, tz: -(p.row + dr),
       carry: p.log, carryX0: p.log ? p.log.x : 0, span: p.log ? from.span : 0, dx, dr
     };
     p.row += dr;
@@ -102,17 +109,30 @@ function makeRules(W) {
     if (p.row > p.score) { p.score = p.row; if (G.run) G.run.row = Math.max(G.run.row, p.score); }
     if (G.run) G.run.hops++;
     // quick hops in a row build a combo; every COMBO_EVERY hops of it pay a coin
-    p.combo = G.playT - p.lastHop < COMBO_GAP ? p.combo + 1 : 1;
+    p.combo = G.playT - p.lastHop < COMBO_GAP * (p.trait.comboGap || 1) ? p.combo + 1 : 1;
     p.lastHop = G.playT;
-    if (G.run) G.run.combo = Math.max(G.run.combo, p.combo);
-    if (p.combo >= COMBO_EVERY && p.combo % COMBO_EVERY === 0) { W.coins(1); fx.combo(p); }
+    comboStep(p);
     fx.hop(p);
+  }
+  function comboStep(p) {
+    if (G.run) G.run.combo = Math.max(G.run.combo, p.combo);
+    if (p.combo >= COMBO_EVERY && p.combo % COMBO_EVERY === 0) { payCoins(p, 1); fx.combo(p); }
+  }
+  // a car or boulder that passes just short of a hit: +1 combo (coins only; the run itself is the same)
+  function nearMiss(p, o) {
+    p.nearLast = o;
+    p.combo = Math.max(1, p.combo) + 1;
+    p.lastHop = G.playT;
+    if (G.run) G.run.nears++;
+    comboStep(p);
+    fx.near(p);
   }
   function kill(p, cause) {
     if (!p.alive) return;
     // just after a rescue cars and trains pass through you, but water still does not hold you up
     if ((cause === 'squash' || cause === 'train') && p.safeT > 0) return;
     if ((cause === 'squash' || cause === 'train' || cause === 'splash') && p.shield && rescue(p)) return;
+    if (cause === 'splash' && p.lives > 0 && rescue(p)) { p.lives--; fx.lives(p); return; }   // the cat's extra life
     p.alive = false; p.cause = cause; p.hop = null;
     fx.kill(p, cause);
     W.over();
@@ -145,7 +165,7 @@ function makeRules(W) {
     }
     fx.land(p, lane);
     // ice: a sideways hop slides one more column the same way, unless a tree or the edge is there (a queued hop waits)
-    if (lane && lane.kind === 'ice' && h.dr === 0 && h.dx) {
+    if (lane && lane.kind === 'ice' && h.dr === 0 && h.dx && !p.trait.noSlide) {
       const tx = hopTarget(lane, p.x, h.dx, PLAY_HALF);
       if (tx !== null) {
         p.hop = { t: 0, dur: SLIDE_TIME, fromRow: p.row, fx: p.x, fz: -p.row, tx, tz: -p.row, carry: null, carryX0: 0, span: 0, dx: 0, dr: 0, slide: true };
@@ -180,11 +200,15 @@ function makeRules(W) {
     const hz = p.hop && p.hop.t < 0.5 ? W.lane(p.hop.fromRow) : lane;
     if (hz && hz.kind === 'bridge' && (!p.hop || p.hop.t < 0.5) && plankState(hz, Math.round(p.x), G.worldTick) === 'down') { kill(p, 'splash'); return; }
     if (hz && (hz.kind === 'road' || hz.kind === 'rocks')) {
-      for (const o of hz.objs) if (Math.abs(o.x - p.x) < o.len / 2 + HIT_PAD) { kill(p, 'squash'); return; }
+      for (const o of hz.objs) {
+        const gap = Math.abs(o.x - p.x) - o.len / 2 - HIT_PAD;
+        if (gap < 0) { kill(p, 'squash'); return; }
+        if (gap < NEAR_MISS && p.nearLast !== o) nearMiss(p, o);
+      }
     } else if (hz && hz.kind === 'rail' && hz.train.active) {
       if (Math.abs(hz.train.x - p.x) < hz.train.len / 2 + HIT_PAD) { p.trainDir = hz.dir; kill(p, 'train'); return; }
     }
-    if (p.row < G.camRow - BEHIND_LIMIT) kill(p, 'slow');
+    if (p.row < G.camRow - behindLimit(p)) kill(p, 'slow');
   }
   // one fixed step of a live player (the browser calls it from updatePlayer, simulate() directly)
   function stepPlayer(p, dt) {
@@ -193,10 +217,11 @@ function makeRules(W) {
     if (ok && p.alive && !p.safeT) checkHazards(p, W.lane(p.row));
     if (!p.alive || G.state !== 'play') return;
     if (p.magnetT) { updateMagnet(p, dt); if (!p.magnetT) fx.label(p); }
-    if (p.combo && !p.hop && G.playT - p.lastHop > COMBO_GAP + 0.2) { p.combo = 0; fx.label(p); }
+    if (p.combo && !p.hop && G.playT - p.lastHop > COMBO_GAP * (p.trait.comboGap || 1) + 0.2) { p.combo = 0; fx.label(p); }
     if (!p.hop) p.idleT += dt;
-    if (!p.warned && p.idleT > EAGLE_IDLE - EAGLE_SWOOP - EAGLE_WARN) { p.warned = true; fx.warn(p); }   // move, or the eagle comes
-    if (!p.eagle && p.idleT > EAGLE_IDLE - EAGLE_SWOOP) { p.eagle = { t: 0 }; fx.eagle(p); }
+    const idle = EAGLE_IDLE + (p.trait.idle || 0);
+    if (!p.warned && p.idleT > idle - EAGLE_SWOOP - EAGLE_WARN) { p.warned = true; fx.warn(p); }   // move, or the eagle comes
+    if (!p.eagle && p.idleT > idle - EAGLE_SWOOP) { p.eagle = { t: 0 }; fx.eagle(p); }
     if (p.eagle) {   // the eagle swoops down; when it arrives it carries the player away
       p.eagle.t = Math.min(1, p.eagle.t + dt / EAGLE_SWOOP);
       fx.swoop(p);
@@ -213,6 +238,14 @@ function runOver(players, mode) {
   return race || !players.some(p => p.joined && p.alive);
 }
 const topScore = players => Math.max(players[0].joined ? players[0].score : 0, players[1].joined ? players[1].score : 0);
+// who wins when both played: race, the one still standing; coin war, the most coins; otherwise the higher score. null = tie
+function winnerOf(players, mode) {
+  const [p1, p2] = players;
+  if (!(p1.joined && p2.joined)) return null;
+  if (mode === 'race' && p1.alive !== p2.alive) return p1.alive ? p1 : p2;
+  const key = mode === 'coinwar' ? 'coins' : 'score';
+  return p1[key] === p2[key] ? null : (p1[key] > p2[key] ? p1 : p2);
+}
 
 // A replay as a stepping simulation, from the countdown on, exactly as the browser plays it (app.js step()).
 // step() advances one fixed STEP and returns false once the game is over. players[i] are the live player states
@@ -227,15 +260,15 @@ function createSim(rp) {
     return l;
   };
   // the browser starts the world clock so the countdown ends on the recorded tick (startPlay then sets it exactly)
-  const S = { state: 'countdown', countdown: COUNTDOWN, camRow: 0, playT: 0, run: null, worldTick: Math.max(0, rp.startTick - Math.ceil(COUNTDOWN / STEP)) };
+  const S = { state: 'countdown', countdown: COUNTDOWN, mode: rp.mode, camRow: 0, playT: 0, run: null, worldTick: Math.max(0, rp.startTick - Math.ceil(COUNTDOWN / STEP)) };
   let playTick = 0, end = null;
-  const players = [0, 1].map(id => ({ id, joined: !!rp.joined[id], alive: false, row: 0, x: 0, score: 0, hop: null, cause: '' }));
+  const players = [0, 1].map(id => ({ id, joined: !!rp.joined[id], alive: false, row: 0, x: 0, score: 0, coins: 0, hop: null, cause: '', trait: traitOf(rp.chars[id]) }));
   const rules = makeRules({
-    G: S, lane, coins() {},
+    G: S, lane, coins() {}, players,
     over() {
       if (S.state !== 'play' || !runOver(players, rp.mode)) return;
       S.state = 'over';
-      end = { score: topScore(players), scores: players.map(p => (p.joined ? p.score : 0)), endTick: playTick };
+      end = { score: topScore(players), scores: players.map(p => (p.joined ? p.score : 0)), coins: players.map(p => p.coins), endTick: playTick };
     }
   });
   for (const p of players) if (p.joined) { resetPlayer(p); if (rp.handicap === p.id + 1) rules.giveShield(p); }
@@ -288,8 +321,8 @@ function simulate(rp, { maxTicks = 120 * 60 * 61, maxMs = Infinity, until = Infi
   const players = sim.players, first = players[0].joined ? players[0] : players[1];
   return {
     ...res, row: first.row, cause: first.cause,
-    players: players.map(p => ({ joined: p.joined, row: p.row, x: p.x, score: p.score, alive: p.alive, cause: p.cause }))
+    players: players.map(p => ({ joined: p.joined, row: p.row, x: p.x, score: p.score, coins: p.coins, alive: p.alive, cause: p.cause }))
   };
 }
 
-export { createSim, creepCamera, feedReplay, makeRules, resetPlayer, runOver, simulate, topScore, touchRows };
+export { createSim, creepCamera, feedReplay, makeRules, resetPlayer, runOver, simulate, topScore, touchRows, winnerOf };

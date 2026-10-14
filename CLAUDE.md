@@ -10,7 +10,7 @@ except the small offline build script. Keep it that way.
 | `npm install` | Installs Playwright and Three.js (test and build only; the game itself has no dependencies) |
 | `npm test` | Syntax check, `tests/rules.test.mjs`, `tests/replay.test.mjs` and `tests/sim.test.mjs` (pure code, instant), then the browser tests `smoke`, `layout`, `ui` and `scores-server` (~6 min) |
 | `npm run check` | Syntax check only (fast) |
-| `npm run build` | Regenerates `hop-lanes-standalone.html` (python3, no network). Fails over 800 KB. CI fails if this file is stale |
+| `npm run build` | Regenerates `hop-lanes-standalone.html` (python3 + the pinned esbuild, minified, no network). Fails over 800 KB. CI fails if this file is stale |
 | `npm run build:three` | Regenerates `vendor/three.min.js` with esbuild from `tools/three-entry.js` (the Three.js names the game uses). CI fails if stale |
 | `npm run icons` | Regenerates `icons/` from the frog pixel art (needs Pillow) |
 | `npm run scores` | Starts the optional score server (`server/`) |
@@ -25,27 +25,27 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
 | `vendor/three.min.js` | Generated: a tree-shaken Three.js r186 (about 530 KB) exposing only the names the game uses as `window.THREE`. Add a name to `tools/three-entry.js` before using a new THREE class |
 | `css/style.css` | All styles. Media queries: `max-width: 520px` (phones), `max-width: 340px` (tiny phones), `orientation: landscape` (phone held sideways) |
 | `js/main.js` | Entry. Checks `window.THREE`, then `import('./app.js')` |
-| `js/rules.js` | Pure rules with no DOM or Three.js: the tuning constants that decide a run (`STEP`, `HOP_TIME`, `PLAY_HALF`...; core.js re-exports them), seeded RNG, `nextLaneKind`, `hopTarget`, `hopTime` (mud), `MODES`, `isoDay` (the local YYYY-MM-DD). Tested by node directly: put logic here when it needs no scene |
+| `js/rules.js` | Pure rules with no DOM or Three.js: the tuning constants that decide a run (`STEP`, `HOP_TIME`, `PLAY_HALF`...; core.js re-exports them), seeded RNG, `nextLaneKind`, `hopTarget`, `hopTime` (mud), `MODES`, `TRAITS` (each animal's edge, `traitOf`), `HATS` (`hatFor(best)`), `isoDay` (the local YYYY-MM-DD), `isoWeek`, the daily streak (`streakAfter`). Tested by node directly: put logic here when it needs no scene |
 | `js/gen.js` | Pure: the world as data. `createWorldGen(seed).lane(r)`: kind (the chain of `nextLaneKind`), direction, speed, cars and logs (`x0`), trees, pads, coins, power-ups, the train schedule (`railStep`), plus the looks drawn from the same rng. `trafficX` (where a car or log is at world time w). The rng draw order here is the world: never reorder a draw |
-| `js/sim.js` | Pure: the rules of a run. `makeRules(W)` (hops, logs, hazards, shield, eagle; players.js calls it with effect hooks), `createSim(replay)` (stepping, countdown included) and `simulate(replay)` (to game over: score, ticks, row, cause). The score server runs it (`VERIFY=1`) |
+| `js/sim.js` | Pure: the rules of a run. `makeRules(W)` (hops, logs, hazards, shield, eagle, near misses, the traits, tag mode; players.js calls it with effect hooks), `createSim(replay)` (stepping, countdown included), `simulate(replay)` (to game over: score, ticks, row, cause, coins) and `winnerOf(players, mode)`. The score server runs it (`VERIFY=1`) |
 | `js/missions.js` | Pure: the mission list and the done/advance logic (`tests/replay.test.mjs`) |
 | `js/replay.js` | Pure: `encodeReplay` / `decodeReplay` for `#replay-<code>` links |
 | `js/i18n.js` | `t(key, args)`: English keys, Spanish and German tables; `data-i18n` for static markup; `#lang` cycles |
 | `js/core.js` | Tuning constants, the shared state object `G`, `fail()`, `#debug` / `#seed-N` hash parsing |
 | `js/storage.js` | localStorage: best scores, coins (`G.bank`), owned characters, picks, `savedMode()`, `deviceTag` (4 chars; the online score name is `<CHARACTER> <tag>`). Always best effort (try/catch) |
-| `js/audio.js` | Web Audio beeps (`sfx.*`), mute |
+| `js/audio.js` | Web Audio beeps (`sfx.*`), mute, the title tune (`startTune`) and the soft play loop (`startPlayLoop`, stopped at game over and on pause) |
 | `js/device.js` | Vibration, wake lock |
 | `js/voxel.js` | `mergeBoxes`: a list of boxes becomes one vertex-colored mesh (one draw call). `cachedGeo` for repeated models |
-| `js/models.js` | Colors, pixel portraits (`PIX`), box lists for every model, `CHARACTERS` (name, price) |
+| `js/models.js` | Colors, pixel portraits (`PIX`), box lists for every model, `CHARACTERS` (name, price), `hatBoxes` (`makeCharacter(boxes, key, hat)` draws the hat the all-time best unlocked) |
 | `js/gfx.js` | Renderer, camera, light, `resize()`, the adaptive quality ladder (`watchFrameTime`) |
 | `js/world.js` | Lanes: `LANE_BUILDERS` per kind, traffic, trains, coins, the instanced fleet (`Inst`), ground chunks (`mergeChunk`). Lanes are a `Map` by row |
 | `js/players.js` | Spawn, queued moves (`queueMove` / `applyMoves`, the replay feed), `tryMove`, hop/land/stand, hazards, deaths, coins, combo, shield and magnet power-ups, the eagle |
 | `js/ghost.js` | The ghost: in daily and room modes the best run on this world (`hoplanes.ghost.<seed>`: score, hero, time, replay code; newest 6 worlds kept) is replayed by `createSim` one step per game step and drawn see-through (`ghostMat`); `saveGhost` at game over, `startGhost` at play, `stopGhost` on the title |
 | `js/screens.js` | Join cards and shop, title menu (modes incl. room code, prize machine, handicap, language, missions), countdown, results (share, replay link, confetti), restart, pause, first-run help, online score post |
-| `js/panels.js` | The dialogs (`.dialog` in CSS, one open at a time: `openDialog`/`closeDialog`, Escape closes): SETTINGS (sound, vibration `hoplanes.buzz`, language, handicap, less motion `hoplanes.motion`, read at boot by `gfx.js`), the pause menu (`#pauseBox`, shown by `pauseGame`), TOP 10 (`#board`, only with a score server), and the screen-reader announcer (`#live`, `announceFrame` per frame). Listens for `hoplanes:lang` and `hoplanes:pause` events from screens.js |
+| `js/panels.js` | The dialogs (`.dialog` in CSS, one open at a time: `openDialog`/`closeDialog`, Escape closes): SETTINGS (sound, vibration `hoplanes.buzz`, language, handicap, less motion `hoplanes.motion`, read at boot by `gfx.js`), the pause menu (`#pauseBox`, shown by `pauseGame`), TOP 10 (`#board`, only with a score server; `#boardScope` cycles all time / today / this week, a `.watch` button reloads the page as that entry's replay), photo mode (`#snapBtn` in the pause menu: the field with the score drawn on it, shared as a file or downloaded as `hop-lanes.png`), and the screen-reader announcer (`#live`, `announceFrame` per frame). Listens for `hoplanes:lang` and `hoplanes:pause` events from screens.js |
 | `js/input.js` | Keyboard, on-screen buttons, taps and swipes on the field, `pollGamepads()`. Side-effect only (imported by `app.js` for that) |
-| `js/app.js` | The frame loop (fixed `STEP` of 1/120 s), the `window.hopLanes` test hook, replay boot |
-| `tools/build-standalone.sh` | Inlines CSS, the modules (in `tools/bundle-order.json` order), `vendor/three.min.js` and fonts into one offline HTML with a hash-based CSP |
+| `js/app.js` | The frame loop (fixed `STEP` of 1/120 s), the `window.hopLanes` test hook, replay boot, the first-run floating hint (`placeHint`, `hoplanes.hint`), the near-miss view nudge (`G.shakeT`) |
+| `tools/build-standalone.sh` | Inlines CSS, the modules (in `tools/bundle-order.json` order, minified with esbuild), `vendor/three.min.js` and fonts into one offline HTML with a hash-based CSP |
 | `.github/workflows/deploy.yml` | Deploys `main` to GitHub Pages after the tests pass (Settings → Pages → Source: GitHub Actions, once) |
 | `tests/serve.mjs` | Tiny static server for the tests: browsers refuse ES modules from `file://` |
 | `server/` | Optional dependency-free score server; wired by `<meta name="hop-lanes-scores">` (and `hop-lanes-token` for its `POST_TOKEN`). Set `TRUST_PROXY=1` behind a proxy. UI test 6b runs it against the real page (`tests/serve.mjs` overrides `/index.html` with the meta and `connect-src` filled in) |
@@ -87,6 +87,11 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
 - Headless runs use SwiftShader; it is slow. Wait on state with `waitForFunction`, not fixed sleeps.
 - `KeyW` joins / moves Player 1, `ArrowUp` Player 2. Row 1 never has trees.
 - `tests/ui.test.mjs` drives the shop, prize machine, modes, share and confetti through the real DOM (ids: `#mode`, `#prize`, `#share`, `#card1 .cyc`, `#tap1`).
+- Modes (`MODES`): classic, race (first to die loses), coinwar (most coins wins; `p.coins` per player), tag (the player behind hops `TAG_BOOST` faster), daily, room. `winnerOf` in sim.js decides the results screen.
+- Traits (`TRAITS`, shown on the join card): fox longer combos, bunny faster hops, cat one extra life in water (`p.lives`), robot 3 s more before the eagle, pig longer magnet, penguin no ice slide, turtle one more row behind the scroll line. A replay stores the animals, so `simulate()` applies them (`p.trait` is set before `resetPlayer`). The frog has none: the saved test runs use frog and fox.
+- A near miss (a car or boulder whose edge passes within `NEAR_MISS` of a hit, once per car) adds one combo, a whoosh, a view nudge and counts in `G.run.nears` (mission `nears3`).
+- Hats (`HATS`): cap at an all-time best of 100, crown at 250, halo at 500, drawn on both animals from the next spawn. The daily streak (`hoplanes.streak`, `YYYY-MM-DD|n`) counts daily-mode runs on days in a row and shows in the marquee (`#streakBox`) while it is alive.
+- `hopLanes.hint` (the floating TAP hint shows), `hopLanes.playLoop` (the play loop runs), `hopLanes.streak`.
 - Lane kinds: grass, road (police variant past difficulty 0.3), river, lily (pads; water kills), mud (from row 13; a hop out of it is slow), rail, ice (from row 25: a sideways hop that lands on ice slides one more column the same way, unless a tree or the edge is there), bridge (from row 40: planks over water; a plank breaks 0.6 s after a landing and is back 3 s later, `plankState`), rocks (from row 55: slow boulders, a hit is a squash). Night fades in from row 90.
 - The eagle warns (`sfx.warn`) 1.5 s before it swoops; a new best shows in `#resBest`; the install hint `#install` shows only on the served page, once.
 - A script error in the frame loop (or an uncaught one) shows SOMETHING BROKE / TAP TO RESTART (`crash` in app.js; the next tap or key reloads). `hopLanes.boom()` throws in the next step; `hopLanes.tune` says if the title tune plays; `hopLanes.ladder` feeds frame times to the quality ladder; `hopLanes.ghost` is the ghost's row, x and score.

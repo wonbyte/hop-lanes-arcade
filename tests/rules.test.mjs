@@ -88,3 +88,26 @@ test('hopTime: mud is slow', () => {
   assert.equal(hopTime('mud', 0.12), 0.12 * MUD_SLOW);
   assert.ok(MUD_SLOW > 1.5 && MUD_SLOW < 3);
 });
+
+test('isoWeek, streaks and hats', async () => {
+  const { HATS, hatFor, isoWeek, streakAfter, streakCount, traitOf } = await import('../js/rules.js');
+  assert.equal(isoWeek('2027-01-01'), '2026-W53');
+  assert.equal(isoWeek('2024-12-30'), '2025-W01');
+  assert.equal(isoWeek('2026-10-14'), '2026-W42');
+  assert.equal(isoWeek('2026-02-30'), null);
+  assert.equal(isoWeek('junk'), null);
+  assert.equal(streakAfter('', '2026-10-14', '2026-10-13'), '2026-10-14|1', 'first daily run');
+  assert.equal(streakAfter('2026-10-13|2', '2026-10-14', '2026-10-13'), '2026-10-14|3', 'a day after the last: one more');
+  assert.equal(streakAfter('2026-10-14|3', '2026-10-14', '2026-10-13'), '2026-10-14|3', 'the same day again: no change');
+  assert.equal(streakAfter('2026-10-01|9', '2026-10-14', '2026-10-13'), '2026-10-14|1', 'a gap starts over');
+  assert.equal(streakCount('2026-10-13|2', '2026-10-14', '2026-10-13'), 2, 'yesterday still counts until today is played');
+  assert.equal(streakCount('2026-10-01|9', '2026-10-14', '2026-10-13'), 0);
+  assert.equal(hatFor(99), null);
+  assert.equal(hatFor(100).key, 'cap');
+  assert.equal(hatFor(499).key, 'crown');
+  assert.equal(hatFor(500).key, 'halo');
+  assert.ok(HATS.every((h, i) => !i || h.at < HATS[i - 1].at), 'hats are listed from the top');
+  assert.deepEqual(traitOf('frog'), {});
+  assert.deepEqual(traitOf('nobody'), {});
+  assert.equal(traitOf('bunny').hop, 0.8);
+});

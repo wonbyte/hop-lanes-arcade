@@ -34,7 +34,9 @@ const G = {
   run: null,           // this run's stats (missions)
   handicap: 0,         // 0 = off, 1 / 2 = that player starts with a shield
   room: '',            // room code (room mode: a shared world for two phones)
-  weather: ''          // '', 'rain' or 'snow' at the camera
+  weather: '',         // '', 'rain' or 'snow' at the camera
+  shakeT: 0,           // seconds left of the small view nudge (a near miss)
+  hint: false          // first run: the floating TAP hint follows the first player until row 5
 };
 
 // ---------- test hooks and seeds ----------

@@ -9,6 +9,7 @@ import net from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { decodeReplay, encodeReplay } from '../js/replay.js';
 import { hashString } from '../js/rules.js';
+import { isoWeek } from '../server/scores.mjs';
 
 const SERVER = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../server/scores.mjs');
 let proc, base, dir;
@@ -207,10 +208,56 @@ test('VERIFY: a posted score must be what its replay plays to', async () => {
   assert.deepEqual(top.map(e => [e.name, e.score]).sort(), [['Ann', 17], ['Dee', 44]].sort());
 });
 
-test('without VERIFY a replay is checked for shape only and not stored', async () => {
+test('without VERIFY a replay is checked for shape, stored and returned', async () => {
   const r = await post({ name: 'Rex', score: 3, mode: 'classic', replay: CLASSIC_RUN });
   assert.equal(r.status, 200);
   assert.equal((await post({ name: 'Rex', score: 3, replay: 7 })).status, 400);
+  assert.equal((await post({ name: 'Pat', score: 2 })).status, 200);
   const { top } = await (await fetch(base + '/scores')).json();
-  assert.ok(top.every(e => !('replay' in e)));
+  assert.equal(top.find(e => e.name === 'Rex').replay, CLASSIC_RUN);
+  assert.equal(top.find(e => e.name === 'Pat').replay, null);
+  assert.ok(top.every(e => e.replay === null || typeof e.replay === 'string'));
+});
+
+test('VERIFY: the verified replay is stored and returned', async () => {
+  const srv = await start({ RATE_MAX: '1000', VERIFY: '1' });
+  const r = await fetch(srv.base + '/scores', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Ann', score: 17, mode: 'classic', replay: CLASSIC_RUN }) });
+  assert.equal(r.status, 200);
+  assert.equal((await r.json()).top[0].replay, CLASSIC_RUN);
+  assert.equal((await (await fetch(srv.base + '/scores')).json()).top[0].replay, CLASSIC_RUN);
+});
+
+test('isoWeek: edges', () => {
+  assert.equal(isoWeek('2027-01-01'), '2026-W53');
+  assert.equal(isoWeek('2024-12-30'), '2025-W01');
+  assert.equal(isoWeek('2026-01-01'), '2026-W01');
+  assert.equal(isoWeek('2026-10-12'), '2026-W42');
+  assert.equal(isoWeek('2026-10-18'), '2026-W42');
+  assert.equal(isoWeek('2026-10-19'), '2026-W43');
+  assert.equal(isoWeek('2021-01-03'), '2020-W53');
+  assert.equal(isoWeek('2024-02-29'), '2024-W09');
+  assert.equal(isoWeek('2026-02-30'), null);
+  assert.equal(isoWeek('2026-1-1'), null);
+  assert.equal(isoWeek(null), null);
+});
+
+test('weekly board: ?week= covers Monday to Sunday, any mode', async () => {
+  const srv = await start({ RATE_MAX: '1000' });
+  const sp = b => fetch(srv.base + '/scores', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
+  const get = q => fetch(srv.base + '/scores' + q);
+  const names = async q => (await (await get(q)).json()).top.map(e => e.name);
+  // 2026-10-05 is a Monday, 2026-10-11 the Sunday after, 2026-10-12 the next Monday, 2026-10-04 the Sunday before
+  for (const b of [
+    { name: 'Mon', score: 10, day: '2026-10-05', mode: 'daily' },
+    { name: 'Sun', score: 20, day: '2026-10-11', mode: 'classic' },
+    { name: 'Next', score: 99, day: '2026-10-12', mode: 'daily' },
+    { name: 'Prev', score: 98, day: '2026-10-04', mode: 'daily' },
+    { name: 'NoDay', score: 97 },
+  ]) assert.equal((await sp(b)).status, 200);
+  assert.deepEqual(await names('?week=2026-W41'), ['Sun', 'Mon']);
+  assert.deepEqual(await names('?week=2026-W41&mode=daily'), ['Mon']);
+  assert.deepEqual(await names('?week=2026-W42'), ['Next']);
+  assert.deepEqual(await names('?week=2026-W10'), []);
+  for (const q of ['?week=2026-42', '?week=bad', '?week=2026-W00', '?week=2026-W54', '?week=2026-W4', '?week=', '?week=2026-W41&day=2026-10-05', '?week=2026-W41&mode=x'])
+    assert.equal((await get(q)).status, 400, q);
 });

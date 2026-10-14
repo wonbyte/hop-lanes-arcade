@@ -349,9 +349,23 @@ const plankBoxes = () => [[0.9, 0.1, 0.82, 0x9a6a3a, 0, -0.12, 0], [0.08, 0.11, 
 const shieldBoxes = () => [[0.5, 0.5, 0.5, 0x4fb8ff, 0, 0.3, 0], [0.3, 0.3, 0.3, 0xeaf6ff, 0, 0.4, 0]];
 const magnetBoxes = () => [[0.16, 0.5, 0.16, 0xe8513a, -0.2, 0.25, 0], [0.16, 0.5, 0.16, 0xe8513a, 0.2, 0.25, 0],
   [0.56, 0.16, 0.16, 0xe8513a, 0, 0.2, 0], [0.16, 0.14, 0.16, 0xeeeeee, -0.2, 0.61, 0], [0.16, 0.14, 0.16, 0xeeeeee, 0.2, 0.61, 0]];
-function makeCharacter(boxesFn, key) {
+// hats (rules.js HATS): unlocked by the all-time best, drawn on top of the animal
+const HAT_GOLD = 0xffd84a, HAT_RED = 0xe0453a;
+function hatBoxes(hat, top) {
+  if (hat === 'cap') return [[0.46, 0.14, 0.46, HAT_RED, 0, top, 0], [0.3, 0.05, 0.2, HAT_RED, 0, top, -0.3]];   // a cap with a peak forward
+  if (hat === 'crown') {
+    const b = [[0.4, 0.1, 0.4, HAT_GOLD, 0, top, 0]];
+    for (const [x, z] of [[-0.15, -0.15], [0.15, -0.15], [-0.15, 0.15], [0.15, 0.15]]) b.push([0.1, 0.16, 0.1, HAT_GOLD, x, top + 0.1, z]);
+    return b;
+  }
+  const b = [];   // halo: a thin ring floating over the head
+  for (const [x, z, w, d] of [[0, -0.22, 0.34, 0.06], [0, 0.22, 0.34, 0.06], [-0.22, 0, 0.06, 0.34], [0.22, 0, 0.06, 0.34]]) b.push([w, 0.05, d, HAT_GOLD, x, top + 0.18, z, 1.6]);
+  return b;
+}
+const topOf = boxes => Math.max(...boxes.map(b => b[5] + b[1]));
+function makeCharacter(boxesFn, key, hat = '') {
   const g = new THREE.Group();
-  const body = voxelMesh(cachedGeo(key, boxesFn));
+  const body = voxelMesh(cachedGeo(hat ? key + '-' + hat : key, () => { const b = boxesFn(); return hat ? b.concat(hatBoxes(hat, topOf(b))) : b; }));
   g.add(body); g.userData.body = body;
   return g;
 }
@@ -364,4 +378,4 @@ const LIGHT_TINT = { off: 0x331111, on: 0xff2222, red: 0xff2a2a, blue: 0x3a7bff 
 const LIGHT_OFF = new THREE.MeshLambertMaterial({ color: 0x331111 });
 const lightGeo = new THREE.BoxGeometry(0.38, 0.2, 0.14);
 
-export { CHARACTERS, COLORS, LIGHT_OFF, LIGHT_TINT, PIX, PRIZES, boulderBoxes, bunnyBoxes, catBoxes, coinBoxes, drawPix, eagleBoxes, foxBoxes, frogBoxes, isOwned, lightBoxes, lightGeo, logBoxes, magnetBoxes, makeCharacter, penguinBoxes, pigBoxes, plankBoxes, policeBoxes, robotBoxes, shieldBoxes, trainBoxes, turtleBoxes, vehicleBoxes };
+export { CHARACTERS, COLORS, hatBoxes, LIGHT_OFF, LIGHT_TINT, PIX, PRIZES, boulderBoxes, bunnyBoxes, catBoxes, coinBoxes, drawPix, eagleBoxes, foxBoxes, frogBoxes, isOwned, lightBoxes, lightGeo, logBoxes, magnetBoxes, makeCharacter, penguinBoxes, pigBoxes, plankBoxes, policeBoxes, robotBoxes, shieldBoxes, trainBoxes, turtleBoxes, vehicleBoxes };

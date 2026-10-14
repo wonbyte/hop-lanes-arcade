@@ -17,7 +17,8 @@ const MISSIONS = [
   { key: 'row100', stat: 'row', goal: 100 },
   { key: 'coins30', stat: 'coins', goal: 30 },
   { key: 'secret1', stat: 'secrets', goal: 1 },
-  { key: 'combo20', stat: 'combo', goal: 20 }
+  { key: 'combo20', stat: 'combo', goal: 20 },
+  { key: 'nears3', stat: 'nears', goal: 3 }
 ];
 const ACTIVE = 3;
 // saved as "next,a,b,c": the index the next new mission comes from, then the active indexes
@@ -40,6 +41,6 @@ function advanceMissions(m, done) {
   }
   return { next, active };
 }
-const emptyStats = () => ({ coins: 0, row: 0, rivers: 0, hops: 0, logs: 0, combo: 0, powers: 0, secrets: 0 });
+const emptyStats = () => ({ coins: 0, row: 0, rivers: 0, hops: 0, logs: 0, combo: 0, powers: 0, secrets: 0, nears: 0 });
 
 export { ACTIVE, MISSIONS, MISSION_REWARD, advanceMissions, doneMissions, emptyStats, missionsText, parseMissions };

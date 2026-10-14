@@ -1,4 +1,4 @@
-import { idleAudio, isMuted, sfx, startTune, stopTune, tuneOn } from './audio.js';
+import { idleAudio, isMuted, playLoopOn, sfx, startTune, stopTune, tuneOn } from './audio.js';
 import { $, COUNTDOWN, DEBUG, G, REPLAY_CODE, RESULTS_DELAY, STEP } from './core.js';
 import { pollGamepads } from './input.js';   // also sets up every input listener
 import { decodeReplay } from './replay.js';
@@ -11,7 +11,7 @@ import { keepAwake } from './device.js';
 import { flushBank } from './storage.js';
 import { applyMoves, blobGeo, blobMat, bubbleGeo, bubbleMat, giveShield, kill, players, updateParts, updatePlayer } from './players.js';
 import { join, resultsEl, setBanner, setModeLabel, showHowto, startPlay, toAttract } from './screens.js';
-import { HOWTO_KEY, dailySeed, loadText, owned } from './storage.js';
+import { HINT_KEY, HOWTO_KEY, dailySeed, loadText, owned, save } from './storage.js';
 import { ensureLanes, getSeed, laneCoins, laneKinds, lanes, showLane, spinAll, updateFarLanes, updateLanes, weatherAt } from './world.js';
 import { t } from './i18n.js';
 
@@ -39,6 +39,7 @@ function updateCamera(dt) {
 }
 function placeCamera() {
   focus.set(0, 0, -(G.camRow + G.camLead));
+  if (G.shakeT > 0) focus.x += Math.sin(G.shakeT * 90) * G.shakeT * 0.5;   // a near miss nudges the view
   camera.position.copy(focus).add(CAM_OFF);
   camera.lookAt(focus);
   sun.position.copy(focus).add(SUN_OFF);
@@ -49,10 +50,26 @@ function placeCamera() {
   for (const lane of lanes.values()) showLane(lane, Math.abs(lane.r - focusRow) < G.visRows);
 }
 
+// first run: a floating TAP (or key) hint follows the first player until row 5, then it is done for good
+const hintEl = $('hint');
+const hintPos = new THREE.Vector3();
+function placeHint() {
+  const p = players.find(q => q.joined && q.alive);
+  if (!G.hint || G.state !== 'play' || !p || !p.mesh) { hintEl.hidden = true; return; }
+  if (p.score >= 5) { G.hint = false; save(HINT_KEY, 1); hintEl.hidden = true; return; }
+  hintPos.set(p.x, 1.5, p.mesh.position.z).project(camera);
+  const r = renderer.domElement.getBoundingClientRect();
+  hintEl.style.left = (hintPos.x + 1) / 2 * r.width + 'px';
+  hintEl.style.top = (1 - hintPos.y) / 2 * r.height + 'px';
+  const text = touchQuery.matches ? t('TAP') : p.id ? '\u2191' : 'W';
+  if (hintEl.textContent !== text + ' \u25b2') hintEl.textContent = text + ' \u25b2';
+  hintEl.hidden = false;
+}
 // one fixed step of the game: the same hops on the same ticks give the same run (replays)
 function step(dt) {
   if (DEBUG && G.boom) { G.boom = false; throw new Error('test crash'); }   // hopLanes.boom(): the crash notice test
   G.tick++; G.worldTick++; G.stateT += dt;
+  if (G.shakeT > 0) G.shakeT = Math.max(0, G.shakeT - dt);
   if (G.state === 'countdown') updateCountdown(dt);
   else if (G.state === 'play') { G.playTick++; applyMoves(); updateCamera(dt); stepGhost(); }
   else if (G.state === 'over' && G.stateT > RESULTS_DELAY && resultsEl.hidden) resultsEl.hidden = false;
@@ -112,6 +129,7 @@ function frameBody(now) {
     updateFarLanes();
     placeCamera();
     placeGhost();
+    placeHint();
     announceFrame();
     shadowCadence(idle);
     renderer.render(scene, camera);
@@ -156,6 +174,9 @@ if (DEBUG) {
     get view() { return viewInfo(); },
     get tune() { return tuneOn(); },
     get ghost() { return ghostInfo(); },
+    get hint() { return !hintEl.hidden; },
+    get playLoop() { return playLoopOn(); },
+    get streak() { return $('streak').textContent; },
     boom() { G.boom = true; },   // throw inside the next step: the crash notice
     ladder: { feed: watchFrameTime, get ratio() { return getPixelRatio(); }, get shadow() { return sun.shadow.mapSize.x; } }
   };

@@ -2,7 +2,9 @@ import { audio, isMuted, setMuted, sfx } from './audio.js';
 import { $, G, SCORES_URL } from './core.js';
 import { buzzIsOn, setBuzz } from './device.js';
 import { t } from './i18n.js';
-import { players } from './players.js';
+import { charOf, players } from './players.js';
+import { camera, renderer, scene } from './gfx.js';
+import { isoWeek } from './rules.js';
 import { restart, resumeGame } from './screens.js';
 import { MOTION_KEY, loadText, save, today } from './storage.js';
 
@@ -50,13 +52,55 @@ $('resumeBtn').addEventListener('click', () => { audio(); resumeGame(); });
 $('restartBtn').addEventListener('click', () => { audio(); sfx.tick(); closeDialog(); restart(); });
 $('pauseMute').addEventListener('click', () => { audio(); setMuted(!isMuted()); labelPause(); });
 
+// ---------- photo mode: a PNG of the field with the score on it, shared or saved ----------
+// The scene is drawn again right before the pixels are read (the canvas buffer is not kept between frames).
+function snapshotBlob() {
+  renderer.render(scene, camera);
+  const src = renderer.domElement, c = document.createElement('canvas');
+  c.width = src.width; c.height = src.height;
+  const g = c.getContext('2d');
+  g.drawImage(src, 0, 0);
+  const px = Math.max(14, Math.round(c.width / 22));
+  g.font = 'bold ' + px + 'px sans-serif'; g.textBaseline = 'top';
+  g.fillStyle = 'rgba(0,0,0,.55)'; g.fillRect(0, 0, c.width, px * 2.2);
+  g.fillStyle = '#ffd84a';
+  const line = players.filter(p => p.joined).map(p => t(charOf(p).name) + ' ' + p.score).join('   ');
+  g.fillText('HOP LANES  ' + line, px * 0.6, px * 0.6);
+  return new Promise(res => c.toBlob(res, 'image/png'));
+}
+async function snapshot() {
+  const b = $('snapBtn');
+  sfx.snap();
+  try {
+    const blob = await snapshotBlob();
+    if (!blob) throw new Error('no image');
+    const file = new File([blob], 'hop-lanes.png', { type: 'image/png' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], text: 'Hop Lanes' }); b.textContent = t('SHARED!'); return; } catch (e) { if (e && e.name === 'AbortError') return; }
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = 'hop-lanes.png';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    b.textContent = t('SAVED!');
+  } catch (e) { b.textContent = t('COULD NOT SAVE'); }
+}
+$('snapBtn').addEventListener('click', snapshot);
+document.addEventListener('hoplanes:pause', () => { $('snapBtn').textContent = t('SNAPSHOT'); });
+
 // ---------- online top 10 (only when a score server is set) ----------
 const boardBtn = $('board');
 boardBtn.hidden = !SCORES_URL;
+// the list shows all time, today or this week; the button under it cycles the three
+const SCOPES = ['all', 'day', 'week'];
+const SCOPE_TITLE = { all: 'TOP 10', day: 'TODAY TOP 10', week: 'THIS WEEK TOP 10' };
+let scope = 'all';
 async function openBoard() {
   audio(); sfx.tick();
   const daily = G.mode === 'daily';
-  $('boardBox').querySelector('h2').textContent = t(daily ? 'TODAY TOP 10' : 'TOP 10');
+  if (scope === 'all' && daily) scope = 'day';
+  $('boardBox').querySelector('h2').textContent = t(SCOPE_TITLE[scope]);
+  $('boardScope').textContent = t(SCOPE_TITLE[SCOPES[(SCOPES.indexOf(scope) + 1) % SCOPES.length]]);
   $('closeBoard').textContent = t('CLOSE');
   const list = $('boardList');
   list.textContent = '';
@@ -65,7 +109,8 @@ async function openBoard() {
   openDialog('boardBox');
   try {
     const u = new URL(SCORES_URL, location.href);
-    if (daily) { u.searchParams.set('day', today()); u.searchParams.set('mode', 'daily'); }
+    if (scope === 'day') u.searchParams.set('day', today()); else if (scope === 'week') u.searchParams.set('week', isoWeek(today()));
+    if (daily && scope !== 'all') u.searchParams.set('mode', 'daily');
     const ctrl = new AbortController();
     setTimeout(() => ctrl.abort(), 4000);
     const top = (await (await fetch(u, { signal: ctrl.signal })).json()).top;
@@ -75,13 +120,21 @@ async function openBoard() {
       const li = document.createElement('li');
       const name = document.createElement('span'), score = document.createElement('b');
       name.textContent = String(e.name); score.textContent = String(e.score);
-      li.append(name, score); list.appendChild(li);
+      li.append(name, score);
+      if (typeof e.replay === 'string' && e.replay && location.protocol !== 'file:') {   // watch that run: the page reloads as a replay
+        const watch = document.createElement('button');
+        watch.type = 'button'; watch.className = 'watch'; watch.textContent = '\u25b6'; watch.setAttribute('aria-label', t('WATCH'));
+        watch.addEventListener('click', () => { sfx.tick(); location.hash = '#replay-' + e.replay; location.reload(); });
+        li.appendChild(watch);
+      }
+      list.appendChild(li);
     }
     note.hidden = top.length > 0;
     note.textContent = t('NO SCORES YET');
   } catch (e) { note.textContent = t('COULD NOT LOAD THE LIST'); note.hidden = false; }
 }
 boardBtn.addEventListener('click', openBoard);
+$('boardScope').addEventListener('click', () => { scope = SCOPES[(SCOPES.indexOf(scope) + 1) % SCOPES.length]; openBoard(); });
 $('closeBoard').addEventListener('click', () => { sfx.tick(); closeDialog(); });
 boardBtn.textContent = t('TOP 10');
 document.addEventListener('hoplanes:lang', () => { boardBtn.textContent = t('TOP 10'); });

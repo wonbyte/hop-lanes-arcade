@@ -3,9 +3,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createWorldGen, railStep, trafficX } from '../js/gen.js';
-import { createSim, makeRules, resetPlayer, simulate } from '../js/sim.js';
+import { createSim, makeRules, resetPlayer, simulate, winnerOf } from '../js/sim.js';
 import { decodeReplay, encodeReplay } from '../js/replay.js';
-import { BRIDGE_FROM, ICE_FROM, PLANK_BACK, PLANK_BREAK, ROCKS_FROM, STEP, plankState } from '../js/rules.js';
+import { BRIDGE_FROM, ICE_FROM, PLANK_BACK, PLANK_BREAK, ROCKS_FROM, STEP, plankState, traitOf } from '../js/rules.js';
 
 // what the browser built for seed 42 (window.hopLanes.laneKinds()) before world generation moved to gen.js
 const KINDS_42 = ['grass', 'grass', 'grass', 'grass', 'river', 'river', 'river', 'road', 'road', 'road', 'road', 'river', 'river', 'grass',
@@ -197,4 +197,85 @@ test('gen: the late kinds start where rules.js says and keep their data', () => 
   }
   assert.ok(first.ice >= ICE_FROM && first.bridge >= BRIDGE_FROM && first.rocks >= ROCKS_FROM, JSON.stringify(first));
   assert.ok(first.ice < 40 && first.bridge < 70 && first.rocks < 90, 'and they do come: ' + JSON.stringify(first));
+});
+
+// the animals' edges (rules.js TRAITS) and the versus modes, on hand-made lanes
+function benchWith(rows, chars, mode = 'classic') {
+  const G = { state: 'play', mode, camRow: 0, playT: 0, worldTick: 1000, run: null };
+  const lanes = new Map(rows.map((l, r) => [r, { r, coins: new Map(), trees: new Set(), objs: [], span: 34, secret: null, power: null, ...l }]));
+  const players = chars.map((key, id) => ({ id, joined: true, trait: traitOf(key) }));
+  const rules = makeRules({ G, lane: r => lanes.get(r), coins() {}, over() {}, players });
+  players.forEach(resetPlayer);
+  const run = (n = 1) => { for (let i = 0; i < n; i++) { G.worldTick++; G.playT += STEP; for (const p of players) if (p.alive) rules.stepPlayer(p, STEP); } };
+  const hopTicks = p => { let n = 0; while (p.hop && n < 500) { run(); n++; } return n; };
+  // every player hops at once: the tick each one lands on (run() steps them all, so one at a time would not do)
+  const landTicks = () => { const t = players.map(() => 0); for (let n = 1; players.some(p => p.hop) && n < 500; n++) { run(); players.forEach((p, i) => { if (!t[i] && !p.hop) t[i] = n; }); } return t; };
+  return { G, lanes, rules, players, run, hopTicks, landTicks };
+}
+const grassRows = n => Array.from({ length: n }, () => ({ kind: 'grass' }));
+
+test('traits: the bunny hops faster, the robot waits longer for the eagle, the penguin does not slide', () => {
+  const b = benchWith(grassRows(6), ['frog', 'bunny']);
+  const [frog, bunny] = b.players;
+  b.rules.tryMove(frog, 0, 1); b.rules.tryMove(bunny, 0, 1);
+  const [tf, tb] = b.landTicks();
+  assert.ok(tb < tf, `bunny ${tb} ticks < frog ${tf}`);
+  assert.ok(Math.abs(tb / tf - 0.8) < 0.1, 'about 0.8 of a frog hop');
+  const r = benchWith(grassRows(6), ['frog', 'robot']);
+  r.run(Math.round(6 / STEP) + 5);   // the frog's eagle has arrived; the robot's has not
+  assert.ok(r.players[0].eagle && !r.players[1].eagle, 'the robot has 3 s more');
+  r.run(Math.round(3 / STEP) + 5);
+  assert.ok(r.players[1].eagle, 'then the eagle comes for the robot too');
+  const ice = benchWith([{ kind: 'grass' }, { kind: 'ice' }], ['penguin', 'frog']);
+  for (const p of ice.players) { p.x = 0; ice.rules.tryMove(p, 0, 1); ice.hopTicks(p); ice.rules.tryMove(p, 1, 0); ice.hopTicks(p); }
+  assert.deepEqual(ice.players.map(p => p.x), [1, 2], 'penguin stops at 1, frog slides to 2');
+});
+
+test('traits: the cat survives one fall into water; the turtle has one more row of slack', () => {
+  const b = benchWith([{ kind: 'grass' }, { kind: 'lily', pads: new Set([3]) }], ['cat', 'frog']);
+  for (const p of b.players) { p.x = 0; b.rules.tryMove(p, 0, 1); b.hopTicks(p); }
+  const [cat, frog] = b.players;
+  assert.ok(!frog.alive && frog.cause === 'splash');
+  assert.ok(cat.alive && cat.lives === 0, 'the cat used its life');
+  assert.equal(cat.row, 0, 'and hopped back to the grass');
+  b.hopTicks(cat); cat.x = 0; b.rules.tryMove(cat, 0, 1); b.hopTicks(cat);
+  assert.ok(!cat.alive, 'the second fall counts');
+  const t = benchWith(grassRows(3), ['turtle', 'frog']);
+  t.G.camRow = 5;   // 5 rows ahead of row 0: a frog is out (limit 4.5), a turtle is not (5.5)
+  t.run();
+  assert.deepEqual(t.players.map(p => p.alive), [true, false]);
+});
+
+test('modes: tag speeds up the player behind; coin war counts coins per player; winnerOf picks by mode', () => {
+  const b = benchWith(grassRows(8), ['frog', 'frog'], 'tag');
+  const [a, c] = b.players;
+  c.row = 3;   // c is ahead
+  b.rules.tryMove(a, 0, 1); b.rules.tryMove(c, 0, 1);
+  const [ta, tc] = b.landTicks();
+  assert.ok(ta < tc, `behind ${ta} ticks < ahead ${tc}`);
+  const w = benchWith([{ kind: 'grass' }, { kind: 'grass', coins: new Map([[0, {}], [1, {}]]) }], ['frog', 'fox'], 'coinwar');
+  const [p1, p2] = w.players;
+  p1.x = 0; p2.x = 1;
+  w.rules.tryMove(p1, 0, 1); w.rules.tryMove(p2, 0, 1); w.hopTicks(p1); w.hopTicks(p2);
+  assert.deepEqual([p1.coins, p2.coins], [1, 1]);
+  p2.coins = 3;
+  assert.equal(winnerOf(w.players, 'coinwar'), p2, 'most coins wins the coin war');
+  p1.score = 9;
+  assert.equal(winnerOf(w.players, 'classic'), p1, 'the higher score wins otherwise');
+  p2.alive = false;
+  assert.equal(winnerOf(w.players, 'race'), p1, 'in a race the one still standing');
+  assert.equal(winnerOf([{ joined: true }, { joined: false }], 'classic'), null, 'one player: nobody wins');
+});
+
+test('near miss: a car that passes just short of a hit adds one combo, once per car', () => {
+  const b = benchWith([{ kind: 'grass' }, { kind: 'road', objs: [{ x: 3, len: 1.4 }] }], ['frog']);
+  const p = b.players[0];
+  p.x = 0; b.rules.tryMove(p, 0, 1); b.hopTicks(p);
+  assert.equal(p.combo, 1);
+  b.lanes.get(1).objs[0].x = 0 + 0.7 + 0.28 + 0.3;   // the car's edge 0.3 from a hit
+  b.run();
+  assert.equal(p.combo, 2, 'one near miss');
+  b.run(5);
+  assert.equal(p.combo, 2, 'the same car does not count again');
+  assert.ok(p.alive);
 });

@@ -1,7 +1,7 @@
 import { sfx } from './audio.js';
 import { $, G, HOP_TIME, TAU, TRAIN_SPEED } from './core.js';
 import { t } from './i18n.js';
-import { isWater } from './rules.js';
+import { hatFor, isWater, traitOf } from './rules.js';
 import { feedReplay, makeRules, resetPlayer } from './sim.js';
 import { buzz } from './device.js';
 import { ONE, reduceMotion, scene } from './gfx.js';
@@ -31,12 +31,13 @@ const blobGeo = new THREE.BoxGeometry(0.62, 0.02, 0.62);
 const blobMat = new THREE.MeshLambertMaterial({ color: 0x000000, transparent: true, opacity: 0.22, depthWrite: false });
 function spawn(p) {
   despawn(p);
-  const ch = charOf(p);
-  p.mesh = makeCharacter(ch.boxes, ch.key);
+  const ch = charOf(p), hat = hatFor(G.bestAll);
+  p.mesh = makeCharacter(ch.boxes, ch.key, hat ? hat.key : '');
   scene.add(p.mesh);
   p.blob = new THREE.Mesh(blobGeo, blobMat);
   p.blob.visible = false;
   scene.add(p.blob);
+  p.trait = traitOf(ch.key);   // the animal's edge (rules.js TRAITS)
   resetPlayer(p);
   p.breath = p.id * 1.7; p.label = '';
   p.mesh.position.set(p.x, 0, 0);
@@ -104,6 +105,7 @@ function applyMoves() {
   moveQ.length = 0;
 }
 const DEATH_SOUND = { splash: sfx.splash, slow: sfx.fall, eagle: sfx.fall };
+const NEAR_FX = 0xfff2a8;
 
 // small particle bursts: water for splashes, dust when a player is left behind
 // the meshes are pooled: a death makes no garbage, so no collector pause
@@ -156,8 +158,15 @@ function animateDeath(p, dt) {
 }
 // what the rules do, shown: meshes, sounds, particles. Called by sim.js makeRules at the points where things happen.
 const playRules = makeRules({
-  G, lane: r => lanes.get(r), coins: addCoins, over: () => checkOver(),
+  G, lane: r => lanes.get(r), coins: addCoins, over: () => checkOver(), players,
   fx: {
+    near(p) {   // a car just missed: a whoosh, a nudge of the view and a flash of dust
+      sfx.whoosh(); buzz(12);
+      G.shakeT = 0.18;
+      if (!reduceMotion) burst(p.x, -p.row, NEAR_FX, 5, 0.5);
+      setLabel(p);
+    },
+    lives(p) { sfx.cheer(); },   // the cat's extra life
     hop(p) {
       p.scoreEl.textContent = p.score;
       setLabel(p);

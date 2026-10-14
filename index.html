@@ -49,6 +49,7 @@
       <div class="hs"><small data-i18n="BEST">BEST</small><b id="best">0</b></div>
       <div class="hs"><small data-i18n="TODAY">TODAY</small><b id="daily">0</b></div>
       <div class="hs"><small data-i18n="COINS">COINS</small><b id="bank">0</b></div>
+      <div class="hs" id="streakBox" hidden title="Daily runs on days in a row"><small data-i18n="STREAK">STREAK</small><b id="streak">0</b></div>
       <button type="button" id="mute" aria-pressed="false">SOUND ON</button>
     </div>
     <div id="score1" class="score" hidden><span>P1 FROG</span><b>0</b></div>
@@ -65,6 +66,7 @@
     <div id="weather" aria-hidden="true"></div>
     <div id="replayTag" hidden data-i18n="REPLAY">REPLAY</div>
     <div id="fps" hidden aria-hidden="true"></div>
+    <div id="hint" hidden aria-hidden="true"></div>
     <div id="confetti" aria-hidden="true"></div>
     <div id="banner" hidden aria-live="polite"><h2></h2><p></p></div>
     <div id="howto" class="dialog" role="dialog" aria-modal="true" aria-label="How to play" hidden>
@@ -93,6 +95,7 @@
         <h2 id="boardTitle" data-i18n="TOP 10">TOP 10</h2>
         <ol id="boardList"></ol>
         <p id="boardNote" hidden></p>
+        <div class="opts"><button type="button" id="boardScope">TODAY TOP 10</button></div>
         <button type="button" id="closeBoard" class="go" data-i18n="CLOSE">CLOSE</button>
       </div>
     </div>
@@ -103,6 +106,7 @@
           <button type="button" id="resumeBtn" class="go" data-i18n="CONTINUE">CONTINUE</button>
           <button type="button" id="restartBtn" data-i18n="RESTART">RESTART</button>
           <button type="button" id="pauseMute">SOUND: ON</button>
+          <button type="button" id="snapBtn" data-i18n="SNAPSHOT">SNAPSHOT</button>
         </div>
       </div>
     </div>

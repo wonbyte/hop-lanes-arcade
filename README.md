@@ -17,13 +17,16 @@ account, no tracking. One file plays the whole game offline.
 - **Endless world.** Grass, roads (police past a point), rivers with logs, lily pads, mud, rails with trains, ice that
   slides you, bridges with breaking planks and rolling boulders. Night falls far out. Rain speeds traffic up; it snows
   in December.
-- **Modes.** Classic, race (first to die loses), daily (one world for everyone today) and room (type a code; two
-  phones get the same world).
+- **Modes.** Classic, race (first to die loses), coin war (most coins wins), tag (the player behind hops faster),
+  daily (one world for everyone today) and room (type a code; two phones get the same world).
+- **Every animal has an edge.** Faster hops, a longer magnet, an extra life in water, a patient eagle. The card says
+  which. Hats unlock at an all-time best of 100, 250 and 500. Daily runs on days in a row build a streak.
 - **Ghost.** Daily and room worlds remember your best run and replay it as a see-through ghost. Beat it.
 - **Coins, shop and prize machine.** Buy five original animals (Frog, Fox, Bunny, Cat, Robot). Combos, hidden coins,
   shield and magnet power-ups, three missions at a time, a boss train every 100 rows.
 - **Replays.** Every run is deterministic. Share a link and it plays back the exact same run.
-- **Optional online top 10.** A tiny dependency-free score server that verifies posted scores by replaying them.
+- **Optional online top 10.** All time, today or this week. A tiny dependency-free score server verifies posted
+  scores by replaying them, and a tap on an entry plays that run back.
 - **Accessible.** Screen-reader announcements, a less-motion switch, vibration toggle, lanes readable without colour,
   English, Spanish and German.
 - **Installable.** Works as a PWA on phones. The standalone HTML file runs with no network at all.
@@ -67,7 +70,9 @@ Browsers refuse ES modules from `file://`, so `index.html` needs a server. The s
 - The blue gem gives a shield (one free hit). The red magnet pulls coins in.
 - Finish a mission for 20 coins. The prize machine gives a random animal for 50.
 - On ice, a sideways hop slides one more step. A bridge plank breaks 0.6 s after you land on it and comes back 3 s later.
-- Game over: share your score, copy a replay link, or try again.
+- A car that just misses you is a near miss: +1 combo and a whoosh.
+- Game over: share your score, copy a replay link, or try again. Pause → SNAPSHOT saves a picture of the field with
+  the score on it.
 - SETTINGS on the title has sound, vibration, language, a handicap (a starting shield for the weaker player) and a
   less-motion switch.
 
@@ -79,7 +84,7 @@ Requirements: Node 20 or newer. Python 3 for the offline build. Pillow only for 
 npm install          # Playwright, Three.js and esbuild (test and build only)
 npm test             # syntax check, node unit tests, then browser tests (about 6 minutes)
 npm run check        # syntax check only
-npm run build        # rebuilds hop-lanes-standalone.html (do this after every change)
+npm run build        # rebuilds the minified hop-lanes-standalone.html (do this after every change)
 npm run build:three  # rebuilds vendor/three.min.js (only when tools/three-entry.js changes)
 npm run scores       # starts the optional score server
 npm run icons        # regenerates icons/ from the frog pixel art

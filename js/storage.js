@@ -1,5 +1,5 @@
 import { $, G } from './core.js';
-import { MODES, hashString, isoDay } from './rules.js';
+import { MODES, dayBefore, hashString, isoDay, streakCount } from './rules.js';
 
 // Saved data: best scores, coins, owned characters. Everything is best effort (private mode, blocked storage).
 // ---------- storage (best effort) ----------
@@ -29,6 +29,8 @@ const COINS_KEY = 'hoplanes.coins', OWNED_KEY = 'hoplanes.owned', PICK_KEY = 'ho
 const HOWTO_KEY = 'hoplanes.howto', MUTE_KEY = 'hoplanes.mute', MODE_KEY = 'hoplanes.mode', INSTALL_KEY = 'hoplanes.install';
 const MISSIONS_KEY = 'hoplanes.missions', HANDICAP_KEY = 'hoplanes.handicap', ROOM_KEY = 'hoplanes.room';
 const MOTION_KEY = 'hoplanes.motion';   // '1': less motion, whatever the system setting says
+const STREAK_KEY = 'hoplanes.streak';   // 'YYYY-MM-DD|n': the last daily run and the days in a row
+const HINT_KEY = 'hoplanes.hint';       // '1' once the floating TAP hint has done its job
 function loadText(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
 G.bank = load(COINS_KEY);   // coins collected over all games
 const owned = new Set(loadText(OWNED_KEY).split(',').filter(Boolean));
@@ -65,10 +67,13 @@ function refreshBests() {
   bestDay = load(shownDay);
   $('best').textContent = G.bestAll;
   $('daily').textContent = bestDay;
+  const streak = streakCount(loadText(STREAK_KEY), today(), dayBefore());   // daily runs on days in a row
+  $('streak').textContent = streak;
+  $('streakBox').hidden = !streak;
 }
 dropOldDays();
 setBank(G.bank);
 // a game left open past midnight starts a new "today"
 setInterval(() => { if (dayKey() !== shownDay) { dropOldDays(); refreshBests(); } }, 60000);
 
-export { BEST_KEY, COINS_KEY, DAILY_KEY, DAY_PREFIX, HANDICAP_KEY, HOWTO_KEY, INSTALL_KEY, MISSIONS_KEY, MOTION_KEY, ROOM_KEY, MODE_KEY, MUTE_KEY, OWNED_KEY, PICK_KEY, dailySeed, dayKey, deviceTag, dropOldDays, flushBank, load, loadText, owned, refreshBests, save, savedMode, setBank, today };
+export { BEST_KEY, COINS_KEY, DAILY_KEY, DAY_PREFIX, HANDICAP_KEY, HINT_KEY, HOWTO_KEY, STREAK_KEY, INSTALL_KEY, MISSIONS_KEY, MOTION_KEY, ROOM_KEY, MODE_KEY, MUTE_KEY, OWNED_KEY, PICK_KEY, dailySeed, dayKey, deviceTag, dropOldDays, flushBank, load, loadText, owned, refreshBests, save, savedMode, setBank, today };

@@ -208,7 +208,7 @@ test('2c. prize machine: disabled once every prize is owned', async () => {
   } finally { await context.close(); }
 });
 
-test('3. mode button cycles CLASSIC, RACE, DAILY and persists', async () => {
+test('3. mode button cycles CLASSIC, RACE, COIN WAR, TAG, DAILY and persists', async () => {
   const { context, page, errors } = await open(INDEX);
   try {
     await waitState(page, 'attract');
@@ -217,6 +217,12 @@ test('3. mode button cycles CLASSIC, RACE, DAILY and persists', async () => {
     await page.click('#mode');
     assert.equal(await hop(page, () => window.hopLanes.mode), 'race');
     assert.match(await page.locator('#mode').textContent(), /RACE/);
+    await page.click('#mode');
+    assert.equal(await hop(page, () => window.hopLanes.mode), 'coinwar');
+    assert.match(await page.locator('#mode').textContent(), /COIN WAR/);
+    await page.click('#mode');
+    assert.equal(await hop(page, () => window.hopLanes.mode), 'tag');
+    assert.match(await page.locator('#mode').textContent(), /TAG/);
     await page.click('#mode');
     assert.equal(await hop(page, () => window.hopLanes.mode), 'daily');
     assert.match(await page.locator('#mode').textContent(), /DAILY/);
@@ -236,8 +242,7 @@ test('4. daily mode uses the daily seed in attract and in play', async () => {
   const { context, page, errors } = await open(INDEX);
   try {
     await waitState(page, 'attract');
-    await page.click('#mode');
-    await page.click('#mode');
+    for (let i = 0; i < 4; i++) await page.click('#mode');   // race, coin war, tag, daily
     assert.equal(await hop(page, () => window.hopLanes.mode), 'daily');
     const daily = await hop(page, () => window.hopLanes.dailySeed);
     assert.equal(typeof daily, 'number');
@@ -477,6 +482,52 @@ test('9. daily mode: the best run comes back as a ghost in the next game on the 
     const g = await hop(page, () => window.hopLanes.ghost);
     assert.equal(g.score, first, 'the ghost is the saved run');
     await page.waitForFunction(() => { const g = window.hopLanes.ghost; return g && g.row >= 1; }, null, { timeout: 60000 });   // it hops
+    assert.deepEqual(errors, []);
+  } finally { await context.close(); }
+});
+
+test('10. first run: the floating TAP hint follows the player, the play loop runs, a snapshot saves a PNG', { timeout: SLOW }, async () => {
+  // seed 28: rows 1-3 grass, 4-6 rail, no trees on column -2, so P1 can hop straight to row 5 (a shield covers a train)
+  const { context, page, errors } = await open(INDEX + '-seed-28');
+  try {
+    await waitState(page, 'attract');
+    assert.match(await page.locator('#card1 .state').textContent(), /FROG · BALANCED/, 'the card names the trait');
+    await page.keyboard.press('KeyW');
+    await waitState(page, 'play');
+    await page.waitForFunction(() => window.hopLanes.hint, null, { timeout: T });
+    assert.match(await page.locator('#hint').textContent(), /W/, 'a keyboard player sees the key');
+    await page.waitForFunction(() => window.hopLanes.playLoop, null, { timeout: T });   // the play loop runs
+    for (let n = 0; n < 40 && await hop(page, () => window.hopLanes.players[0].score) < 5; n++) {   // hop to row 5
+      await hop(page, () => window.hopLanes.giveShield(window.hopLanes.players[0]));
+      await page.keyboard.press('KeyW');
+      await page.waitForFunction(() => !window.hopLanes.players[0].hop, null, { timeout: T });
+    }
+    assert.equal(await hop(page, () => window.hopLanes.players[0].alive), true, 'still alive');
+    await page.waitForFunction(() => !window.hopLanes.hint, null, { timeout: T });
+    assert.equal(await page.evaluate(() => localStorage.getItem('hoplanes.hint')), '1', 'row 5: the hint is done for good');
+    await page.keyboard.press('KeyP');
+    await waitState(page, 'paused');
+    assert.equal(await hop(page, () => window.hopLanes.playLoop), false, 'the loop stops on pause');
+    const [download] = await Promise.all([page.waitForEvent('download', { timeout: T }), page.click('#snapBtn')]);
+    assert.equal(download.suggestedFilename(), 'hop-lanes.png');
+    await page.waitForFunction(() => /SAVED!/.test(document.getElementById('snapBtn').textContent), null, { timeout: T });
+    assert.deepEqual(errors, []);
+  } finally { await context.close(); }
+});
+
+test('11. daily mode: a finished run starts a streak that shows on the title', { timeout: SLOW }, async () => {
+  const { context, page, errors } = await open(INDEX, { storage: { 'hoplanes.mode': 'daily' } });
+  try {
+    await waitState(page, 'attract');
+    assert.equal(await page.locator('#streakBox').isHidden(), true, 'no streak yet');
+    await page.keyboard.press('KeyW');
+    await waitState(page, 'play');
+    await hop(page, () => window.hopLanes.kill(window.hopLanes.players[0], 'test'));
+    await waitState(page, 'over');
+    await page.locator('#results').waitFor({ state: 'visible', timeout: T });
+    assert.match(await page.evaluate(() => localStorage.getItem('hoplanes.streak')), /^\d{4}-\d{2}-\d{2}\|1$/);
+    assert.equal(await hop(page, () => window.hopLanes.streak), '1');
+    assert.equal(await page.locator('#streakBox').isHidden(), false, 'the streak shows');
     assert.deepEqual(errors, []);
   } finally { await context.close(); }
 });

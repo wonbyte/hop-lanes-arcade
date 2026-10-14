@@ -343,7 +343,7 @@ function updateRail(lane, w, draw = true) {
     lane.timer = lane.nextStart - w;
     const blink = Math.floor(lane.timer * BLINK_STEPS);
     on = lane.timer < lane.warn && blink % 2 === 0;
-    if (lane.timer < lane.warn && !lane.warned) { lane.warned = true; if (near(lane.r)) { sfx.horn(); if (lane.boss) setTimeout(sfx.horn, 600); } }
+    if (lane.timer < lane.warn && !lane.warned) { lane.warned = true; if (near(lane.r)) { sfx.horn(); if (lane.boss) { sfx.boss(); setTimeout(sfx.horn, 600); } } }
     if (on && blink !== lane.lastBell && near(lane.r)) { lane.lastBell = blink; sfx.bell(); }
   } else {
     on = Math.floor(w * BLINK_STEPS) % 2 === 1;

@@ -8,7 +8,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { hashString } from '../js/rules.js';
+import { MODES, hashString, isoWeek } from '../js/rules.js';
 import { decodeReplay } from '../js/replay.js';
 import { simulate } from '../js/sim.js';
 
@@ -63,11 +63,14 @@ function flush() {
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { flush(); process.exit(0); });
 process.on('exit', flush);
 
-const MODES = ['classic', 'race', 'daily', 'room'];
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const DAY_MS = 86_400_000;
 const bucketOf = e => `${e.mode ?? 'classic'}|${e.day ?? ''}`;
+const WEEK_RE = /^\d{4}-W(0[1-9]|[1-4]\d|5[0-3])$/;
 const dayNum = d => Date.parse(`${d}T00:00:00Z`) / DAY_MS; // NaN for impossible dates
+
+// the ISO week of a day (rules.js isoWeek), re-exported for the tests
+export { isoWeek };
 
 // Newest day an entry may carry: tomorrow UTC (clock skew); later days are refused on POST.
 const latestDay = () => new Date(Date.now() + DAY_MS).toISOString().slice(0, 10);
@@ -92,26 +95,28 @@ function compact(list) {
 
 scores = compact(load());
 
-// Top entries, optionally only those with a given day and/or mode. Entries saved before
-// day/mode existed read as day null, mode 'classic'.
-function top(day, mode) {
+// Top entries, optionally only those with a given day or ISO week and/or mode. Entries saved before
+// day/mode existed read as day null, mode 'classic'. Each carries its replay code (or null): top entries only,
+// so a response holds at most TOP_N replays.
+function top(day, mode, week) {
   const out = [];
   for (const e of scores) {
     const d = e.day ?? null, m = e.mode ?? 'classic';
     if (day && d !== day) continue;
+    if (week && (!d || isoWeek(d) !== week)) continue;
     if (mode && m !== mode) continue;
-    out.push({ name: e.name, score: e.score, at: e.at, day: d, mode: m });
+    out.push({ name: e.name, score: e.score, at: e.at, day: d, mode: m, replay: typeof e.replay === 'string' ? e.replay : null });
     if (out.length >= TOP_N) break;
   }
   return out;
 }
 
-function add(name, score, day, mode) {
+function add(name, score, day, mode, replay = null) {
   const probe = { name, day, mode };
   const old = scores.find(e => e.name === name && bucketOf(e) === bucketOf(probe));
   if (old && old.score >= score) return; // keep the higher score
   if (old) scores.splice(scores.indexOf(old), 1);
-  scores.push({ name, score, at: new Date().toISOString(), day, mode });
+  scores.push({ name, score, at: new Date().toISOString(), day, mode, replay });
   scores = compact(scores);
   save();
 }
@@ -204,7 +209,7 @@ function validate(obj) {
     mode = obj.mode;
   }
   let replay = null;
-  if (obj.replay !== undefined) {   // the replay link code of the run (screens.js): checked with VERIFY, else only its shape
+  if (obj.replay !== undefined) {   // the replay link code of the run (screens.js): checked with VERIFY, else only its shape; stored either way
     if (typeof obj.replay !== 'string' || obj.replay.length > MAX_REPLAY || !/^[\w-]+$/.test(obj.replay)) return null;
     replay = obj.replay;
   }
@@ -233,10 +238,12 @@ const server = http.createServer(async (req, res) => {
       'Access-Control-Max-Age': '86400',
     }); return res.end(); }
     if (req.method === 'GET') {
-      const day = url.searchParams.get('day'), mode = url.searchParams.get('mode');
+      const day = url.searchParams.get('day'), mode = url.searchParams.get('mode'), week = url.searchParams.get('week');
       if (day !== null && !DAY_RE.test(day)) return send(res, 400, { error: 'invalid day' });
+      if (week !== null && !WEEK_RE.test(week)) return send(res, 400, { error: 'invalid week' });
+      if (day !== null && week !== null) return send(res, 400, { error: 'day and week cannot be combined' });
       if (mode !== null && !MODES.includes(mode)) return send(res, 400, { error: 'invalid mode' });
-      return send(res, 200, { top: top(day, mode) });
+      return send(res, 200, { top: top(day, mode, week) });
     }
     if (req.method === 'POST') {
       if (POST_TOKEN && !tokenOk(req.headers['x-hop-token'])) return send(res, 401, { error: 'bad token' });
@@ -246,7 +253,7 @@ const server = http.createServer(async (req, res) => {
       const entry = validate(parsed);
       if (!entry) return send(res, 400, { error: 'invalid name, score, day or mode' });
       if (VERIFY && !replayOk(entry)) return send(res, 400, { error: 'replay mismatch' });
-      add(entry.name, entry.score, entry.day, entry.mode);
+      add(entry.name, entry.score, entry.day, entry.mode, entry.replay);
       return send(res, 200, { top: top() });
     }
     send(res, 404, { error: 'not found' });
@@ -255,4 +262,6 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+// Start only when run as a script (node server/scores.mjs), so tests can import isoWeek.
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url))
 server.listen(PORT, () => console.log(`hop-lanes scores on :${server.address().port} (data: ${DATA_FILE})${VERIFY ? ' (verifying replays)' : ''}`));

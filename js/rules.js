@@ -41,6 +41,8 @@ const SHIELD_TIME = 1.2;      // seconds a rescued player can not be hit
 const MAGNET_TIME = 8;        // seconds the magnet pulls coins
 const MAGNET_REACH = 1.6;     // columns the magnet reaches
 const DIFF_ROWS = 140;        // rows until the game reaches full difficulty
+const NEAR_MISS = 0.5;        // a car or boulder that passes within this of a hit is a near miss (+1 combo)
+const TAG_BOOST = 0.7;        // tag mode: the player behind hops this much faster
 const difficulty = r => difficultyAt(r, DIFF_ROWS);
 
 // ---------- lanes ----------
@@ -92,13 +94,48 @@ function plankState(lane, x, wt) {
 const isWater = kind => kind === 'river' || kind === 'lily' || kind === 'bridge';
 const hopTime = (fromKind, base) => fromKind === 'mud' ? base * MUD_SLOW : base;
 
-// the game modes, shared by core.js (the DOM side), replay.js and the score server's own copy
-const MODES = ['classic', 'race', 'daily', 'room'];
+// the game modes, shared by core.js (the DOM side), replay.js and the score server
+// race: the first to die loses. coinwar: most coins wins. tag: the player behind hops faster.
+const MODES = ['classic', 'race', 'coinwar', 'tag', 'daily', 'room'];
+// each animal has one small edge (a replay stores the animals, so a run stays the same run)
+const TRAITS = {
+  frog: {},                      // balanced
+  fox: { comboGap: 1.5 },        // combos stay alive longer (more coins; the run itself is the same)
+  bunny: { hop: 0.8 },           // faster hops
+  cat: { lives: 1 },             // survives one fall into water
+  robot: { idle: 3 },            // the eagle waits 3 s longer
+  pig: { magnet: 1.5 },          // the magnet lasts longer
+  penguin: { noSlide: true },    // at home on ice: no slide
+  turtle: { behind: 1 }          // one more row of slack behind the scroll line
+};
+const traitOf = key => TRAITS[key] || {};
+// hats: unlocked by the all-time best score on this device (the first whose `at` is reached, from the top)
+const HATS = [{ key: 'halo', name: 'HALO', at: 500 }, { key: 'crown', name: 'CROWN', at: 250 }, { key: 'cap', name: 'CAP', at: 100 }];
+const hatFor = best => HATS.find(h => best >= h.at) || null;
+// the daily streak: days in a row with a daily run, saved as "YYYY-MM-DD|n"; today's run returns the new text
+function streakAfter(saved, day, yesterday) {
+  const [last, n] = String(saved || '').split('|');
+  const count = last === day ? Number(n) || 1 : last === yesterday ? (Number(n) || 0) + 1 : 1;
+  return day + '|' + count;
+}
+const streakCount = (saved, day, yesterday) => { const [last, n] = String(saved || '').split('|'); return last === day || last === yesterday ? Number(n) || 0 : 0; };
+// the ISO week of a YYYY-MM-DD day, as YYYY-Www (Monday first; week 1 holds the first Thursday); null if malformed
+function isoWeek(day) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day));
+  if (!m) return null;
+  const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+  if (d.getUTCMonth() !== +m[2] - 1 || d.getUTCDate() !== +m[3]) return null;
+  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));   // the Thursday of this week decides the year
+  const y = d.getUTCFullYear();
+  const week = Math.ceil(((d - Date.UTC(y, 0, 1)) / 86400000 + 1) / 7);
+  return y + '-W' + String(week).padStart(2, '0');
+}
 // a local calendar day as YYYY-MM-DD, built by hand (locale date formats are not stable across browsers)
 const pad2 = n => String(n).padStart(2, '0');
 const isoDay = (d = new Date()) => d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+const dayBefore = (d = new Date()) => { const y = new Date(d); y.setDate(y.getDate() - 1); return isoDay(y); };
 
-export { BRIDGE_FROM, ICE_FROM, PLANK_BACK, PLANK_BREAK, ROCKS_FROM, SLIDE_TIME, isWater, plankState,
+export { BRIDGE_FROM, HATS, ICE_FROM, NEAR_MISS, TAG_BOOST, TRAITS, dayBefore, hatFor, isoWeek, streakAfter, streakCount, traitOf, PLANK_BACK, PLANK_BREAK, ROCKS_FROM, SLIDE_TIME, isWater, plankState,
   BEHIND_LIMIT, COIN_CHANCE, COMBO_EVERY, COMBO_GAP, COUNTDOWN, DIFF_ROWS, EAGLE_IDLE, EAGLE_SWOOP, EAGLE_WARN, EDGE_DEATH, FIRST_ROW, HIT_PAD, HOP_TIME,
   LANE_KINDS, MAGNET_REACH, MAGNET_TIME, MODES, MUD_SLOW, PLAY_HALF, POWER_CHANCE, SHIELD_TIME, STEP, STREAK_MAX, TRAIN_SPEED, TRAIN_WARN, WRAP,
   difficulty, difficultyAt, hashString, hopTarget, hopTime, isoDay, mulberry32, nextLaneKind };

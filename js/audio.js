@@ -15,7 +15,8 @@ function audio() {
 let muted = loadText(MUTE_KEY) === '1';
 function setMuted(on) {
   muted = on;
-  if (on) stopTune();
+  if (on) { stopTune(); stopPlayLoop(); }
+  else if (G.state === 'play') startPlayLoop();
   else if (G.state === 'attract') startTune();   // sound back on while on the title: the tune plays
   try { localStorage.setItem(MUTE_KEY, on ? '1' : '0'); } catch (e) {}
   const b = $('mute');
@@ -52,7 +53,10 @@ const sfx = {
   eagle: () => { beep(1500, 0.18, 'sawtooth', 0.05, -500); setTimeout(() => beep(1300, 0.25, 'sawtooth', 0.05, -600), 180); },
   best: () => [523, 659, 784, 1047, 784, 1047, 1319].forEach((f, i) => setTimeout(() => beep(f, i === 6 ? 0.4 : 0.12, 'square', 0.05), i * 90)),
   over: () => [659, 587, 523, 392].forEach((f, i) => setTimeout(() => beep(f, i === 3 ? 0.5 : 0.14, 'triangle', 0.06), i * 140)),
-  prize: () => [392, 523, 659, 784, 1047].forEach((f, i) => setTimeout(() => beep(f, 0.14, 'triangle', 0.06), i * 70))
+  prize: () => [392, 523, 659, 784, 1047].forEach((f, i) => setTimeout(() => beep(f, 0.14, 'triangle', 0.06), i * 70)),
+  whoosh: () => beep(2200, 0.16, 'sawtooth', 0.03, -1800),   // a near miss
+  boss: () => { beep(60, 0.5, 'sawtooth', 0.09, -30); beep(90, 0.3, 'square', 0.05, -40); setTimeout(() => beep(55, 0.6, 'sawtooth', 0.09, -25), 320); },   // the boss train: a drum hit
+  snap: () => beep(1800, 0.05, 'square', 0.04)
 };
 
 // ---------- the title tune: a short chip loop while the title screen shows ----------
@@ -80,8 +84,27 @@ function startTune() {
 const tuneOn = () => !!tuneTimer;
 function stopTune() { if (tuneTimer) { clearTimeout(tuneTimer); tuneTimer = 0; } }
 
+// ---------- the play loop: a soft bass line under the game (quieter than the title tune, loops until the run ends) ----------
+const PLAY_LINE = [131, 0, 131, 0, 165, 0, 131, 0, 98, 0, 98, 0, 110, 0, 123, 0];
+const PLAY_STEP = 190;
+let playTimer = 0, playStep = 0;
+function startPlayLoop() {
+  if (playTimer || !actx || actx.state !== 'running' || muted) return;
+  playStep = 0;
+  const next = () => {
+    if (muted || G.state !== 'play') { playTimer = 0; return; }
+    const f = PLAY_LINE[playStep % PLAY_LINE.length];
+    if (f) beep(f, 0.12, 'triangle', 0.02);
+    playStep++;
+    playTimer = setTimeout(next, PLAY_STEP);
+  };
+  next();
+}
+function stopPlayLoop() { if (playTimer) { clearTimeout(playTimer); playTimer = 0; } }
+const playLoopOn = () => !!playTimer;
+
 const isMuted = () => muted;
 // let the audio device sleep on long idle screens; audio() wakes it on the next input
 function idleAudio() { if (actx && actx.state === 'running') actx.suspend().catch(() => {}); }
 
-export { actx, audio, beep, idleAudio, isMuted, muted, setMuted, sfx, startTune, stopTune, tuneOn };
+export { actx, audio, beep, idleAudio, isMuted, muted, playLoopOn, setMuted, sfx, startPlayLoop, startTune, stopPlayLoop, stopTune, tuneOn };
