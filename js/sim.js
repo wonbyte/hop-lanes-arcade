@@ -2,7 +2,7 @@
 // No DOM, no Three.js. players.js plays these rules in the browser (makeRules with effect hooks that move meshes and
 // make sounds); simulate() plays a replay with no effects, so the score server can check a posted score.
 // Everything here is step-driven (fixed STEP), so the browser and simulate() give the same run tick for tick.
-import { BEHIND_LIMIT, BOMB_TICKS, COMBO_EVERY, COUNTDOWN, COMBO_GAP, EAGLE_IDLE, EAGLE_SWOOP, EAGLE_WARN, EDGE_DEATH, HIT_PAD, HOP_TIME, LEAD_FROM, LEAD_GAP, LEAD_SLOW, MAGNET_REACH, MAGNET_TIME, NEAR_MISS, PLAY_HALF, SHIELD_TIME, SLIDE_TIME, SPRING_HOP, STEP, PLANK_BACK, PLANK_BREAK, TAG_BOOST, hopTarget, hopTime, isBombRow, isWater, plankState, traitOf } from './rules.js';
+import { BEHIND_LIMIT, BOMB_TICKS, COMBO_EVERY, COUNTDOWN, COMBO_GAP, EAGLE_IDLE, EAGLE_SWOOP, EAGLE_WARN, EDGE_DEATH, HIT_PAD, HOP_TIME, LEAD_FROM, LEAD_GAP, LEAD_SLOW, MAGNET_REACH, MAGNET_TIME, NEAR_MISS, PLAY_HALF, SHIELD_TIME, SLIDE_TIME, SPRING_HOP, STEP, PLANK_BACK, PLANK_BREAK, TAG_BOOST, hopTarget, hopTime, isBombPower, isWater, plankState, traitOf } from './rules.js';
 import { createWorldGen, railStep, trafficX } from './gen.js';
 
 const START_X = [-2, 2];   // the columns the two players start on
@@ -45,45 +45,56 @@ function makeRules(W) {
   const G = W.G, fx = {};
   for (const k of RULE_HOOKS) fx[k] = (W.fx && W.fx[k]) || (() => {});
 
-  const others = p => (W.players || []).filter(q => q !== p && q.joined && q.alive);
-  const bothJoined = () => (W.players || []).filter(q => q.joined).length === 2;
+  const players = W.players || [];
+  const others = p => players.filter(q => q !== p && q.joined && q.alive);
+  const bothJoined = () => players.length === 2 && players[0].joined && players[1].joined;
   const behindLimit = p => BEHIND_LIMIT + (p.trait.behind || 0);
   // two players (not race or tag): far out, a leader well ahead hops slower so the other can catch up
+  // (runs every step for both players: no arrays here)
   function leading(p) {
     if (G.mode === 'race' || G.mode === 'tag' || p.row < LEAD_FROM || !bothJoined()) return false;
-    const o = others(p);
-    return o.length > 0 && o.every(q => p.row - q.row >= LEAD_GAP);
+    const q = players[0] === p ? players[1] : players[0];
+    return q.alive && p.row - q.row >= LEAD_GAP;
   }
   function giveShield(p) { p.shield = true; fx.shield(p); }
   function payCoins(p, n) { p.coins += n; W.coins(n); }
   // the bombs in play: a blocked column (a tree the other player can not hop onto) until a world tick
+  // (kept by row: the lane is looked up again when the bomb goes, so a row that was dropped and rebuilt is no trouble;
+  // a bomb on water blocks nothing, hopTarget lets logs decide there, so the picker gets a shield instead)
   const bombs = [];
   function dropBomb(p, other) {
-    const lane = W.lane(other.row + 1);
-    if (!lane) return false;
+    const r = other.row + 1, lane = W.lane(r);
+    if (!lane || isWater(lane.kind)) return false;
     const x = Math.max(-PLAY_HALF, Math.min(PLAY_HALF, Math.round(other.x)));
+    const same = bombs.find(b => b.r === r && b.x === x);
+    if (same) { same.until = G.worldTick + BOMB_TICKS; fx.bomb(p, other, lane, x); return true; }   // the rock stays longer
     const own = !lane.trees.has(x);   // a tree already there stays a tree when the bomb goes
     if (own) lane.trees.add(x);
-    bombs.push({ lane, x, own, until: G.worldTick + BOMB_TICKS });
+    bombs.push({ r, x, own, until: G.worldTick + BOMB_TICKS });
     fx.bomb(p, other, lane, x);
     return true;
   }
+  function liftBomb(b) {
+    const lane = W.lane(b.r);
+    if (!lane) return;
+    if (b.own) lane.trees.delete(b.x);
+    fx.unbomb(lane, b.x);
+  }
   function stepBombs() {
     for (let i = bombs.length - 1; i >= 0; i--) {
-      const b = bombs[i];
-      if (G.worldTick < b.until) continue;
-      bombs.splice(i, 1);
-      if (b.own) b.lane.trees.delete(b.x);
-      fx.unbomb(b.lane, b.x);
+      if (G.worldTick < bombs[i].until) continue;
+      liftBomb(bombs.splice(i, 1)[0]);
     }
   }
+  // a new game: no bomb carries over (the browser keeps one rules object for every game)
+  function reset() { for (const b of bombs) liftBomb(b); bombs.length = 0; }
   function pickPower(p, lane) {
     const pw = lane.power;
     lane.power = null;
     let kind = pw.kind;
-    if (kind === 'magnet' && bothJoined() && isBombRow(lane.r)) {   // two players: this magnet is a bomb (world.js draws it so)
+    if (isBombPower(kind, lane.r, bothJoined())) {   // two players: this magnet is a bomb (world.js draws it so)
       const other = others(p)[0];
-      kind = other && dropBomb(p, other) ? 'bomb' : 'shield';   // nobody to bomb: a shield for the picker
+      kind = other && dropBomb(p, other) ? 'bomb' : 'shield';   // nobody to bomb, or water ahead of them: a shield for the picker
     }
     if (kind === 'shield') giveShield(p); else if (kind === 'magnet') p.magnetT = MAGNET_TIME * (p.trait.magnet || 1);
     if (G.run) G.run.powers++;
@@ -275,7 +286,7 @@ function makeRules(W) {
       if (p.eagle.t >= 1) kill(p, 'eagle');
     }
   }
-  return { giveShield, kill, stepPlayer, tryMove };
+  return { giveShield, kill, reset, stepPlayer, tryMove };
 }
 
 // is the game over? race: the first to die loses, at once; otherwise the game ends when nobody is left

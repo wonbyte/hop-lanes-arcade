@@ -15,7 +15,12 @@ try { renderer = new THREE.WebGLRenderer({ antialias: !(lowGpu && (window.device
 catch (e) { fail('This browser can not show 3D graphics. Turn on WebGL or try another browser.'); throw new Error('no-webgl'); }
 // dense phone screens start at 2 (no multisampling there, so the resolution is what makes edges sharp); the ladder
 // drops to 1.5 first if frames get slow. Elsewhere 1.5 is enough for voxels: 2 would draw almost twice the pixels
-let pixelRatio = Math.min(lowGpu ? 2 : 1.5, window.devicePixelRatio || 1);
+// A tablet at 2 would draw 4 Mpx a frame: only a phone-sized screen starts there. A ratio the ladder settled on
+// is kept for the next load (RATIO_KEY), so a slow phone does not pay the slow first seconds every time.
+const phoneSized = window.innerWidth * window.innerHeight * 4 < 3.5e6;
+const RATIO_KEY = 'hoplanes.ratio';
+const savedRatio = Number(loadText(RATIO_KEY)) || Infinity;
+let pixelRatio = Math.min(lowGpu && phoneSized ? 2 : 1.5, window.devicePixelRatio || 1, savedRatio);
 renderer.setPixelRatio(pixelRatio);
 renderer.shadowMap.enabled = true;
 // phones: hard-edged shadows (one shadow-map read per pixel instead of several); they suit the voxel look.
@@ -47,7 +52,8 @@ scene.add(sun, sun.target);
 const DAY = { sky: new THREE.Color(0x74d3f2), sun: new THREE.Color(0xffffff), hemi: 0.65 * Math.PI, sunI: 0.6 * Math.PI };
 const NIGHT = { sky: new THREE.Color(0x1b2242), sun: new THREE.Color(0x9fb3ff), hemi: 0.28 * Math.PI, sunI: 0.42 * Math.PI };
 const RAIN_SKY = new THREE.Color(0x6b8294), SNOW_SKY = new THREE.Color(0xd6e2ec);
-let nightT = -1, wetT = 0, shownWeather = '', skyHex = -1;
+let nightT = -1, wetT = 0, shownWeather = '', skyHex = -1, skyT = 1;
+const skyFrom = new THREE.Color(0x74d3f2), skyTo = new THREE.Color(0x74d3f2);
 const weatherEl = $('weather');
 // sky and light by row (night) and weather at the camera; the weather tint fades over a second.
 // sky: the day sky of the biome at the camera (world.js biomeAt). The 'night' look starts the world at full night.
@@ -55,9 +61,10 @@ function setNight(row, weather = '', sky = 0x74d3f2) {
   const t = Math.min(1, Math.max(0, (row + (G.look === 'night' ? NIGHT_FULL : 0) - NIGHT_START) / (NIGHT_FULL - NIGHT_START)));
   const wet = weather ? 1 : 0;
   if (weather !== shownWeather) { shownWeather = weather; weatherEl.className = weather; }
-  if (t === nightT && wet === wetT && sky === skyHex) return;
+  if (t === nightT && wet === wetT && sky === skyHex && skyT === 1) return;
   nightT = t; wetT += (wet - wetT) * 0.03; if (Math.abs(wet - wetT) < 0.01) wetT = wet;
-  if (sky !== skyHex) { skyHex = sky; DAY.sky.setHex(sky); }
+  if (sky !== skyHex) { skyHex = sky; skyFrom.copy(DAY.sky); skyTo.setHex(sky); skyT = 0; }   // a new biome: the sky fades over
+  if (skyT < 1) { skyT = Math.min(1, skyT + 0.02); DAY.sky.copy(skyFrom).lerp(skyTo, skyT); }
   glowU.value = Math.min(1, t * 1.5 + wetT * 0.4);   // headlights come on with the dusk, and a little in rain
   scene.background.copy(DAY.sky).lerp(NIGHT.sky, t).lerp(weather === 'snow' ? SNOW_SKY : RAIN_SKY, wetT * (weather === 'snow' ? 0.5 : 0.6));
   sun.color.copy(DAY.sun).lerp(NIGHT.sun, t);
@@ -137,7 +144,7 @@ function resetFrameWatch() {
   perf.ema = 1 / 60; perf.t = 0;
   perf.tried = 0;      // the next game climbs the ladder again from the first rung
 }
-function setRatio(r) { pixelRatio = r; renderer.setPixelRatio(r); resize(); }
+function setRatio(r) { pixelRatio = r; renderer.setPixelRatio(r); resize(); try { localStorage.setItem(RATIO_KEY, String(r)); } catch (e) {} }
 function setShadowMapSize(n) {
   sun.shadow.mapSize.setScalar(n);
   if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }   // rebuilt at the new size

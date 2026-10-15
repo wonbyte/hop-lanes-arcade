@@ -1,9 +1,8 @@
 import { sfx } from './audio.js';
 import { BIOME_ROWS, FIRST_ROW, FIXED_SEED, G, LANES_AHEAD, LANES_BEHIND, PLAY_HALF, STEP, TUTORIAL_SEED, WRAP } from './core.js';
-import { BOMB_TICKS, hashString, isBombRow, plankState } from './rules.js';
+import { hashString, isBombPower, isBombRow, plankState } from './rules.js';
 import { createWorldGen, railStep, trafficX, wetAt, standGroups } from './gen.js';
 import { touchRows } from './sim.js';
-import { players } from './players.js';
 import { BLINK_STEPS, scene } from './gfx.js';
 import { LIGHT_TINT, blockBoxes, bombBoxes, boulderBoxes, coinBoxes, lightBoxes, logBoxes, magnetBoxes, plankBoxes, policeBoxes, shieldBoxes, tileBoxes, trainBoxes, twisterBoxes, vehicleBoxes } from './models.js';
 import { HINT_KEY, dailySeed, loadText } from './storage.js';
@@ -75,6 +74,7 @@ class Inst {
   }
   paint(color) { this.f.mesh.setColorAt(this.i, tint.setHex(color)); this.f.mesh.instanceColor.needsUpdate = true; }
   drop() {
+    if (this.i < 0) return;   // dropped already: a second drop would cut a live instance
     const f = this.f, last = --f.top, m = f.mesh;
     if (this.i !== last) {   // the last instance takes this slot
       m.instanceMatrix.array.copyWithin(this.i * 16, last * 16, last * 16 + 16);
@@ -115,13 +115,22 @@ function spinAll(now) {
 // the coins (and a power-up) gen.js put on the lane: lane.coins maps a column to its spinner
 function placeCoins(lane, z) {
   for (const x of lane.coins.keys()) lane.coins.set(x, spinner(lane, 'coin', coinBoxes, x, z));
-  const pw = lane.power;
-  // with two players a magnet on a bomb row is a bomb (sim.js pickPower decides the same way)
-  const bomb = pw && pw.kind === 'magnet' && isBombRow(lane.r) && players.every(p => p.joined);
-  if (pw) pw.s = spinner(lane, bomb ? 'bomb' : pw.kind, bomb ? bombBoxes : pw.kind === 'shield' ? shieldBoxes : magnetBoxes, pw.x, z);   // turns like a coin
+  if (lane.power) placePower(lane);
+}
+// the power-up's look: with two players a magnet on a bomb row is a bomb (rules.js isBombPower, the rule sim.js plays)
+function placePower(lane) {
+  const pw = lane.power, bomb = isBombPower(pw.kind, lane.r, G.twoUp);
+  if (pw.s) dropSpinner(pw.s);
+  pw.s = spinner(lane, bomb ? 'bomb' : pw.kind, bomb ? bombBoxes : pw.kind === 'shield' ? shieldBoxes : magnetBoxes, pw.x, -lane.r);   // turns like a coin
+  pw.s.bomb = bomb;
+}
+// the second player joined during the countdown: bomb rows already built show their magnets as bombs now
+function refreshPowerLooks() {
+  for (const lane of lanes.values()) if (lane.power && isBombRow(lane.r) && lane.power.s.bomb !== isBombPower(lane.power.kind, lane.r, G.twoUp)) placePower(lane);
 }
 // the rock a bomb drops: one column blocked for BOMB_TICKS (sim.js calls block/unblock through players.js)
 function blockColumn(lane, x) {
+  unblockColumn(lane, x);   // a second bomb on the same column keeps one rock
   const i = new Inst('block', blockBoxes, true);
   i.set(x, 0, -lane.r);
   (lane.blocks || (lane.blocks = new Map())).set(x, i);
@@ -360,7 +369,7 @@ function dropLane(lane) {
   for (const o of lane.objs) { o.inst.drop(); if (o.light) o.light.drop(); }
   if (lane.ripples) for (const q of lane.ripples) q.inst.drop();
   if (lane.plankInst) for (const q of lane.plankInst) q.i.drop();
-  if (lane.blocks) for (const i of lane.blocks.values()) i.drop();
+  if (lane.blocks) { for (const i of lane.blocks.values()) i.drop(); lane.blocks = null; }   // a bomb that goes later finds nothing
   if (lane.train) lane.train.inst.drop();
   if (lane.light) lane.light.drop();
   if (lane.power) dropSpinner(lane.power.s);
@@ -478,7 +487,7 @@ function resetWorld() {
   // the very first classic game is a gentle, known world (the guided hints in app.js fit it)
   worldSeed = G.replay ? G.replay.seed : FIXED_SEED !== null ? FIXED_SEED
     : G.mode === 'daily' ? dailySeed() : G.mode === 'room' ? hashString('room:' + G.room)
-    : loadText(HINT_KEY) !== '1' ? TUTORIAL_SEED : (Math.random() * 4294967296) >>> 0;
+    : G.mode === 'classic' && loadText(HINT_KEY) !== '1' ? TUTORIAL_SEED : (Math.random() * 4294967296) >>> 0;
   for (const k of [...chunks.keys()]) releaseChunk(k);   // nothing should be left; frees any chunk that is
   hot.clear();
   G.worldTick = 0;
@@ -506,4 +515,4 @@ function laneKinds() {   // lane types for rows 0..30 (builds missing rows ahead
   return out;
 }
 
-export { BIOMES, CHUNK, Inst, biomeAt, biomeIndex, blockColumn, unblockColumn, LANE_BUILDERS, addLane, chunks, dropLane, dropSpinner, ensureLanes, firstNeededRow, fleet, fxRand, getSeed, laneCoins, laneKinds, lanes, lastNeededRow, moveTraffic, near, resetWorld, showLane, spinAll, spinners, updateFarLanes, updateLanes, updateRail, weatherAt, worldGroup };
+export { BIOMES, CHUNK, Inst, biomeAt, biomeIndex, blockColumn, refreshPowerLooks, unblockColumn, LANE_BUILDERS, addLane, chunks, dropLane, dropSpinner, ensureLanes, firstNeededRow, fleet, fxRand, getSeed, laneCoins, laneKinds, lanes, lastNeededRow, moveTraffic, near, resetWorld, showLane, spinAll, spinners, updateFarLanes, updateLanes, updateRail, weatherAt, worldGroup };

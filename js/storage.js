@@ -35,14 +35,14 @@ const DAILYDONE_KEY = 'hoplanes.dailydone';   // 'YYYY-MM-DD|bitmask': the daily
 const LOCAL_KEY = 'hoplanes.local';     // JSON list of { name, score, day, mode }: the best 10 runs on this device
 const INITIALS_KEY = 'hoplanes.initials';   // the 3 letters in front of the animal's name on the local list
 // ---------- the local top 10 (pure: tests/replay.test.mjs) ----------
-const LOCAL_MAX = 10;
+const LOCAL_MAX = 10, LOCAL_MAX_SCORE = 100000;   // a tampered list can not freeze the board with absurd scores
 const cleanInitials = s => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 3);
 // the saved list, checked entry by entry, best first, at most 10
 function parseLocal(text) {
   let list = [];
   try { list = JSON.parse(text || '[]'); } catch (e) {}
   if (!Array.isArray(list)) return [];
-  return list.filter(e => e && typeof e.name === 'string' && Number.isInteger(e.score) && e.score > 0)
+  return list.filter(e => e && typeof e.name === 'string' && Number.isInteger(e.score) && e.score > 0 && e.score <= LOCAL_MAX_SCORE)
     .map(e => ({ name: e.name.slice(0, 24), score: e.score, day: String(e.day || ''), mode: String(e.mode || '') }))
     .sort((a, b) => b.score - a.score).slice(0, LOCAL_MAX);
 }

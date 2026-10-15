@@ -428,7 +428,7 @@ test('twister: the thing crossing a boss grass row kills like a car (no near mis
   c.rules.giveShield(c.players[0]);
   c.players[0].x = 0; c.rules.tryMove(c.players[0], 0, 1); c.hopTicks(c.players[0]); c.run();
   assert.deepEqual([c.players[0].alive, c.players[0].row, c.players[0].shield], [true, 0, false]);
-  // simulate() steps the twister with the world clock like a car: a run that stands on its row ends with it
+  // the twister row of this world (createSim moves the twister with the world clock like a car)
   const g = createWorldGen(3);
   let tw = null;
   for (let r = 100; r < 300 && !tw; r++) if (g.lane(r).twister) tw = r;
@@ -509,4 +509,23 @@ test('bomb: with two players a magnet on a bomb row blocks the column ahead of t
   f.players[1].row = 10; f.players[1].x = 4; f.players[0].row = 23; f.players[0].x = 0;
   f.rules.tryMove(f.players[0], 0, 1); f.hopTicks(f.players[0]); f.run(BOMB_TICKS + 5);
   assert.ok(f.lanes.get(11).trees.has(4), 'the tree stays');
+  // water ahead of the other player blocks nothing (logs decide there): the picker gets a shield instead
+  const g = benchWith(rows, ['frog', 'fox']);
+  g.lanes.get(11).kind = 'river'; g.lanes.get(11).objs = [];
+  g.players[1].row = 10; g.players[1].x = 0; g.players[0].row = 23; g.players[0].x = 0;
+  g.rules.tryMove(g.players[0], 0, 1); g.hopTicks(g.players[0]);
+  assert.ok(g.players[0].shield && !g.lanes.get(11).trees.size, 'no rock on water, a shield for the picker');
+  // a second bomb on the same column keeps the rock longer instead of doubling it; reset() lifts what is left
+  const h = benchWith(rows, ['frog', 'fox']);
+  const hl = [];
+  const hr = makeRules({ G: h.G, lane: r => h.lanes.get(r), coins() {}, over() {}, players: h.players, fx: { bomb: () => hl.push('bomb'), unbomb: (lane, x) => hl.push('unbomb' + lane.r + ':' + x) } });
+  const hstep = n => { for (let i = 0; i < n; i++) { h.G.worldTick++; h.G.playT += STEP; for (const p of h.players) if (p.alive) hr.stepPlayer(p, STEP); } };
+  h.players[1].row = 10; h.players[1].x = 0; h.players[0].row = 23; h.players[0].x = 0;
+  hr.tryMove(h.players[0], 0, 1); hstep(40);
+  h.lanes.get(28).power = { x: 0, kind: 'magnet' };
+  h.players[0].row = 27; h.players[0].hop = null; hr.tryMove(h.players[0], 0, 1); hstep(BOMB_TICKS - 20);
+  assert.deepEqual(hl, ['bomb', 'bomb'], 'the second bomb only stretched the first');
+  assert.ok(h.lanes.get(11).trees.has(0), 'still blocked: the second bomb set a new end');
+  hr.reset();
+  assert.deepEqual([hl[2], h.lanes.get(11).trees.has(0)], ['unbomb11:0', false], 'a new game lifts the bomb');
 });

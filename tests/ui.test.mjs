@@ -387,12 +387,14 @@ test('6c. without a score server a finished run enters the local top 10 and the 
     await resultsVisible(page);
     const score = await hop(page, () => window.hopLanes.players[0].score);
     assert.ok(score >= 1, 'scored ' + score);
+    // the question waits until the results are up (never inside a game step); dismissed, the device tag stands in and nothing is saved
+    await page.waitForFunction(() => !!localStorage.getItem('hoplanes.local'), null, { timeout: T });
     const saved = JSON.parse(await page.evaluate(() => localStorage.getItem('hoplanes.local')));
     assert.equal(saved.length, 1);
     assert.equal(saved[0].score, score);
     assert.match(saved[0].name, /^[A-Z2-9]{3} FROG$/, 'initials (the device tag) plus the animal');
     assert.equal(saved[0].mode, 'classic');
-    assert.match(await page.evaluate(() => localStorage.getItem('hoplanes.initials')), /^[A-Z2-9]{3}$/);
+    assert.equal(await page.evaluate(() => localStorage.getItem('hoplanes.initials')), null, 'a cancelled question is asked again another day');
     await page.keyboard.press('Space');
     await waitState(page, 'attract');
     await page.click('#board');

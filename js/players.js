@@ -1,5 +1,5 @@
 import { sfx } from './audio.js';
-import { $, G, HOP_TIME, TAU, TRAIN_SPEED } from './core.js';
+import { $, G, HOP_TIME, LAND_DIP, TAU, TRAIN_SPEED } from './core.js';
 import { t } from './i18n.js';
 import { hatFor, isWater, traitOf } from './rules.js';
 import { feedReplay, makeRules, resetPlayer } from './sim.js';
@@ -46,13 +46,15 @@ function spawn(p) {
   if ((G.replay ? G.replay.handicap : G.handicap) === p.id + 1) giveShield(p);   // the handicap: a shield to start with
 }
 // the score number bounces when it grows; a combo of five or more bounces bigger (Web Animations: no layout work)
+// (transform only: it stays on the compositor; the gold tint of a hot combo is a class)
 const POP = [{ transform: 'scale(1)' }, { transform: 'scale(1.35)', offset: 0.3 }, { transform: 'scale(1)' }];
-const POP_BIG = [{ transform: 'scale(1)', color: '#fff' }, { transform: 'scale(1.7) rotate(-4deg)', color: '#ffd84a', offset: 0.3 }, { transform: 'scale(1)', color: '#fff' }];
+const POP_BIG = [{ transform: 'scale(1)' }, { transform: 'scale(1.7) rotate(-4deg)', offset: 0.3 }, { transform: 'scale(1)' }];
 function popScore(p) {
-  p.scoreEl.textContent = p.score;
-  if (reduceMotion || !p.scoreEl.animate) return;
-  if (p.pop) p.pop.cancel();
-  p.pop = p.scoreEl.animate(p.combo >= 5 ? POP_BIG : POP, { duration: p.combo >= 5 ? 320 : 220, easing: 'ease-out' });
+  const el = p.scoreEl, hot = p.combo >= 5;
+  el.textContent = p.score;
+  if (p.hot !== hot) { p.hot = hot; el.classList.toggle('hot', hot); }
+  if (reduceMotion || !el.animate || (p.pop && p.pop.playState === 'running')) return;   // a pop still running keeps going
+  p.pop = el.animate(hot ? POP_BIG : POP, { duration: hot ? 320 : 220, easing: 'ease-out' });
 }
 // the name over the score, plus the combo and the magnet while they last
 function setLabel(p) {
@@ -114,7 +116,6 @@ function applyMoves() {
   moveQ.length = 0;
 }
 const DEATH_SOUND = { splash: sfx.splash, slow: sfx.fall, eagle: sfx.fall, fall: sfx.fall, twister: sfx.fall };
-const LAND_DIP_T = 0.14;   // seconds of the small view dip after a landing (app.js placeCamera)
 const NEAR_FX = 0xfff2a8, PORTAL_FX = 0xd9a5ff;
 
 // small particle bursts: water for splashes, dust when a player is left behind
@@ -232,8 +233,8 @@ const playRules = makeRules({
     land(p, lane) {
       p.mesh.userData.body.scale.set(1.3, 0.62, 1.3);   // a squash on landing; stand() eases it back
       // a small puff where the feet land: dust on land, mud in mud, a splash on a log or a pad; the view dips a hair
-      const wet = lane && isWater(lane.kind);
-      if (!reduceMotion) { burst(p.x, -p.row, wet ? SPLASH : lane && lane.kind === 'mud' ? MUD_FX : DUST, 4, 0.45); G.landT = LAND_DIP_T; }
+      const wet = lane && isWater(lane.kind) && lane.kind !== 'cliff';   // a cliff counts as water for rescues, but it is stone
+      if (!reduceMotion) { burst(p.x, -p.row, wet ? SPLASH : lane && lane.kind === 'mud' ? MUD_FX : DUST, 4, 0.45); G.landT = LAND_DIP; }
     },
     hopPose(p, t) {
       const h = p.hop, m = p.mesh;
@@ -256,6 +257,7 @@ const playRules = makeRules({
   }
 });
 const { giveShield, kill, tryMove } = playRules;
+const resetRules = playRules.reset;   // screens.js toAttract: no bomb carries into the next game
 
 function updatePlayer(p, dt) {
   if (!p.mesh) return;
@@ -271,4 +273,4 @@ function updatePlayer(p, dt) {
   if (air) p.blob.position.set(p.mesh.position.x, 0.02, p.mesh.position.z);
 }
 
-export { blobGeo, blobMat, bubbleGeo, bubbleMat, charOf, despawn, restorePicks, giveShield, kill, players, queueMove, applyMoves, spawn, tryMove, updateParts, updatePlayer };
+export { blobGeo, blobMat, bubbleGeo, bubbleMat, charOf, despawn, restorePicks, giveShield, kill, players, queueMove, applyMoves, resetRules, spawn, tryMove, updateParts, updatePlayer };

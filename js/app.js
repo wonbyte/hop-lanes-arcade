@@ -1,5 +1,5 @@
 import { idleAudio, isMuted, playLayers, playLoopOn, sfx, startTune, stopTune, tuneOn } from './audio.js';
-import { $, BIOME_ROWS, COUNTDOWN, DEBUG, G, OVER_SLOW, OVER_SLOW_T, OVER_ZOOM, REPLAY_CODE, RESULTS_DELAY, STEP, TUTORIAL_SEED } from './core.js';
+import { $, BIOME_ROWS, COUNTDOWN, DEBUG, G, LAND_DIP, OVER_SLOW, OVER_SLOW_T, OVER_ZOOM, REPLAY_CODE, RESULTS_DELAY, STEP, TUTORIAL_SEED } from './core.js';
 import { pollGamepads } from './input.js';   // also sets up every input listener
 import { decodeReplay } from './replay.js';
 import { creepCamera } from './sim.js';
@@ -61,10 +61,12 @@ const hintPos = new THREE.Vector3();
 const HINT_ROWS = 12;
 const LANE_HINT = { road: 'WAIT FOR A GAP', river: 'HOP ON A LOG', rail: 'MIND THE TRAIN', lily: 'PADS ONLY' };
 function hintText(p) {
+  const plain = (touchQuery.matches ? t('TAP') : p.id ? '\u2191' : 'W') + ' \u25b2';
+  if (getSeed() !== TUTORIAL_SEED) return plain;
   const next = lanes.get(p.row + 1), key = next && LANE_HINT[next.kind];
   if (key) return t(key);
   if (p.score >= 2 && !G.hintTurn) return t(touchQuery.matches ? 'SWIPE TO TURN' : p.id ? '\u2190 \u2192 TO TURN' : 'A D TO TURN');
-  return (touchQuery.matches ? t('TAP') : p.id ? '\u2191' : 'W') + ' \u25b2';
+  return plain;
 }
 function placeHint() {
   if (!G.hint) { if (!hintEl.hidden) hintEl.hidden = true; return; }
@@ -80,18 +82,19 @@ function placeHint() {
   hintEl.hidden = false;
 }
 // game over: the world slows for a moment and the view closes in on the fallen player; the title puts it back
-const LAND_DIP = 0.14;
+const OVER_FX_T = 2;   // seconds the game-over view keeps moving
 let seenState = '';
 function overFx(dt) {
   if (G.state !== seenState) {
     seenState = G.state;
-    if (G.state === 'over') { G.slowT = OVER_SLOW_T; }
-    else if (G.state === 'attract') { G.overX = 0; G.lastDead = null; G.biomeBlock = 0; setZoom(1); }
+    if (G.state === 'over') { G.slowT = OVER_SLOW_T; G.overT = 0; }
+    else { G.overX = 0; G.lastDead = null; G.slowT = 0; setZoom(1); }   // a restart may skip the title (over -> countdown): put the view back whenever the results end
+    if (G.state === 'attract') G.biomeBlock = 0;
   }
-  if (G.state !== 'over' || reduceMotion) return;
-  const k = Math.min(1, dt * 4);
-  setZoom(camera.zoom + (OVER_ZOOM - camera.zoom) * k);
-  const d = G.lastDead;
+  if (G.state !== 'over' || reduceMotion || G.overT > OVER_FX_T) return;   // the view settles in a moment; then nothing moves per frame
+  G.overT += dt;
+  const k = Math.min(1, dt * 4), d = G.lastDead;
+  setZoom(G.overT > OVER_FX_T ? OVER_ZOOM : camera.zoom + (OVER_ZOOM - camera.zoom) * k);
   if (d && d.mesh) G.overX += (Math.max(-3, Math.min(3, d.mesh.position.x)) * 0.5 - G.overX) * k;
 }
 // one fixed step of the game: the same hops on the same ticks give the same run (replays)

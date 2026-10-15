@@ -1,5 +1,5 @@
 import { audio, isMuted, setMuted, sfx, startPlayLoop, startTune, stopPlayLoop, stopTune } from './audio.js';
-import { $, COUNTDOWN, G, GO_TIME, MODES, PRIZE_COST, SCORES_TOKEN, SCORES_URL, WIPE_MS } from './core.js';
+import { $, COUNTDOWN, G, GO_TIME, MODES, PRIZE_COST, RESULTS_DELAY, SCORES_TOKEN, SCORES_URL, WIPE_MS } from './core.js';
 import { nextLang, setLang, t } from './i18n.js';
 import { DAILY, DAILY_REWARD, MISSIONS, MISSION_REWARD, advanceMissions, dailyDoneText, dailyMissions, doneDaily, doneMissions, emptyStats, missionsText, parseDailyDone, parseMissions } from './missions.js';
 import { encodeReplay } from './replay.js';
@@ -8,9 +8,9 @@ import { runOver, topScore, winnerOf } from './sim.js';
 import { keepAwake } from './device.js';
 import { reduceMotion, resetFrameWatch, touchQuery } from './gfx.js';
 import { CHARACTERS, PIX, PRIZES, drawPix, isOwned } from './models.js';
-import { charOf, despawn, players, restorePicks, spawn } from './players.js';
+import { charOf, despawn, players, resetRules, restorePicks, spawn } from './players.js';
 import { BEST_KEY, DAILYDONE_KEY, DAILY_KEY, HANDICAP_KEY, HINT_KEY, HOWTO_KEY, INITIALS_KEY, LOCAL_KEY, STREAK_KEY, INSTALL_KEY, MISSIONS_KEY, MODE_KEY, OWNED_KEY, PICK_KEY, ROOM_KEY, cleanInitials, dayKey, deviceTag, entersLocal, flushBank, load, loadText, localTop, owned, parseLocal, refreshBests, save, savedMode, setBank, today } from './storage.js';
-import { getSeed, resetWorld } from './world.js';
+import { getSeed, refreshPowerLooks, resetWorld } from './world.js';
 import { saveGhost, startGhost, stopGhost } from './ghost.js';
 
 // Screens and flow: join cards and the shop, countdown, results, restart, pause, first-run help, online scores.
@@ -127,14 +127,20 @@ function payDaily() {   // at game over: which of today's missions this run fini
   return t('DAILY MISSION DONE +{n}', { n: DAILY_REWARD * done.length }) + ': ' + done.map(k => missionLabel(DAILY[picks[k]])).join(' + ') + '. ';
 }
 // the best 10 runs on this device (panels.js lists them): the first run that makes it asks for the player's initials
-function enterLocal(name, score) {
+// (never inside a game step: the first time, the question waits until the results panel is up, so the death plays out)
+let askedInitials = false;
+function enterLocal(name, score, now = false) {
   const list = parseLocal(loadText(LOCAL_KEY));
   if (!entersLocal(list, score)) return;
   let initials = cleanInitials(loadText(INITIALS_KEY));
   if (!initials) {
-    try { initials = cleanInitials(window.prompt(t('YOUR INITIALS (3 LETTERS)'), deviceTag.slice(0, 3))); } catch (e) {}
+    if (!now) { setTimeout(() => enterLocal(name, score, true), RESULTS_DELAY * 1000 + 800); return; }
+    if (!askedInitials) {   // once per session; a cancelled question is not saved, so it can be answered another day
+      askedInitials = true;
+      try { initials = cleanInitials(window.prompt(t('YOUR INITIALS (3 LETTERS)'), deviceTag.slice(0, 3))); } catch (e) {}
+      if (initials) save(INITIALS_KEY, initials);
+    }
     if (!initials) initials = deviceTag.slice(0, 3);
-    save(INITIALS_KEY, initials);
   }
   save(LOCAL_KEY, JSON.stringify(localTop(list, { name: initials + ' ' + name, score, day: today(), mode: G.mode })));
 }
@@ -225,6 +231,8 @@ function confetti() {
 function toAttract() {
   G.state = 'attract'; G.stateT = 0; G.camRow = 0;
   players.forEach(p => { p.joined = false; despawn(p); });
+  G.twoUp = false;
+  resetRules();   // no bomb carries over (its rocks go before the lanes do)
   stopGhost();
   resetWorld();
   refreshBests();
@@ -270,6 +278,7 @@ function join(i) {
   p.joined = true; sfx.join();
   stopTune();
   spawn(p);
+  if (players[0].joined && players[1].joined) { G.twoUp = true; refreshPowerLooks(); }
   if (G.state === 'attract') { G.state = 'countdown'; G.countdown = COUNTDOWN; }
   else G.countdown = Math.max(G.countdown, 2.5);
   $('logo').hidden = true;
@@ -286,7 +295,8 @@ function startPlay() {
   keepAwake(true);
   startGhost();
   startPlayLoop();
-  G.hint = !G.replay && loadText(HINT_KEY) !== '1';   // first run: the floating TAP hint (app.js draws it)
+  G.hint = !G.replay && loadText(HINT_KEY) !== '1';   // first run: the guided hints (app.js draws them)
+  G.hintTurn = false;
   setBanner(t('GO!'));
   players.forEach((p, i) => { $('score' + (i + 1)).hidden = !p.joined; });
   setCards();

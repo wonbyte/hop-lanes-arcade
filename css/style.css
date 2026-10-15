@@ -57,6 +57,8 @@ body {
   font-variant-numeric: tabular-nums;
 }
 .score span { display: block; font-size: .35em; margin-bottom: 6px; letter-spacing: .1em; text-shadow: 1px 1px 0 rgba(0,0,0,.55); }
+.score b { display: inline-block; will-change: transform; }   /* the number pops on every hop (players.js popScore) */
+.score b.hot { color: var(--gold); }
 #score1 { left: max(16px, env(safe-area-inset-left, 0px)); } #score1 span { color: var(--p1-glow); }
 #score2 { right: max(16px, env(safe-area-inset-right, 0px)); text-align: right; } #score2 span { color: var(--p2-glow); }
 

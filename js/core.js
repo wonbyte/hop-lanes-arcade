@@ -13,6 +13,7 @@ const TUTORIAL_SEED = 197;    // the very first classic game: three clear grass 
 const BIOME_ROWS = 100;       // the look of the land changes every this many rows (world.js biomeAt)
 const OVER_SLOW = 0.35, OVER_SLOW_T = 0.6;   // game over: the world runs this much slower for this long (real seconds)
 const OVER_ZOOM = 1.22;       // and the view closes in on the fallen player
+const LAND_DIP = 0.14;        // seconds of the small view dip after a landing (players.js sets G.landT, app.js draws it)
 // looks a player can unlock with the all-time best (screens.js): the land starts as that biome, or at night
 const LOOKS = [{ key: 'auto', at: 0 }, { key: 'desert', at: 100 }, { key: 'night', at: 150 }, { key: 'tundra', at: 200 }, { key: 'swamp', at: 300 }];
 const TAU = Math.PI * 2;
@@ -47,7 +48,9 @@ const G = {
   landT: 0,            // seconds left of the small view dip after a landing
   slowT: 0,            // real seconds left of the game-over slow motion
   overX: 0,            // game over: how far the view has moved toward the fallen player
+  overT: 0,            // seconds since game over (the view settles, then stops moving)
   lastDead: null,      // the player whose death ended the game (the view closes in on it)
+  twoUp: false,        // both players are in the game (screens.js join; world.js draws a bomb-row magnet as a bomb then)
   look: 'auto',        // an unlocked look (LOOKS): which biome the land starts as, or 'night'
   biomeBlock: 0        // the BIOME_ROWS block the camera is in (a new one shows its name)
 };
@@ -73,4 +76,4 @@ function fail(why) {
   b.querySelector('p').textContent = why;
 }
 
-export { $, BEHIND_LIMIT, BIOME_ROWS, LOOKS, OVER_SLOW, OVER_SLOW_T, OVER_ZOOM, TUTORIAL_SEED, COIN_CHANCE, COMBO_EVERY, COMBO_GAP, COUNTDOWN, DEBUG, DIFF_ROWS, EAGLE_IDLE, EAGLE_SWOOP, EAGLE_WARN, EDGE_DEATH, FIRST_ROW, FIXED_SEED, G, GO_TIME, HIT_PAD, HOP_TIME, LANES_AHEAD, LANES_BEHIND, MAGNET_REACH, MAGNET_TIME, MODES, POWER_CHANCE, REPLAY_CODE, NIGHT_FULL, NIGHT_START, PLAY_HALF, PRIZE_COST, RESULTS_DELAY, SCORES_TOKEN, SCORES_URL, SHIELD_TIME, STEP, TAU, TRAIN_SPEED, TRAIN_WARN, WIPE_MS, WRAP, difficulty, fail };
+export { $, BEHIND_LIMIT, BIOME_ROWS, LAND_DIP, LOOKS, OVER_SLOW, OVER_SLOW_T, OVER_ZOOM, TUTORIAL_SEED, COIN_CHANCE, COMBO_EVERY, COMBO_GAP, COUNTDOWN, DEBUG, DIFF_ROWS, EAGLE_IDLE, EAGLE_SWOOP, EAGLE_WARN, EDGE_DEATH, FIRST_ROW, FIXED_SEED, G, GO_TIME, HIT_PAD, HOP_TIME, LANES_AHEAD, LANES_BEHIND, MAGNET_REACH, MAGNET_TIME, MODES, POWER_CHANCE, REPLAY_CODE, NIGHT_FULL, NIGHT_START, PLAY_HALF, PRIZE_COST, RESULTS_DELAY, SCORES_TOKEN, SCORES_URL, SHIELD_TIME, STEP, TAU, TRAIN_SPEED, TRAIN_WARN, WIPE_MS, WRAP, difficulty, fail };
