@@ -1,7 +1,7 @@
 // Fast tests for js/rules.js (no browser). Run: node tests/rules.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BRIDGE_FROM, ICE_FROM, ROCKS_FROM, LANE_KINDS, MUD_SLOW, STREAK_MAX, difficultyAt, hashString, hopTarget, hopTime, mulberry32, nextLaneKind } from '../js/rules.js';
+import { BRIDGE_FROM, CLIFF_FROM, ICE_FROM, PORTAL_FROM, ROCKS_FROM, SPRING_FROM, LANE_KINDS, MUD_SLOW, STREAK_MAX, difficultyAt, hashString, hopTarget, hopTime, isBombRow, isWater, mulberry32, nextLaneKind } from '../js/rules.js';
 
 test('mulberry32: same seed, same numbers, all in [0, 1)', () => {
   const a = mulberry32(42), b = mulberry32(42), c = mulberry32(7);
@@ -55,6 +55,9 @@ test('nextLaneKind: no two grass rows after the start, runs stay short, late kin
       if (r < ICE_FROM) assert.notEqual(ks[r], 'ice');
       if (r < BRIDGE_FROM) assert.notEqual(ks[r], 'bridge');
       if (r < ROCKS_FROM) assert.notEqual(ks[r], 'rocks');
+      if (r < SPRING_FROM) assert.notEqual(ks[r], 'spring');
+      if (r < PORTAL_FROM) assert.notEqual(ks[r], 'portal');
+      if (r < CLIFF_FROM) assert.notEqual(ks[r], 'cliff');
     }
   }
   const all = new Set(Array.from({ length: 20 }, (_, i) => world(i + 1, 400)).flat());
@@ -63,10 +66,23 @@ test('nextLaneKind: no two grass rows after the start, runs stay short, late kin
 
 test('nextLaneKind: a run is kept on purpose only up to its cap', () => {
   const always = () => 0.1;   // below 0.55: keep the run while allowed; then the weighted pick lands on grass
-  for (const kind of ['road', 'river', 'lily', 'mud', 'rail', 'ice', 'bridge', 'rocks']) {
+  for (const kind of ['road', 'river', 'lily', 'mud', 'rail', 'ice', 'bridge', 'rocks', 'spring', 'portal', 'cliff']) {
     for (let streak = 1; streak < STREAK_MAX[kind]; streak++) assert.equal(nextLaneKind(50, 0.3, { kind, streak }, always), kind);
     assert.equal(nextLaneKind(50, 0.3, { kind, streak: STREAK_MAX[kind] }, always), 'grass', `${kind} stops at ${STREAK_MAX[kind]}`);
   }
+});
+
+test('the latest kinds weigh nothing below their first row, so the kinds below SPRING_FROM are as they always were', () => {
+  assert.ok(SPRING_FROM >= 95 && PORTAL_FROM > SPRING_FROM && CLIFF_FROM > PORTAL_FROM);
+  // every draw at the row before a first row gives an old kind; at the first row some draw gives the new one
+  const prev = { kind: 'road', streak: 4 };
+  const kindsAt = r => new Set(Array.from({ length: 1000 }, (_, i) => nextLaneKind(r, difficultyAt(r, 140), prev, () => i / 1000)));
+  for (const [kind, from] of [['spring', SPRING_FROM], ['portal', PORTAL_FROM], ['cliff', CLIFF_FROM]]) {
+    assert.ok(!kindsAt(from - 1).has(kind), `no ${kind} at row ${from - 1}`);
+    assert.ok(kindsAt(from).has(kind), `${kind} at row ${from}`);
+  }
+  assert.ok(isWater('cliff') && !isWater('spring') && !isWater('portal'), 'a rescue never goes back onto a cliff');
+  assert.deepEqual([isBombRow(20), isBombRow(24), isBombRow(26), isBombRow(100)], [false, true, false, true]);
 });
 
 test('hopTarget: edges, trees, lily pads and river half steps', () => {

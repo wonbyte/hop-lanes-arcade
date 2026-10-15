@@ -58,10 +58,11 @@
     <div id="menu">
       <button type="button" id="mode">MODE: CLASSIC</button>
       <button type="button" id="prize">PRIZE &#183; 50 COINS</button>
-      <button type="button" id="board" hidden data-i18n="TOP 10">TOP 10</button>
+      <button type="button" id="board" data-i18n="TOP 10">TOP 10</button>
       <button type="button" id="settings" data-i18n="SETTINGS">SETTINGS</button>
       <button type="button" id="install" hidden data-i18n="ADD TO HOME SCREEN">ADD TO HOME SCREEN</button>
       <div id="missions"><h3>MISSIONS</h3><ul><li></li><li></li><li></li></ul></div>
+      <div id="dayMissions"><h3>TODAY'S MISSIONS</h3><ul><li></li><li></li><li></li></ul></div>
     </div>
     <div id="weather" aria-hidden="true"></div>
     <div id="replayTag" hidden data-i18n="REPLAY">REPLAY</div>
@@ -85,6 +86,8 @@
           <div class="opt"><span data-i18n="LANGUAGE">LANGUAGE</span><button type="button" id="lang" aria-label="Language">EN</button></div>
           <button type="button" id="handicap">HANDICAP: OFF</button>
           <button type="button" id="motion">MOTION: AUTO</button>
+          <button type="button" id="look">LOOK: AUTO</button>
+          <p id="lookNote"></p>
           <p id="motionNote" data-i18n="MOTION CHANGES AFTER A RELOAD">MOTION CHANGES AFTER A RELOAD</p>
         </div>
         <button type="button" id="closeSettings" class="go" data-i18n="CLOSE">CLOSE</button>

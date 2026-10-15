@@ -1,18 +1,18 @@
-import { idleAudio, isMuted, playLoopOn, sfx, startTune, stopTune, tuneOn } from './audio.js';
-import { $, COUNTDOWN, DEBUG, G, REPLAY_CODE, RESULTS_DELAY, STEP } from './core.js';
+import { idleAudio, isMuted, playLayers, playLoopOn, sfx, startTune, stopTune, tuneOn } from './audio.js';
+import { $, BIOME_ROWS, COUNTDOWN, DEBUG, G, OVER_SLOW, OVER_SLOW_T, OVER_ZOOM, REPLAY_CODE, RESULTS_DELAY, STEP, TUTORIAL_SEED } from './core.js';
 import { pollGamepads } from './input.js';   // also sets up every input listener
 import { decodeReplay } from './replay.js';
 import { creepCamera } from './sim.js';
 import { ghostInfo, ghostMat, ghostWarmGeo, placeGhost, stepGhost } from './ghost.js';
 import { CHARACTERS, LIGHT_OFF, lightGeo } from './models.js';
-import { CAM_OFF, SUN_OFF, camera, focus, getPixelRatio, renderer, scene, setNight, shadowCadence, sun, touchQuery, viewInfo, watchFrameTime } from './gfx.js';
+import { CAM_OFF, SUN_OFF, camera, focus, getPixelRatio, reduceMotion, renderer, scene, setNight, setZoom, shadowCadence, sun, touchQuery, viewInfo, watchFrameTime } from './gfx.js';
 import { announceFrame } from './panels.js';   // also sets up the settings, pause and top-10 panels
 import { keepAwake } from './device.js';
 import { flushBank } from './storage.js';
 import { applyMoves, blobGeo, blobMat, bubbleGeo, bubbleMat, giveShield, kill, players, updateParts, updatePlayer } from './players.js';
 import { join, resultsEl, setBanner, setModeLabel, showHowto, startPlay, toAttract } from './screens.js';
 import { HINT_KEY, HOWTO_KEY, dailySeed, loadText, owned, save } from './storage.js';
-import { ensureLanes, getSeed, laneCoins, laneKinds, lanes, showLane, spinAll, updateFarLanes, updateLanes, weatherAt } from './world.js';
+import { biomeAt, biomeIndex, ensureLanes, getSeed, laneCoins, laneKinds, lanes, showLane, spinAll, updateFarLanes, updateLanes, weatherAt } from './world.js';
 import { t } from './i18n.js';
 
 // The game loop and boot. main.js loads this once Three.js is present.
@@ -33,38 +33,66 @@ function updateCountdown(dt) {
 function updateCamera(dt) {
   G.playT += dt;
   if (G.goT > 0 && (G.goT -= dt) <= 0) setBanner('');
+  // a new land every BIOME_ROWS rows: its name shows for a moment
+  const block = Math.floor(G.camRow / BIOME_ROWS);
+  if (block > G.biomeBlock) { G.biomeBlock = block; if (block > 0) { setBanner(t(biomeAt(G.camRow).name)); G.goT = 1.6; sfx.cheer(); } }
   let lead = -Infinity;
   for (const p of players) if (p.joined && p.alive) lead = Math.max(lead, p.row);
   G.camRow = creepCamera(G.camRow, G.playT, lead, dt);   // the one copy of the creep rule (sim.js)
 }
 function placeCamera() {
-  focus.set(0, 0, -(G.camRow + G.camLead));
+  focus.set(G.overX, 0, -(G.camRow + G.camLead));
   if (G.shakeT > 0) focus.x += Math.sin(G.shakeT * 90) * G.shakeT * 0.5;   // a near miss nudges the view
+  if (G.landT > 0) focus.y -= Math.sin(G.landT / LAND_DIP * Math.PI) * 0.07;   // a landing dips the view a hair
   camera.position.copy(focus).add(CAM_OFF);
   camera.lookAt(focus);
   sun.position.copy(focus).add(SUN_OFF);
   sun.target.position.copy(focus);
-  G.weather = weatherAt(Math.round(G.camRow + G.camLead));
-  setNight(G.camRow, G.weather);
   const focusRow = G.camRow + G.camLead;
+  G.weather = weatherAt(Math.round(focusRow));
+  setNight(G.camRow, G.weather, biomeAt(focusRow).sky);
   for (const lane of lanes.values()) showLane(lane, Math.abs(lane.r - focusRow) < G.visRows);
 }
 
-// first run: a floating TAP (or key) hint follows the first player until row 5, then it is done for good
+// first run: a floating hint follows the first player. On the tutorial world (TUTORIAL_SEED) it is a short guided
+// walk, one line per lane ahead, until row HINT_ROWS; on any other world a plain TAP (or key) hint until row 5.
 const hintEl = $('hint');
 const hintPos = new THREE.Vector3();
+const HINT_ROWS = 12;
+const LANE_HINT = { road: 'WAIT FOR A GAP', river: 'HOP ON A LOG', rail: 'MIND THE TRAIN', lily: 'PADS ONLY' };
+function hintText(p) {
+  const next = lanes.get(p.row + 1), key = next && LANE_HINT[next.kind];
+  if (key) return t(key);
+  if (p.score >= 2 && !G.hintTurn) return t(touchQuery.matches ? 'SWIPE TO TURN' : p.id ? '\u2190 \u2192 TO TURN' : 'A D TO TURN');
+  return (touchQuery.matches ? t('TAP') : p.id ? '\u2191' : 'W') + ' \u25b2';
+}
 function placeHint() {
   if (!G.hint) { if (!hintEl.hidden) hintEl.hidden = true; return; }
   const p = players.find(q => q.joined && q.alive);
   if (G.state !== 'play' || !p || !p.mesh) { hintEl.hidden = true; return; }
-  if (p.score >= 5) { G.hint = false; save(HINT_KEY, 1); hintEl.hidden = true; return; }
+  if (p.score >= (getSeed() === TUTORIAL_SEED ? HINT_ROWS : 5)) { G.hint = false; save(HINT_KEY, 1); hintEl.hidden = true; return; }
   hintPos.set(p.x, 1.5, p.mesh.position.z).project(camera);
   const r = renderer.domElement.getBoundingClientRect();
   hintEl.style.left = (hintPos.x + 1) / 2 * r.width + 'px';
   hintEl.style.top = (1 - hintPos.y) / 2 * r.height + 'px';
-  const text = touchQuery.matches ? t('TAP') : p.id ? '\u2191' : 'W';
-  if (hintEl.textContent !== text + ' \u25b2') hintEl.textContent = text + ' \u25b2';
+  const text = hintText(p);
+  if (hintEl.textContent !== text) hintEl.textContent = text;
   hintEl.hidden = false;
+}
+// game over: the world slows for a moment and the view closes in on the fallen player; the title puts it back
+const LAND_DIP = 0.14;
+let seenState = '';
+function overFx(dt) {
+  if (G.state !== seenState) {
+    seenState = G.state;
+    if (G.state === 'over') { G.slowT = OVER_SLOW_T; }
+    else if (G.state === 'attract') { G.overX = 0; G.lastDead = null; G.biomeBlock = 0; setZoom(1); }
+  }
+  if (G.state !== 'over' || reduceMotion) return;
+  const k = Math.min(1, dt * 4);
+  setZoom(camera.zoom + (OVER_ZOOM - camera.zoom) * k);
+  const d = G.lastDead;
+  if (d && d.mesh) G.overX += (Math.max(-3, Math.min(3, d.mesh.position.x)) * 0.5 - G.overX) * k;
 }
 // one fixed step of the game: the same hops on the same ticks give the same run (replays)
 function step(dt) {
@@ -104,13 +132,16 @@ function frameBody(now) {
   const dt = Math.max(0, Math.min(0.05, rawDt));
   lastT = now;
   pollGamepads();
+  overFx(dt);
+  if (G.landT > 0) G.landT = Math.max(0, G.landT - dt);
 
   if (G.state === 'paused') {                       // nothing moves: draw only when asked (pausing, a resize)
     if (G.redraw) { G.redraw = false; renderer.render(scene, camera); }
     requestAnimationFrame(frame);
     return;
   }
-  acc += dt;
+  // game over: slow motion for a moment (real time runs on; the fixed steps just come slower, so nothing in a run changes)
+  if (G.slowT > 0) { G.slowT = Math.max(0, G.slowT - dt); acc += dt * OVER_SLOW; } else acc += dt;
   let steps = 0;
   while (acc >= STEP && steps < MAX_STEPS) { step(STEP); acc -= STEP; steps++; }
   if (steps === MAX_STEPS) acc = 0;
@@ -178,7 +209,13 @@ if (DEBUG) {
     get ghost() { return ghostInfo(); },
     get hint() { return !hintEl.hidden; },
     get playLoop() { return playLoopOn(); },
+    get playLayers() { return playLayers(); },
     get streak() { return $('streak').textContent; },
+    get biome() { return biomeAt(G.camRow + G.camLead).name; },
+    biomeIndex,
+    get zoom() { return camera.zoom; },
+    get slowT() { return G.slowT; },
+    get hintText() { return hintEl.textContent; },
     boom() { G.boom = true; },   // throw inside the next step: the crash notice
     ladder: { feed: watchFrameTime, get ratio() { return getPixelRatio(); }, get shadow() { return sun.shadow.mapSize.x; } }
   };

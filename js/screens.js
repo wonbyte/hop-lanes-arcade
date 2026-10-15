@@ -1,7 +1,7 @@
 import { audio, isMuted, setMuted, sfx, startPlayLoop, startTune, stopPlayLoop, stopTune } from './audio.js';
 import { $, COUNTDOWN, G, GO_TIME, MODES, PRIZE_COST, SCORES_TOKEN, SCORES_URL, WIPE_MS } from './core.js';
 import { nextLang, setLang, t } from './i18n.js';
-import { MISSIONS, MISSION_REWARD, advanceMissions, doneMissions, emptyStats, missionsText, parseMissions } from './missions.js';
+import { DAILY, DAILY_REWARD, MISSIONS, MISSION_REWARD, advanceMissions, dailyDoneText, dailyMissions, doneDaily, doneMissions, emptyStats, missionsText, parseDailyDone, parseMissions } from './missions.js';
 import { encodeReplay } from './replay.js';
 import { dayBefore, hatFor, streakAfter, traitOf } from './rules.js';
 import { runOver, topScore, winnerOf } from './sim.js';
@@ -9,7 +9,7 @@ import { keepAwake } from './device.js';
 import { reduceMotion, resetFrameWatch, touchQuery } from './gfx.js';
 import { CHARACTERS, PIX, PRIZES, drawPix, isOwned } from './models.js';
 import { charOf, despawn, players, restorePicks, spawn } from './players.js';
-import { BEST_KEY, DAILY_KEY, HANDICAP_KEY, HINT_KEY, HOWTO_KEY, STREAK_KEY, INSTALL_KEY, MISSIONS_KEY, MODE_KEY, OWNED_KEY, PICK_KEY, ROOM_KEY, dayKey, deviceTag, flushBank, load, loadText, owned, refreshBests, save, savedMode, setBank, today } from './storage.js';
+import { BEST_KEY, DAILYDONE_KEY, DAILY_KEY, HANDICAP_KEY, HINT_KEY, HOWTO_KEY, INITIALS_KEY, LOCAL_KEY, STREAK_KEY, INSTALL_KEY, MISSIONS_KEY, MODE_KEY, OWNED_KEY, PICK_KEY, ROOM_KEY, cleanInitials, dayKey, deviceTag, entersLocal, flushBank, load, loadText, localTop, owned, parseLocal, refreshBests, save, savedMode, setBank, today } from './storage.js';
 import { getSeed, resetWorld } from './world.js';
 import { saveGhost, startGhost, stopGhost } from './ghost.js';
 
@@ -66,6 +66,11 @@ function setMode(mode) {
   setModeLabel();
   if (G.state === 'attract') resetWorld();   // daily and room modes have their own seeds
 }
+// an unlocked look (settings): the land starts as a far biome or at night; the title world is built again in it
+function setLook(key) {
+  G.look = key;
+  if (G.state === 'attract') resetWorld();
+}
 // room mode: two phones that enter the same code play the same world (seed = the code)
 const randomCode = () => Array.from({ length: 4 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ'[Math.floor(Math.random() * 24)]).join('');
 function askRoom() {
@@ -95,11 +100,43 @@ $('lang').addEventListener('click', () => { audio(); sfx.tick(); setLang(nextLan
 // missions: three small goals; a done one pays coins and the next one takes its place
 let missions = parseMissions(loadText(MISSIONS_KEY));
 const MISSION_TEXT = { coins: 'COLLECT {n} COINS IN ONE RUN', row: 'REACH ROW {n}', rivers: 'CROSS {n} RIVERS', hops: 'HOP {n} TIMES', logs: 'RIDE {n} LOGS', combo: 'COMBO OF {n}', powers: 'GRAB A POWER-UP', secrets: 'FIND A HIDDEN COIN', nears: '{n} NEAR MISSES' };
-const missionText = i => t(MISSION_TEXT[MISSIONS[i].stat], { n: MISSIONS[i].goal });
+const missionLabel = m => t(MISSION_TEXT[m.stat], { n: m.goal });
+const missionText = i => missionLabel(MISSIONS[i]);
 function showMissions() {
   const box = $('missions');
   box.querySelector('h3').textContent = t('MISSIONS');
   box.querySelectorAll('li').forEach((li, k) => { li.textContent = missionText(missions.active[k]); });
+  showDailyMissions();
+}
+// daily missions: the same three for everyone on a day (missions.js picks them from the date); a done one gets a check mark
+function showDailyMissions() {
+  const day = today(), picks = dailyMissions(day), mask = parseDailyDone(loadText(DAILYDONE_KEY), day);
+  const box = $('dayMissions');
+  box.querySelector('h3').textContent = t("TODAY'S MISSIONS");
+  box.querySelectorAll('li').forEach((li, k) => { li.textContent = missionLabel(DAILY[picks[k]]); li.classList.toggle('done', !!(mask & (1 << k))); });
+}
+function payDaily() {   // at game over: which of today's missions this run finished for the first time; returns the note text
+  const day = today(), picks = dailyMissions(day);
+  let mask = parseDailyDone(loadText(DAILYDONE_KEY), day);
+  const done = doneDaily(picks, mask, G.run);
+  if (!done.length) return '';
+  for (const k of done) mask |= 1 << k;
+  save(DAILYDONE_KEY, dailyDoneText(day, mask));
+  setBank(G.bank + DAILY_REWARD * done.length);
+  showDailyMissions();
+  return t('DAILY MISSION DONE +{n}', { n: DAILY_REWARD * done.length }) + ': ' + done.map(k => missionLabel(DAILY[picks[k]])).join(' + ') + '. ';
+}
+// the best 10 runs on this device (panels.js lists them): the first run that makes it asks for the player's initials
+function enterLocal(name, score) {
+  const list = parseLocal(loadText(LOCAL_KEY));
+  if (!entersLocal(list, score)) return;
+  let initials = cleanInitials(loadText(INITIALS_KEY));
+  if (!initials) {
+    try { initials = cleanInitials(window.prompt(t('YOUR INITIALS (3 LETTERS)'), deviceTag.slice(0, 3))); } catch (e) {}
+    if (!initials) initials = deviceTag.slice(0, 3);
+    save(INITIALS_KEY, initials);
+  }
+  save(LOCAL_KEY, JSON.stringify(localTop(list, { name: initials + ' ' + name, score, day: today(), mode: G.mode })));
 }
 function payMissions() {   // at game over: which missions this run finished; returns the note text
   const done = doneMissions(missions, G.run);
@@ -305,7 +342,8 @@ function checkOver() {
     note = note.replace(best[0], '').replace(/^ +| +$/g, '');
     if (best[0].includes('ALL TIME')) { confetti(); sfx.best(); } else sfx.cheer();
   } else sfx.over();
-  if (!replay) note = payMissions() + note;
+  if (!replay) note = payMissions() + payDaily() + note;
+  if (!replay) enterLocal(charOf(hero).name, top);
   const hat = hatFor(G.bestAll);
   if (!replay && hat && hat !== hatBefore) note = t('NEW HAT: {name}!', { name: t(hat.name) }) + ' ' + note;
   $('res1').hidden = !p1.joined; $('res2').hidden = !p2.joined;
@@ -406,4 +444,4 @@ function hideHowto() {
 }
 $('gotit').addEventListener('click', hideHowto);
 
-export { setModeLabel, askRoom, banner, bannerH, bannerKey, bannerP, checkOver, confetti, cycleChar, cycleMode, hideHowto, howto, join, joinText, menu, pads, pauseGame, pausedFrom, payMissions, postScore, prizeMachine, refreshTexts, restart, resultsEl, resumeGame, setBanner, setCard, setCards, setHandicap, setMode, shakeCard, shareOut, shareScore, showHowto, showMissions, startPlay, toAttract, updatePrize, wipe };
+export { setLook, setModeLabel, askRoom, enterLocal, payDaily, showDailyMissions, banner, bannerH, bannerKey, bannerP, checkOver, confetti, cycleChar, cycleMode, hideHowto, howto, join, joinText, menu, pads, pauseGame, pausedFrom, payMissions, postScore, prizeMachine, refreshTexts, restart, resultsEl, resumeGame, setBanner, setCard, setCards, setHandicap, setMode, shakeCard, shareOut, shareScore, showHowto, showMissions, startPlay, toAttract, updatePrize, wipe };

@@ -9,6 +9,12 @@ const GO_TIME = 0.6;
 const WIPE_MS = 130;          // restart fade; the new world is built while the screen is covered
 const PRIZE_COST = 50;        // coins for one turn of the prize machine
 const NIGHT_START = 90, NIGHT_FULL = 150;   // rows over which day turns into night
+const TUTORIAL_SEED = 197;    // the very first classic game: three clear grass rows, a slow road, a rest, a river with long logs
+const BIOME_ROWS = 100;       // the look of the land changes every this many rows (world.js biomeAt)
+const OVER_SLOW = 0.35, OVER_SLOW_T = 0.6;   // game over: the world runs this much slower for this long (real seconds)
+const OVER_ZOOM = 1.22;       // and the view closes in on the fallen player
+// looks a player can unlock with the all-time best (screens.js): the land starts as that biome, or at night
+const LOOKS = [{ key: 'auto', at: 0 }, { key: 'desert', at: 100 }, { key: 'night', at: 150 }, { key: 'tundra', at: 200 }, { key: 'swamp', at: 300 }];
 const TAU = Math.PI * 2;
 const $ = id => document.getElementById(id);
 
@@ -36,7 +42,14 @@ const G = {
   room: '',            // room code (room mode: a shared world for two phones)
   weather: '',         // '', 'rain' or 'snow' at the camera
   shakeT: 0,           // seconds left of the small view nudge (a near miss)
-  hint: false          // first run: the floating TAP hint follows the first player until row 5
+  hint: false,         // first run: the floating hints follow the first player (app.js placeHint) until row 12
+  hintTurn: false,     // first run: the player has hopped sideways once (the SWIPE TO TURN hint is done)
+  landT: 0,            // seconds left of the small view dip after a landing
+  slowT: 0,            // real seconds left of the game-over slow motion
+  overX: 0,            // game over: how far the view has moved toward the fallen player
+  lastDead: null,      // the player whose death ended the game (the view closes in on it)
+  look: 'auto',        // an unlocked look (LOOKS): which biome the land starts as, or 'night'
+  biomeBlock: 0        // the BIOME_ROWS block the camera is in (a new one shows its name)
 };
 
 // ---------- test hooks and seeds ----------
@@ -60,4 +73,4 @@ function fail(why) {
   b.querySelector('p').textContent = why;
 }
 
-export { $, BEHIND_LIMIT, COIN_CHANCE, COMBO_EVERY, COMBO_GAP, COUNTDOWN, DEBUG, DIFF_ROWS, EAGLE_IDLE, EAGLE_SWOOP, EAGLE_WARN, EDGE_DEATH, FIRST_ROW, FIXED_SEED, G, GO_TIME, HIT_PAD, HOP_TIME, LANES_AHEAD, LANES_BEHIND, MAGNET_REACH, MAGNET_TIME, MODES, POWER_CHANCE, REPLAY_CODE, NIGHT_FULL, NIGHT_START, PLAY_HALF, PRIZE_COST, RESULTS_DELAY, SCORES_TOKEN, SCORES_URL, SHIELD_TIME, STEP, TAU, TRAIN_SPEED, TRAIN_WARN, WIPE_MS, WRAP, difficulty, fail };
+export { $, BEHIND_LIMIT, BIOME_ROWS, LOOKS, OVER_SLOW, OVER_SLOW_T, OVER_ZOOM, TUTORIAL_SEED, COIN_CHANCE, COMBO_EVERY, COMBO_GAP, COUNTDOWN, DEBUG, DIFF_ROWS, EAGLE_IDLE, EAGLE_SWOOP, EAGLE_WARN, EDGE_DEATH, FIRST_ROW, FIXED_SEED, G, GO_TIME, HIT_PAD, HOP_TIME, LANES_AHEAD, LANES_BEHIND, MAGNET_REACH, MAGNET_TIME, MODES, POWER_CHANCE, REPLAY_CODE, NIGHT_FULL, NIGHT_START, PLAY_HALF, PRIZE_COST, RESULTS_DELAY, SCORES_TOKEN, SCORES_URL, SHIELD_TIME, STEP, TAU, TRAIN_SPEED, TRAIN_WARN, WIPE_MS, WRAP, difficulty, fail };

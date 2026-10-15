@@ -22,6 +22,13 @@ account, no tracking. One file plays the whole game offline.
 - **Every animal has an edge.** Faster hops, a longer magnet, an extra life in water, a patient eagle. The card says
   which. Hats unlock at an all-time best of 100, 250 and 500. Daily runs on days in a row build a streak.
 - **Ghost.** Daily and room worlds remember your best run and replay it as a see-through ghost. Beat it.
+- **New lands and boss moments.** Every 100 rows the look changes: meadow, desert, tundra, swamp. Past row 100 each
+  block has a boss train, a twister on the grass and a river in flood. Springs fly you two rows, portals swap you
+  across the row, cliff tiles crumble for good. Unlock looks (desert, night, tundra, swamp) with your best score.
+- **Daily missions and a local top 10.** Three missions a day, the same for everyone, 30 coins each. The best 10 runs
+  on this device, with your initials, with or without a server.
+- **Feel.** Squash on every landing, a score that pops, slow motion and a zoom when you fall, music that adds layers
+  as you go deeper, a guided first run.
 - **Coins, shop and prize machine.** Buy five original animals (Frog, Fox, Bunny, Cat, Robot). Combos, hidden coins,
   shield and magnet power-ups, three missions at a time, a boss train every 100 rows.
 - **Replays.** Every run is deterministic. Share a link and it plays back the exact same run.
@@ -73,6 +80,8 @@ Browsers refuse ES modules from `file://`, so `index.html` needs a server. The s
   something you can stand on in the row before.
 - On ice, a sideways hop slides one more step. A bridge plank breaks 0.6 s after you land on it and comes back 3 s later.
 - A car that just misses you is a near miss: +1 combo and a whoosh.
+- Two players: the one far ahead hops a little slower, so nobody is left behind. Past row 20 some magnets are bombs
+  when two play: the pick drops a rock in front of the other player for three seconds.
 - Game over: share your score, copy a replay link, or try again. Pause → SNAPSHOT saves a picture of the field with
   the score on it.
 - SETTINGS on the title has sound, vibration, language, a handicap (a starting shield for the weaker player) and a

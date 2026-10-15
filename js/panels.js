@@ -1,12 +1,12 @@
 import { audio, isMuted, setMuted, sfx } from './audio.js';
-import { $, G, SCORES_URL } from './core.js';
+import { $, G, LOOKS, SCORES_URL } from './core.js';
 import { buzzIsOn, setBuzz } from './device.js';
 import { t } from './i18n.js';
 import { charOf, players } from './players.js';
 import { camera, renderer, scene } from './gfx.js';
 import { isoWeek } from './rules.js';
-import { restart, resumeGame } from './screens.js';
-import { MOTION_KEY, loadText, save, today } from './storage.js';
+import { restart, resumeGame, setLook } from './screens.js';
+import { LOCAL_KEY, LOOK_KEY, MOTION_KEY, loadText, parseLocal, save, today } from './storage.js';
 
 // Small panels over the field: settings, the pause menu, the online top 10, and the screen-reader announcer.
 // ---------- dialogs (one open at a time; Escape and the close button close it) ----------
@@ -30,6 +30,7 @@ function labelSettings() {
   $('sound').textContent = t(isMuted() ? 'SOUND: OFF' : 'SOUND: ON');
   $('buzz').textContent = t(buzzIsOn() ? 'VIBRATION: ON' : 'VIBRATION: OFF');
   $('motion').textContent = t(motionLess() ? 'MOTION: LESS' : 'MOTION: AUTO');
+  labelLook();
   $('settingsBox').querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
   $('settings').textContent = t('SETTINGS');
   $('motionNote').textContent = t('MOTION CHANGES AFTER A RELOAD');
@@ -39,6 +40,21 @@ $('closeSettings').addEventListener('click', () => { sfx.tick(); closeDialog(); 
 $('sound').addEventListener('click', () => { audio(); setMuted(!isMuted()); labelSettings(); });
 $('buzz').addEventListener('click', () => { sfx.tick(); setBuzz(!buzzIsOn()); labelSettings(); });
 $('motion').addEventListener('click', () => { sfx.tick(); save(MOTION_KEY, motionLess() ? 0 : 1); labelSettings(); });
+// looks: the land can start as a far biome, or at night, once the all-time best has reached that far (core.js LOOKS)
+const LOOK_TEXT = { auto: 'LOOK: AUTO', desert: 'LOOK: DESERT', night: 'LOOK: NIGHT', tundra: 'LOOK: TUNDRA', swamp: 'LOOK: SWAMP' };
+const unlockedLooks = () => LOOKS.filter(l => G.bestAll >= l.at);
+function labelLook() {
+  const next = LOOKS.find(l => G.bestAll < l.at);
+  $('look').textContent = t(LOOK_TEXT[G.look]);
+  $('lookNote').textContent = next ? t('REACH ROW {n} TO UNLOCK {name}', { n: next.at, name: t(next.key.toUpperCase()) }) : t('EVERY LOOK IS YOURS');
+}
+$('look').addEventListener('click', () => {
+  sfx.tick();
+  const open = unlockedLooks(), k = open.findIndex(l => l.key === G.look);
+  setLook(open[(k + 1) % open.length].key);
+  save(LOOK_KEY, G.look);
+  labelLook();
+});
 document.addEventListener('hoplanes:lang', labelSettings);
 
 // ---------- pause menu ----------
@@ -87,25 +103,39 @@ async function snapshot() {
 $('snapBtn').addEventListener('click', snapshot);
 document.addEventListener('hoplanes:pause', () => { $('snapBtn').textContent = t('SNAPSHOT'); });
 
-// ---------- online top 10 (only when a score server is set) ----------
+// ---------- top 10: the best runs on this device, and the online list when a score server is set ----------
 const boardBtn = $('board');
-boardBtn.hidden = !SCORES_URL;
-// the list shows all time, today or this week; the button under it cycles the three
-const SCOPES = ['all', 'day', 'week'];
-const SCOPE_TITLE = { all: 'TOP 10', day: 'TODAY TOP 10', week: 'THIS WEEK TOP 10' };
-let scope = '';   // '' until the first open: daily mode starts on today, the rest on all time
+// the list shows this device, and with a server all time, today or this week; the button under it cycles them
+const SCOPES = SCORES_URL ? ['local', 'all', 'day', 'week'] : ['local'];
+const SCOPE_TITLE = { local: 'THIS DEVICE', all: 'TOP 10', day: 'TODAY TOP 10', week: 'THIS WEEK TOP 10' };
+let scope = '';   // '' until the first open: with a server daily mode starts on today and the rest on all time; without one, this device
+const boardRow = (name, score) => {
+  const li = document.createElement('li');
+  const a = document.createElement('span'), b = document.createElement('b');
+  a.textContent = String(name); b.textContent = String(score);
+  li.append(a, b);
+  return li;
+};
 async function openBoard() {
   audio(); sfx.tick();
   const daily = G.mode === 'daily';
-  if (!scope) scope = daily ? 'day' : 'all';
+  if (!scope) scope = !SCORES_URL ? 'local' : daily ? 'day' : 'all';
   $('boardBox').querySelector('h2').textContent = t(SCOPE_TITLE[scope]);
   $('boardScope').textContent = t(SCOPE_TITLE[SCOPES[(SCOPES.indexOf(scope) + 1) % SCOPES.length]]);
+  $('boardScope').hidden = SCOPES.length < 2;
   $('closeBoard').textContent = t('CLOSE');
   const list = $('boardList');
   list.textContent = '';
   const note = $('boardNote');
   note.textContent = '…'; note.hidden = false;
   openDialog('boardBox');
+  if (scope === 'local') {   // saved on this device: no watch button (the runs are not kept)
+    const local = parseLocal(loadText(LOCAL_KEY));
+    for (const e of local) list.appendChild(boardRow(e.name, e.score));
+    note.hidden = local.length > 0;
+    note.textContent = t('NO SCORES YET');
+    return;
+  }
   try {
     const u = new URL(SCORES_URL, location.href);
     if (scope === 'day') u.searchParams.set('day', today()); else if (scope === 'week') u.searchParams.set('week', isoWeek(today()));
@@ -116,10 +146,7 @@ async function openBoard() {
     if (!Array.isArray(top)) throw new Error('bad list');
     list.textContent = '';
     for (const e of top.slice(0, 10)) {
-      const li = document.createElement('li');
-      const name = document.createElement('span'), score = document.createElement('b');
-      name.textContent = String(e.name); score.textContent = String(e.score);
-      li.append(name, score);
+      const li = boardRow(e.name, e.score);
       if (typeof e.replay === 'string' && e.replay && location.protocol !== 'file:') {   // watch that run: the page reloads as a replay
         const watch = document.createElement('button');
         watch.type = 'button'; watch.className = 'watch'; watch.textContent = '\u25b6'; watch.setAttribute('aria-label', t('WATCH'));

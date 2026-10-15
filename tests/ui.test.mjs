@@ -167,6 +167,26 @@ test('1c. missions show on the title; the language button switches the texts', a
   } finally { await context.close(); }
 });
 
+test('1d. daily missions show on the title: three a day, a paid one is checked', async () => {
+  const d = new Date(), today = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const { context, page, errors } = await open(INDEX, { storage: { 'hoplanes.dailydone': today + '|2' } });   // the second one is paid
+  try {
+    await waitState(page, 'attract');
+    assert.match(await page.locator('#dayMissions h3').textContent(), /TODAY'S MISSIONS/);
+    const lines = await page.locator('#dayMissions li').allTextContents();
+    assert.equal(lines.length, 3);
+    assert.ok(lines.every(l => /COINS|ROW|RIVERS|HOP|LOGS|COMBO|NEAR|POWER-UP/.test(l)), 'mission texts: ' + lines.join(' | '));
+    assert.equal(new Set(lines).size, 3, 'three different missions');
+    const done = await page.locator('#dayMissions li').evaluateAll(els => els.map(li => li.classList.contains('done')));
+    assert.deepEqual(done, [false, true, false]);
+    assert.equal(await page.locator('#missions li').count(), 3, 'the regular missions stay as they are');
+    await page.click('#settings');
+    await page.click('#lang');
+    assert.match(await page.locator('#dayMissions h3').textContent(), /MISIONES DE HOY/);
+    assert.deepEqual(errors, []);
+  } finally { await context.close(); }
+});
+
 test('2a. prize machine: buy a prize with 120 coins', async () => {
   const POOL = ['pig', 'penguin', 'turtle'];
   const { context, page, errors } = await open(INDEX, { storage: { 'hoplanes.coins': '120' } });
@@ -353,6 +373,41 @@ test('6b. a finished game posts its score (today, mode) and the world best shows
   } finally { await context.close(); srv.kill(); fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('6c. without a score server a finished run enters the local top 10 and the TOP 10 button lists it', { timeout: SLOW }, async () => {
+  const { context, page, errors } = await open(INDEX);
+  try {
+    await waitState(page, 'attract');
+    assert.equal(await page.locator('#board').isVisible(), true, 'the TOP 10 button shows without a server');
+    await page.keyboard.press('KeyW');
+    await waitState(page, 'play');
+    await page.keyboard.press('KeyW');
+    await page.waitForFunction(() => window.hopLanes.players[0].row >= 1, null, { timeout: T });
+    await hop(page, () => window.hopLanes.kill(window.hopLanes.players[0], 'test'));   // the initials prompt is dismissed by Playwright: the device tag stands in
+    await waitState(page, 'over');
+    await resultsVisible(page);
+    const score = await hop(page, () => window.hopLanes.players[0].score);
+    assert.ok(score >= 1, 'scored ' + score);
+    const saved = JSON.parse(await page.evaluate(() => localStorage.getItem('hoplanes.local')));
+    assert.equal(saved.length, 1);
+    assert.equal(saved[0].score, score);
+    assert.match(saved[0].name, /^[A-Z2-9]{3} FROG$/, 'initials (the device tag) plus the animal');
+    assert.equal(saved[0].mode, 'classic');
+    assert.match(await page.evaluate(() => localStorage.getItem('hoplanes.initials')), /^[A-Z2-9]{3}$/);
+    await page.keyboard.press('Space');
+    await waitState(page, 'attract');
+    await page.click('#board');
+    await page.locator('#boardBox').waitFor({ state: 'visible', timeout: T });
+    assert.match(await page.locator('#boardTitle').textContent(), /THIS DEVICE/);
+    assert.equal(await page.locator('#boardList li').count(), 1);
+    assert.match(await page.locator('#boardList li').textContent(), new RegExp('^[A-Z2-9]{3} FROG' + score + '$'));
+    assert.equal(await page.locator('#boardList li .watch').count(), 0, 'no watch button on a local row');
+    assert.equal(await page.locator('#boardScope').isHidden(), true, 'only one scope: no scope button');
+    await page.click('#closeBoard');
+    assert.equal(await page.locator('#boardBox').isHidden(), true);
+    assert.deepEqual(errors, []);
+  } finally { await context.close(); }
+});
+
 test('7. new all-time best shows confetti and a note', async () => {
   const { context, page, errors } = await open(INDEX);
   try {
@@ -461,6 +516,50 @@ test('8d2. a dense phone screen starts at 2x and the ladder drops it to 1.5 firs
     await waitState(page, 'play', 120000);
     assert.equal(await hop(page, () => { const L = window.hopLanes.ladder; for (let i = 0; i < 60; i++) L.feed(0.05); return L.ratio; }), 1.5);
     assert.equal(await hop(page, () => { const L = window.hopLanes.ladder; for (let i = 0; i < 90; i++) L.feed(0.03); return L.ratio; }), 1.25);
+    assert.deepEqual(errors, []);
+  } finally { await context.close(); }
+});
+
+test('8f. biomes: the land changes every 100 rows; an unlocked look starts the world in a far biome', async () => {
+  const { context, page, errors } = await open(INDEX + '-seed-42', { storage: { 'hoplanes.best': '250' } });
+  try {
+    await waitState(page, 'attract');
+    assert.deepEqual(await hop(page, () => [0, 120, 230, 330, 430].map(r => window.hopLanes.biomeIndex(r))), [0, 1, 2, 3, 0]);
+    assert.equal(await hop(page, () => window.hopLanes.biome), 'MEADOW');
+    await page.click('#settings');
+    await page.locator('#settingsBox').waitFor({ state: 'visible', timeout: T });
+    assert.match(await page.locator('#lookNote').textContent(), /REACH ROW 300 TO UNLOCK SWAMP/, 'a best of 250 leaves the swamp locked');
+    await page.click('#look');
+    assert.match(await page.locator('#look').textContent(), /LOOK: DESERT/);
+    assert.equal(await hop(page, () => window.hopLanes.biome), 'DESERT', 'the title world is built again as a desert');
+    await page.click('#look'); await page.click('#look');   // night, tundra
+    assert.match(await page.locator('#look').textContent(), /LOOK: TUNDRA/);
+    await page.click('#look');
+    assert.match(await page.locator('#look').textContent(), /LOOK: AUTO/, 'the locked swamp is skipped');
+    assert.deepEqual(errors, []);
+  } finally { await context.close(); }
+});
+
+test('8g. the first classic game is the tutorial world with guided hints; game over slows and zooms', { timeout: SLOW }, async () => {
+  const { context, page, errors } = await open(INDEX);
+  try {
+    await waitState(page, 'attract');
+    assert.equal(await hop(page, () => window.hopLanes.seed), 197, 'the tutorial seed (the hint is not done yet)');
+    await page.keyboard.press('KeyW');
+    await waitState(page, 'play');
+    await page.waitForFunction(() => window.hopLanes.hint, null, { timeout: T });
+    assert.equal(await hop(page, () => window.hopLanes.hintText), 'W \u25b2');
+    for (let n = 0; n < 3; n++) { await page.keyboard.press('KeyW'); await page.waitForFunction(() => !window.hopLanes.players[0].hop, null, { timeout: T }); }
+    assert.equal(await hop(page, () => window.hopLanes.players[0].row), 3);
+    await page.waitForFunction(() => /WAIT FOR A GAP/.test(window.hopLanes.hintText), null, { timeout: T });   // the road is next
+    await hop(page, () => { const h = window.hopLanes; h.kill(h.players[0], 'test'); });
+    await waitState(page, 'over', T);
+    assert.ok(await hop(page, () => window.hopLanes.slowT) > 0, 'slow motion runs at game over');
+    await page.waitForFunction(() => window.hopLanes.zoom > 1.1, null, { timeout: T });
+    await resultsVisible(page);
+    await page.keyboard.press('Space');
+    await waitState(page, 'attract', T);
+    assert.equal(await hop(page, () => window.hopLanes.zoom), 1, 'the title view is back to normal');
     assert.deepEqual(errors, []);
   } finally { await context.close(); }
 });

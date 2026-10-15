@@ -9,7 +9,7 @@ import { CHARACTERS, COLORS, eagleBoxes, makeCharacter } from './models.js';
 import { checkOver } from './screens.js';
 import { PICK_KEY, loadText, setBank } from './storage.js';
 import { cachedGeo, voxelMesh } from './voxel.js';
-import { Inst, dropSpinner, fxRand, lanes } from './world.js';
+import { Inst, blockColumn, dropSpinner, fxRand, lanes, unblockColumn } from './world.js';
 
 // The two players: spawning, meshes, sounds and effects. The rules of a run (hops, logs, hazards, the shield, the
 // eagle) are sim.js makeRules, the same code the score server replays; the hooks below only draw and play sounds.
@@ -45,9 +45,18 @@ function spawn(p) {
   setLabel(p);
   if ((G.replay ? G.replay.handicap : G.handicap) === p.id + 1) giveShield(p);   // the handicap: a shield to start with
 }
+// the score number bounces when it grows; a combo of five or more bounces bigger (Web Animations: no layout work)
+const POP = [{ transform: 'scale(1)' }, { transform: 'scale(1.35)', offset: 0.3 }, { transform: 'scale(1)' }];
+const POP_BIG = [{ transform: 'scale(1)', color: '#fff' }, { transform: 'scale(1.7) rotate(-4deg)', color: '#ffd84a', offset: 0.3 }, { transform: 'scale(1)', color: '#fff' }];
+function popScore(p) {
+  p.scoreEl.textContent = p.score;
+  if (reduceMotion || !p.scoreEl.animate) return;
+  if (p.pop) p.pop.cancel();
+  p.pop = p.scoreEl.animate(p.combo >= 5 ? POP_BIG : POP, { duration: p.combo >= 5 ? 320 : 220, easing: 'ease-out' });
+}
 // the name over the score, plus the combo and the magnet while they last
 function setLabel(p) {
-  const text = t('P' + (p.id + 1)) + ' ' + t(charOf(p).name) + (p.combo >= 3 ? ' x' + p.combo : '') + (p.magnetT > 0 ? ' ' + t('MAGNET') : '');
+  const text = t('P' + (p.id + 1)) + ' ' + t(charOf(p).name) + (p.combo >= 3 ? ' x' + p.combo : '') + (p.magnetT > 0 ? ' ' + t('MAGNET') : '') + (p.lead ? ' ' + t('SLOW') : '');
   if (text !== p.label) { p.label = text; $('score' + (p.id + 1)).querySelector('span').textContent = text; }
 }
 // ---------- power-ups ----------
@@ -104,8 +113,9 @@ function applyMoves() {
   }
   moveQ.length = 0;
 }
-const DEATH_SOUND = { splash: sfx.splash, slow: sfx.fall, eagle: sfx.fall };
-const NEAR_FX = 0xfff2a8;
+const DEATH_SOUND = { splash: sfx.splash, slow: sfx.fall, eagle: sfx.fall, fall: sfx.fall, twister: sfx.fall };
+const LAND_DIP_T = 0.14;   // seconds of the small view dip after a landing (app.js placeCamera)
+const NEAR_FX = 0xfff2a8, PORTAL_FX = 0xd9a5ff;
 
 // small particle bursts: water for splashes, dust when a player is left behind
 // the meshes are pooled: a death makes no garbage, so no collector pause
@@ -155,6 +165,8 @@ function animateDeath(p, dt) {
     m.rotation.x = Math.max(-Math.PI / 2, m.rotation.x - dt * 6);
     m.position.y = Math.max(-0.6, m.position.y - dt * 0.8);
   }
+  else if (p.cause === 'fall') m.position.y = Math.max(-1.6, m.position.y - dt * 5);   // down the chasm
+  else if (p.cause === 'twister') { m.position.y += dt * 3; m.rotation.y += dt * 14; }   // spun up into the sky
 }
 // what the rules do, shown: meshes, sounds, particles. Called by sim.js makeRules at the points where things happen.
 const playRules = makeRules({
@@ -168,19 +180,35 @@ const playRules = makeRules({
     },
     lives(p) { sfx.cheer(); },   // the cat's extra life
     hop(p) {
-      p.scoreEl.textContent = p.score;
+      popScore(p);
       setLabel(p);
-      if (p.hop.dur > HOP_TIME) sfx.mud(); else sfx.hop(p.id);
+      if (p.hop.dx) G.hintTurn = true;   // the first-run TURN hint is done
+      if (p.hop.high) sfx.bounce(); else if (p.hop.dur > HOP_TIME) sfx.mud(); else sfx.hop(p.id);
       buzz(8);
     },
+    teleport(p, lane, fromX) {   // in one ring, out of the other
+      sfx.teleport(); buzz(20);
+      burst(fromX, -lane.r, PORTAL_FX, 8, 0.6); burst(p.x, -lane.r, PORTAL_FX, 8, 0.6);
+      p.mesh.position.x = p.x;
+    },
+    bomb(p, other, lane, x) {   // the picker's bomb drops a rock in front of the other player
+      sfx.bomb(); buzz(60);
+      blockColumn(lane, x);
+      burst(x, -lane.r, DUST, 12, 0.8);
+      G.shakeT = 0.25;
+    },
+    unbomb: unblockColumn,
     combo(p) { sfx.coin(); burst(p.x, -p.row, COIN_FX, 4); },
     kill(p, cause) {
       buzz(70);
+      G.lastDead = p;   // the game-over view closes in on it (app.js)
       (DEATH_SOUND[cause] || sfx.squash)();
       const { x, z } = p.mesh.position;
       if (cause === 'squash') { p.mesh.position.y = 0; p.mesh.userData.body.scale.set(1.35, 0.15, 1.35); }
       else if (cause === 'splash') burst(x, z, SPLASH, 12);
-      else if (cause === 'slow') burst(x, z, DUST, 8);
+      else if (cause === 'slow' || cause === 'twister') burst(x, z, DUST, 8);
+      if (cause === 'twister') sfx.wind();
+      else if (cause === 'fall') sfx.crack();
     },
     rescue(p) {   // the hop back starts where the animal is drawn
       const bubble = p.mesh.userData.bubble;   // none yet when the cat's extra life saves it
@@ -202,20 +230,20 @@ const playRules = makeRules({
       burst(x, -lane.r, COIN_FX, secret ? 14 : 6);
     },
     land(p, lane) {
-      p.mesh.userData.body.scale.set(1.15, 0.8, 1.15);
-      // a small puff where the feet land: dust on land, mud in mud, a splash on a log or a pad
+      p.mesh.userData.body.scale.set(1.3, 0.62, 1.3);   // a squash on landing; stand() eases it back
+      // a small puff where the feet land: dust on land, mud in mud, a splash on a log or a pad; the view dips a hair
       const wet = lane && isWater(lane.kind);
-      if (!reduceMotion) burst(p.x, -p.row, wet ? SPLASH : lane && lane.kind === 'mud' ? MUD_FX : DUST, 3, 0.4);
+      if (!reduceMotion) { burst(p.x, -p.row, wet ? SPLASH : lane && lane.kind === 'mud' ? MUD_FX : DUST, 4, 0.45); G.landT = LAND_DIP_T; }
     },
     hopPose(p, t) {
       const h = p.hop, m = p.mesh;
-      m.position.set(p.x, h.slide ? 0 : Math.sin(t * Math.PI) * 0.45, h.fz + (h.tz - h.fz) * t);   // an ice slide stays on the ground
+      m.position.set(p.x, h.slide ? 0 : Math.sin(t * Math.PI) * (h.high ? 1.1 : 0.45), h.fz + (h.tz - h.fz) * t);   // an ice slide stays on the ground; a spring hop flies high
       const stretch = h.slide ? 0 : Math.sin(t * Math.PI) * 0.16;   // taller in the air, a little thinner
       m.userData.body.scale.set(1 - stretch * 0.5, 1 + stretch, 1 - stretch * 0.5);
     },
     stand(p, dt) {   // standing still (or riding a log)
       const m = p.mesh;
-      m.userData.body.scale.lerp(ONE, Math.min(1, dt * 14));
+      m.userData.body.scale.lerp(ONE, Math.min(1, dt * 16));
       p.breath += dt;
       m.userData.body.scale.y += Math.sin(p.breath * 5) * 0.02;   // a slow breath while standing
       if (!p.log) { m.position.y = 0; return; }

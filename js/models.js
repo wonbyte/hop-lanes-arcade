@@ -349,6 +349,15 @@ const plankBoxes = () => [[0.9, 0.1, 0.82, 0x9a6a3a, 0, -0.12, 0], [0.08, 0.11, 
 const shieldBoxes = () => [[0.5, 0.5, 0.5, 0x4fb8ff, 0, 0.3, 0], [0.3, 0.3, 0.3, 0xeaf6ff, 0, 0.4, 0]];
 const magnetBoxes = () => [[0.16, 0.5, 0.16, 0xe8513a, -0.2, 0.25, 0], [0.16, 0.5, 0.16, 0xe8513a, 0.2, 0.25, 0],
   [0.56, 0.16, 0.16, 0xe8513a, 0, 0.2, 0], [0.16, 0.14, 0.16, 0xeeeeee, -0.2, 0.61, 0], [0.16, 0.14, 0.16, 0xeeeeee, 0.2, 0.61, 0]];
+// a twister (the grass boss): grey boxes that widen upward, turned every frame; dark bits of debris. No pure white (instanced)
+const twisterBoxes = () => [[0.3, 0.3, 0.3, 0x9a9a9a, 0, 0, 0], [0.5, 0.35, 0.5, 0xa8a8a8, 0.05, 0.3, 0.05], [0.7, 0.4, 0.7, 0xb5b5b5, -0.05, 0.65, 0],
+  [0.9, 0.4, 0.9, 0xc2c2c2, 0.05, 1.05, -0.05], [0.12, 0.12, 0.12, 0x5a4a3a, 0.5, 0.9, 0.3], [0.1, 0.1, 0.1, 0x3a6a2a, -0.5, 1.2, -0.2]];
+// the versus bomb (a magnet's place in a two-player game, rules.js isBombRow): a black ball with a lit fuse
+const bombBoxes = () => [[0.5, 0.5, 0.5, 0x222222, 0, 0.2, 0], [0.08, 0.2, 0.08, 0x8a6a3a, 0.12, 0.7, 0], [0.14, 0.14, 0.14, 0xffd84a, 0.12, 0.9, 0, 1.2]];
+// the rock a bomb drops in front of the other player: blocks one column for a few seconds
+const blockBoxes = () => [[0.8, 0.55, 0.8, 0x6f6a62, 0, 0, 0], [0.5, 0.3, 0.5, 0x7f7a72, 0.05, 0.55, 0.05]];
+// a cliff tile (cliff rows): a stone slab over the chasm; instanced like a plank, it drops once it breaks
+const tileBoxes = () => [[0.92, 0.2, 0.92, 0x8d8a84, 0, -0.2, 0], [0.7, 0.04, 0.7, 0xa09c95, 0, 0, 0]];
 // hats (rules.js HATS): unlocked by the all-time best, drawn on top of the animal
 const HAT_GOLD = 0xffd84a, HAT_RED = 0xe0453a;
 function hatBoxes(hat, top) {
@@ -378,4 +387,4 @@ const LIGHT_TINT = { off: 0x331111, on: 0xff2222, red: 0xff2a2a, blue: 0x3a7bff 
 const LIGHT_OFF = new THREE.MeshLambertMaterial({ color: 0x331111 });
 const lightGeo = new THREE.BoxGeometry(0.38, 0.2, 0.14);
 
-export { CHARACTERS, COLORS, hatBoxes, LIGHT_OFF, LIGHT_TINT, PIX, PRIZES, boulderBoxes, bunnyBoxes, catBoxes, coinBoxes, drawPix, eagleBoxes, foxBoxes, frogBoxes, isOwned, lightBoxes, lightGeo, logBoxes, magnetBoxes, makeCharacter, penguinBoxes, pigBoxes, plankBoxes, policeBoxes, robotBoxes, shieldBoxes, trainBoxes, turtleBoxes, vehicleBoxes };
+export { CHARACTERS, COLORS, blockBoxes, bombBoxes, hatBoxes, tileBoxes, twisterBoxes, LIGHT_OFF, LIGHT_TINT, PIX, PRIZES, boulderBoxes, bunnyBoxes, catBoxes, coinBoxes, drawPix, eagleBoxes, foxBoxes, frogBoxes, isOwned, lightBoxes, lightGeo, logBoxes, magnetBoxes, makeCharacter, penguinBoxes, pigBoxes, plankBoxes, policeBoxes, robotBoxes, shieldBoxes, trainBoxes, turtleBoxes, vehicleBoxes };

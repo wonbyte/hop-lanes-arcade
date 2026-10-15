@@ -1,11 +1,12 @@
 import { sfx } from './audio.js';
-import { FIRST_ROW, FIXED_SEED, G, LANES_AHEAD, LANES_BEHIND, PLAY_HALF, STEP, WRAP } from './core.js';
-import { hashString, plankState } from './rules.js';
+import { BIOME_ROWS, FIRST_ROW, FIXED_SEED, G, LANES_AHEAD, LANES_BEHIND, PLAY_HALF, STEP, TUTORIAL_SEED, WRAP } from './core.js';
+import { BOMB_TICKS, hashString, isBombRow, plankState } from './rules.js';
 import { createWorldGen, railStep, trafficX, wetAt, standGroups } from './gen.js';
 import { touchRows } from './sim.js';
+import { players } from './players.js';
 import { BLINK_STEPS, scene } from './gfx.js';
-import { LIGHT_TINT, boulderBoxes, coinBoxes, lightBoxes, logBoxes, magnetBoxes, plankBoxes, policeBoxes, shieldBoxes, trainBoxes, vehicleBoxes } from './models.js';
-import { dailySeed } from './storage.js';
+import { LIGHT_TINT, blockBoxes, bombBoxes, boulderBoxes, coinBoxes, lightBoxes, logBoxes, magnetBoxes, plankBoxes, policeBoxes, shieldBoxes, tileBoxes, trainBoxes, twisterBoxes, vehicleBoxes } from './models.js';
+import { HINT_KEY, dailySeed, loadText } from './storage.js';
 import { cachedGeo, mergeBoxes, voxelMat, voxelMesh } from './voxel.js';
 
 // Lanes: building, scrolling, traffic, trains and coins: the meshes of the world gen.js describes.
@@ -115,9 +116,36 @@ function spinAll(now) {
 function placeCoins(lane, z) {
   for (const x of lane.coins.keys()) lane.coins.set(x, spinner(lane, 'coin', coinBoxes, x, z));
   const pw = lane.power;
-  if (pw) pw.s = spinner(lane, pw.kind, pw.kind === 'shield' ? shieldBoxes : magnetBoxes, pw.x, z);   // turns like a coin
+  // with two players a magnet on a bomb row is a bomb (sim.js pickPower decides the same way)
+  const bomb = pw && pw.kind === 'magnet' && isBombRow(lane.r) && players.every(p => p.joined);
+  if (pw) pw.s = spinner(lane, bomb ? 'bomb' : pw.kind, bomb ? bombBoxes : pw.kind === 'shield' ? shieldBoxes : magnetBoxes, pw.x, z);   // turns like a coin
+}
+// the rock a bomb drops: one column blocked for BOMB_TICKS (sim.js calls block/unblock through players.js)
+function blockColumn(lane, x) {
+  const i = new Inst('block', blockBoxes, true);
+  i.set(x, 0, -lane.r);
+  (lane.blocks || (lane.blocks = new Map())).set(x, i);
+}
+function unblockColumn(lane, x) {
+  const i = lane.blocks && lane.blocks.get(x);
+  if (i) { i.drop(); lane.blocks.delete(x); }
 }
 const rippleBoxes = () => [[0.5, 0.02, 0.07, 0xd8f3ff, 0, -0.15, 0], [0.22, 0.02, 0.07, 0xd8f3ff, 0.5, -0.15, 0]];
+// ---------- biomes: the look of the land changes every BIOME_ROWS rows (colors only: the rules are the same) ----------
+// grass/mud/rocks/ice: [even row, odd row]; tree: [width, height scale]; sky: the day sky (gfx.js blends night and weather over it)
+const BIOMES = [
+  { name: 'MEADOW', grass: [0xb7e05a, 0xaedb4f], leaf: 0xa9cf3a, trunk: 0x7a4b2a, tree: [0.72, 1], road: 0x4a4f5c, water: 0x5ec8f0, streak: 0x74d3f5,
+    mud: [0x7a5536, 0x74502f], rail: 0x7b6f6a, rocks: [0x9b9182, 0x958b7c], ice: [0xd3ecf7, 0xc8e5f3], sky: 0x74d3f2 },
+  { name: 'DESERT', grass: [0xe8cf7a, 0xe2c86f], leaf: 0x5faa4a, trunk: 0x4f8f3d, tree: [0.42, 1.3], road: 0x5a4f48, water: 0x3fb7c9, streak: 0x5fcfdd,   // cactus, oasis
+    mud: [0xa0703f, 0x986a3a], rail: 0x9a8470, rocks: [0xc9a06a, 0xc29860], ice: [0xd3ecf7, 0xc8e5f3], sky: 0xf2c98c },
+  { name: 'TUNDRA', grass: [0xe6eef7, 0xdbe6f2], leaf: 0xd4e6ec, trunk: 0x5a4432, tree: [0.6, 1.1], road: 0x3e4450, water: 0x4fa8d8, streak: 0x6fc0e8,     // snow, firs
+    mud: [0x6b5a4a, 0x655445], rail: 0x6c6a70, rocks: [0xb9bcc4, 0xb0b3bb], ice: [0xd3ecf7, 0xc8e5f3], sky: 0xcfe3f1 },
+  { name: 'SWAMP', grass: [0x6f9a3a, 0x679234], leaf: 0x4f7f2e, trunk: 0x4a3322, tree: [0.8, 0.9], road: 0x3f4440, water: 0x4f8f7a, streak: 0x66a68e,     // murky water
+    mud: [0x5a4a2c, 0x544528], rail: 0x6a6358, rocks: [0x7f8a72, 0x78836b], ice: [0xc3dde8, 0xb8d4e2], sky: 0x9fc8a0 }
+];
+const LOOK_OFFSET = { desert: 1, tundra: 2, swamp: 3 };   // an unlocked look (G.look) starts the land as that biome
+const biomeIndex = r => (Math.floor(Math.max(0, r) / BIOME_ROWS) + (LOOK_OFFSET[G.look] || 0)) % BIOMES.length;
+const biomeAt = r => BIOMES[biomeIndex(r)];
 // weather by 40-row chunk, seeded (gen.js wetAt): rain (snow in December) from row 20 on; it changes the look and the traffic
 let snowSeason = new Date().getMonth() === 11;
 const weatherCache = new Map();   // 40-row chunk -> weather (asked every drawn frame; cleared with the world)
@@ -139,13 +167,16 @@ function edgeLines(ground, z, color, y) { ground.push([40, 0.02, 0.05, color, 0,
 // One builder per lane type: the look of a row gen.js made. Each adds its static boxes to `ground` (merged into one
 // mesh later) and its moving parts to lane.objs. No random draws here: everything random is in the lane data.
 const LANE_BUILDERS = {
-  grass(lane, { r, z, ground }) {
+  grass(lane, { r, z, ground, B }) {
     const snow = weatherAt(r) === 'snow';
-    ground.push([40, 0.3, 1, snow ? (r % 2 ? 0xe6eef7 : 0xdbe6f2) : r % 2 ? 0xb7e05a : 0xaedb4f, 0, -0.3, z]);
-    for (const [x, h] of lane.treeH) ground.push([0.3, 0.3, 0.3, 0x7a4b2a, x, 0, z], [0.72, h, 0.72, snow ? 0xd4e6ec : 0xa9cf3a, x, 0.3, z]);
+    ground.push([40, 0.3, 1, snow ? (r % 2 ? 0xe6eef7 : 0xdbe6f2) : B.grass[r % 2], 0, -0.3, z]);
+    const [tw, th] = B.tree;
+    for (const [x, h] of lane.treeH) ground.push([0.3, 0.3, 0.3, B.trunk, x, 0, z], [tw, h * th, tw, snow ? 0xd4e6ec : B.leaf, x, 0.3, z]);
+    // the grass boss: a twister wanders across (gen.js lane.twister); darker, torn ground under its path
+    if (lane.twister) { edgeLines(ground, z, 0x6a6a5a, 0.01); placeTraffic(lane, z, () => new Inst('twister', twisterBoxes, true)); }
   },
-  road(lane, { z, ground }) {
-    ground.push([40, 0.3, 1, 0x4a4f5c, 0, -0.3, z]);
+  road(lane, { z, ground, B }) {
+    ground.push([40, 0.3, 1, B.road, 0, -0.3, z]);
     edgeLines(ground, z, 0xdedede, 0);   // a light line on both edges: a road reads as a road without its colour
     if (lane.prevKind === 'road')
       for (let x = -12; x <= 12; x += 2) ground.push([0.8, 0.02, 0.08, 0xe8e8e8, x, 0, z + 0.5]);
@@ -157,9 +188,11 @@ const LANE_BUILDERS = {
     });
     for (const o of lane.objs) if (o.light) o.light.set(carLightX(lane, o), LIGHT_Y_CAR, z);
   },
-  river(lane, { z, ground }) {
-    ground.push([40, 0.3, 1, 0x5ec8f0, 0, -0.45, z], [40, 0.02, 0.16, 0x74d3f5, 0, -0.16, z + 0.3]);   // a lighter streak: depth
+  river(lane, { z, ground, B }) {
+    // the river boss (gen.js lane.flood): darker, faster water with foam streaks across it
+    ground.push([40, 0.3, 1, lane.flood ? 0x3a86b8 : B.water, 0, -0.45, z], [40, 0.02, 0.16, lane.flood ? 0x8fd4ff : B.streak, 0, -0.16, z + 0.3]);   // a lighter streak: depth
     edgeLines(ground, z, FOAM, -0.16);   // pale foam on both banks
+    if (lane.flood) for (let x = -12; x <= 12; x += 1.5) ground.push([0.7, 0.02, 0.06, FOAM, x, -0.15, z - 0.1 + (x % 3) * 0.1]);
     placeTraffic(lane, z, o => new Inst('log' + o.len, () => logBoxes(o.len), false));   // flat on the water, no shadow
     // light ripples drift with the current (looks only: placed without the world generator, so seeds stay the same)
     lane.ripples = [0, 1, 2].map(i => {
@@ -169,27 +202,27 @@ const LANE_BUILDERS = {
     });
   },
   // lily pads: still water with pads at a few columns; land on water and you sink
-  lily(lane, { z, ground }) {
-    ground.push([40, 0.3, 1, 0x5ec8f0, 0, -0.45, z], [40, 0.02, 0.16, 0x74d3f5, 0, -0.16, z + 0.3]);
+  lily(lane, { z, ground, B }) {
+    ground.push([40, 0.3, 1, B.water, 0, -0.45, z], [40, 0.02, 0.16, B.streak, 0, -0.16, z + 0.3]);
     edgeLines(ground, z, FOAM, -0.16);
     for (const x of lane.pads) ground.push([0.78, 0.08, 0.78, 0x3f9f4a, x, -0.12, z], [0.2, 0.09, 0.2, 0xe66d8c, x + 0.2, -0.12, z - 0.2]);
   },
   // mud: safe, but a hop out of it is slow (rules.js hopTime), so the scroll line catches up
-  mud(lane, { r, z, ground }) {
-    ground.push([40, 0.3, 1, r % 2 ? 0x7a5536 : 0x74502f, 0, -0.3, z]);
+  mud(lane, { r, z, ground, B }) {
+    ground.push([40, 0.3, 1, B.mud[r % 2], 0, -0.3, z]);
     for (const m of lane.mudLooks)
       if (m.reed) ground.push([0.3, m.reed, 0.3, 0x8a7a3a, m.x, 0, z]);   // reeds
       else ground.push([m.w, 0.02, 0.5, 0x5e3f24, m.x, 0, z + m.dz]);      // puddles
   },
   // ice: pale blue, with light sheen stripes (so it differs from grass by shape too) and snowy trees
-  ice(lane, { r, z, ground }) {
-    ground.push([40, 0.3, 1, r % 2 ? 0xd3ecf7 : 0xc8e5f3, 0, -0.3, z]);
+  ice(lane, { r, z, ground, B }) {
+    ground.push([40, 0.3, 1, B.ice[r % 2], 0, -0.3, z]);
     for (let x = -12; x <= 12; x += 2.5) ground.push([1.1, 0.02, 0.07, 0xf6fcff, x + (r % 3) * 0.6, 0, z - 0.22], [0.6, 0.02, 0.07, 0xf6fcff, x + 0.4 + (r % 3) * 0.6, 0, z + 0.12]);
     for (const [x, h] of lane.treeH) ground.push([0.3, 0.3, 0.3, 0x7a4b2a, x, 0, z], [0.6, h, 0.6, 0xe3f0f5, x, 0.3, z]);
   },
   // a bridge: water with a run of planks (instances: a plank drops when it breaks), posts at both ends and rope rails
-  bridge(lane, { z, ground }) {
-    ground.push([40, 0.3, 1, 0x5ec8f0, 0, -0.45, z], [40, 0.02, 0.16, 0x74d3f5, 0, -0.16, z + 0.3]);
+  bridge(lane, { z, ground, B }) {
+    ground.push([40, 0.3, 1, B.water, 0, -0.45, z], [40, 0.02, 0.16, B.streak, 0, -0.16, z + 0.3]);
     edgeLines(ground, z, FOAM, -0.16);
     const cols = [...lane.planks.keys()].sort((p, q) => p - q);
     for (const run of standGroups(cols)) {   // posts and rope rails per run of planks (gen.js may add a lone plank)
@@ -200,13 +233,36 @@ const LANE_BUILDERS = {
     lane.plankInst = cols.map(x => { const i = new Inst('plank', plankBoxes, false); i.set(x, 0, z); return { x, i, y: 0 }; });
   },
   // rocks: dusty ground with pebbles; boulders roll across like slow traffic
-  rocks(lane, { r, z, ground }) {
-    ground.push([40, 0.3, 1, r % 2 ? 0x9b9182 : 0x958b7c, 0, -0.3, z]);
+  rocks(lane, { r, z, ground, B }) {
+    ground.push([40, 0.3, 1, B.rocks[r % 2], 0, -0.3, z]);
     for (let x = -12; x <= 12; x += 3) ground.push([0.22, 0.08, 0.18, 0x7a7266, x + (r % 4) * 0.7, 0, z + ((x + r) % 2 ? 0.3 : -0.3)]);
     placeTraffic(lane, z, () => new Inst('boulder', boulderBoxes, true));
   },
-  rail(lane, { z, ground }) {
-    ground.push([40, 0.3, 1, 0x7b6f6a, 0, -0.3, z]);
+  // a spring row: grass with a trampoline on every play column; a forward hop from here flies two rows (sim.js)
+  spring(lane, { r, z, ground, B }) {
+    ground.push([40, 0.3, 1, B.grass[r % 2], 0, -0.3, z]);
+    for (let x = -PLAY_HALF; x <= PLAY_HALF; x++) ground.push([0.8, 0.08, 0.8, 0xe05a3a, x, 0, z], [0.56, 0.05, 0.56, 0xffd84a, x, 0.08, z], [0.3, 0.05, 0.3, 0xe05a3a, x, 0.13, z]);
+    for (let x = -12; x <= 12; x++) if (Math.abs(x) > PLAY_HALF && (x + r) % 3 === 0) ground.push([0.3, 0.3, 0.3, B.trunk, x, 0, z], [0.6, 0.9, 0.6, B.leaf, x, 0.3, z]);
+  },
+  // a portal row: stone ground with two glowing rings; landing in one puts you in the other (sim.js lane.portals)
+  portal(lane, { z, ground }) {
+    ground.push([40, 0.3, 1, 0x5c5670, 0, -0.3, z]);
+    for (const x of lane.portals) {
+      for (const [dx, dz, w, d] of [[0, -0.4, 0.9, 0.1], [0, 0.4, 0.9, 0.1], [-0.4, 0, 0.1, 0.9], [0.4, 0, 0.1, 0.9]]) ground.push([w, 0.12, d, 0xb455ff, x + dx, 0, z + dz, 0.8]);
+      ground.push([0.6, 0.02, 0.6, 0xe0b8ff, x, 0, z, 1.2]);
+    }
+    for (let x = -12; x <= 12; x += 2) if (Math.abs(x) > PLAY_HALF) ground.push([0.5, 0.6 + (x % 3) * 0.2, 0.5, 0x7c75a0, x, 0, z]);   // standing stones
+  },
+  // a cliff row: stone tiles over a dark chasm; a tile drops for good once it breaks (plank instances, placePlanks)
+  cliff(lane, { z, ground }) {
+    ground.push([40, 0.3, 1, 0x2a2622, 0, -1.1, z]);   // the chasm floor, far below
+    for (const x of [-PLAY_HALF - 1, PLAY_HALF + 1]) ground.push([0.9, 0.2, 0.92, 0x8d8a84, x, -0.2, z]);   // the banks
+    for (let x = -12; x <= 12; x++) if (Math.abs(x) > PLAY_HALF + 1) ground.push([1, 0.2, 1, 0x7f7b74, x, -0.2, z]);
+    const cols = [...lane.planks.keys()].sort((p, q) => p - q);
+    lane.plankInst = cols.map(x => { const i = new Inst('tile', tileBoxes, true); i.set(x, 0, z); return { x, i, y: 0 }; });
+  },
+  rail(lane, { z, ground, B }) {
+    ground.push([40, 0.3, 1, B.rail, 0, -0.3, z]);
     // the first rail past each 100 rows carries the boss train (lane.boss): twice as long, faster, more warning
     for (let x = -14; x <= 14; x += 0.7) ground.push([0.18, 0.06, 0.9, 0x5a3d2a, x, 0, z]);
     ground.push([40, 0.06, 0.08, 0x9aa3b5, 0, 0.05, z - 0.28], [40, 0.06, 0.08, 0x9aa3b5, 0, 0.05, z + 0.28],
@@ -226,7 +282,7 @@ function addLane(r) {
   const lane = worldGen.lane(r), kind = lane.kind;
   lane.group = new THREE.Group(); lane.shown = true;
   const ground = [];
-  LANE_BUILDERS[kind](lane, { r, z: -r, ground });
+  LANE_BUILDERS[kind](lane, { r, z: -r, ground, B: biomeAt(r) });
   placeCoins(lane, -r);
   // unique per lane, disposed with the lane; flat ground does not cast shadows, trees and the rail pole do
   lane.ground = voxelMesh(mergeBoxes(ground), kind === 'grass' || kind === 'ice' ? lane.trees.size > 0 : kind === 'rail');
@@ -304,6 +360,7 @@ function dropLane(lane) {
   for (const o of lane.objs) { o.inst.drop(); if (o.light) o.light.drop(); }
   if (lane.ripples) for (const q of lane.ripples) q.inst.drop();
   if (lane.plankInst) for (const q of lane.plankInst) q.i.drop();
+  if (lane.blocks) for (const i of lane.blocks.values()) i.drop();
   if (lane.train) lane.train.inst.drop();
   if (lane.light) lane.light.drop();
   if (lane.power) dropSpinner(lane.power.s);
@@ -319,6 +376,7 @@ function moveTraffic(lane, w) {
   const half = lane.span / 2, travel = lane.dir * lane.speed * w, river = lane.kind === 'river', now = w * 1000;
   for (const o of lane.objs) {
     o.x = trafficX(lane, o, w);   // gen.js: the one formula (sim.js reads the same positions)
+    if (lane.twister) { o.inst.set(o.x, Math.sin(now / 150) * 0.05, o.z, now / 90); continue; }   // the twister turns as it goes
     o.inst.move(o.x, river ? Math.sin(now / 400 + o.x) * 0.02 : lane.kind === 'rocks' ? Math.abs(Math.sin(o.x * 3)) * 0.06 : 0, o.z);
     if (o.light) {
       o.light.move(carLightX(lane, o), LIGHT_Y_CAR, o.z);
@@ -364,14 +422,14 @@ function paintSignal(lane) {
 }
 function updateLane(lane, w, draw) {
   if (lane.kind === 'rail') updateRail(lane, w, draw);
-  else if (draw && (lane.kind === 'road' || lane.kind === 'river' || lane.kind === 'rocks')) moveTraffic(lane, w);
-  else if (draw && lane.kind === 'bridge') placePlanks(lane);
+  else if (draw && (lane.kind === 'road' || lane.kind === 'river' || lane.kind === 'rocks' || lane.twister)) moveTraffic(lane, w);
+  else if (draw && lane.plankInst) placePlanks(lane);   // bridge planks and cliff tiles
 }
 // planks follow the bridge's state (rules.js plankState, world ticks): shaking while cracking, sunk while down
 function placePlanks(lane) {
   for (const q of lane.plankInst) {
     const st = plankState(lane, q.x, G.worldTick);
-    const y = st === 'down' ? -0.7 : st === 'cracking' ? Math.sin(G.worldTick * 1.7) * 0.03 : 0;
+    const y = st === 'down' ? (lane.kind === 'cliff' ? -1.3 : -0.7) : st === 'cracking' ? Math.sin(G.worldTick * 1.7) * 0.03 : 0;
     if (y !== q.y) { q.y = y; q.i.move(q.x, y, -lane.r); }
   }
 }
@@ -402,6 +460,7 @@ function showLane(lane, on) {
   for (const o of lane.objs) { o.inst.set(o.x, 0, o.z, o.rot || 0, on); if (o.light) o.light.set(carLightX(lane, o), LIGHT_Y_CAR, o.z, 0, on); }
   if (lane.ripples) for (const q of lane.ripples) q.inst.set(q.x, 0, q.z, 0, on);
   if (lane.plankInst) for (const q of lane.plankInst) q.i.set(q.x, q.y, -lane.r, 0, on);
+  if (lane.blocks) for (const [x, i] of lane.blocks) i.set(x, 0, -lane.r, 0, on);
   if (lane.train) lane.train.inst.set(lane.train.x, 0, -lane.r, 0, on && lane.train.active);
   if (lane.light) { lane.light.set(POLE_X, LIGHT_Y_RAIL, -lane.r + POLE_DZ, 0, on); paintSignal(lane); }
   for (const s of lane.coins.values()) s.inst.set(s.x, 0, s.z, 0, on);
@@ -416,8 +475,10 @@ const rowsBehind = () => Math.min(LANES_BEHIND, Math.ceil(G.visRows));   // alwa
 const firstNeededRow = () => Math.min(G.camRow - rowsBehind(), Math.floor(G.camRow + G.camLead - G.visRows));
 function resetWorld() {
   for (const lane of [...lanes.values()]) dropLane(lane);
+  // the very first classic game is a gentle, known world (the guided hints in app.js fit it)
   worldSeed = G.replay ? G.replay.seed : FIXED_SEED !== null ? FIXED_SEED
-    : G.mode === 'daily' ? dailySeed() : G.mode === 'room' ? hashString('room:' + G.room) : (Math.random() * 4294967296) >>> 0;
+    : G.mode === 'daily' ? dailySeed() : G.mode === 'room' ? hashString('room:' + G.room)
+    : loadText(HINT_KEY) !== '1' ? TUTORIAL_SEED : (Math.random() * 4294967296) >>> 0;
   for (const k of [...chunks.keys()]) releaseChunk(k);   // nothing should be left; frees any chunk that is
   hot.clear();
   G.worldTick = 0;
@@ -445,4 +506,4 @@ function laneKinds() {   // lane types for rows 0..30 (builds missing rows ahead
   return out;
 }
 
-export { CHUNK, Inst, LANE_BUILDERS, addLane, chunks, dropLane, dropSpinner, ensureLanes, firstNeededRow, fleet, fxRand, getSeed, laneCoins, laneKinds, lanes, lastNeededRow, moveTraffic, near, resetWorld, showLane, spinAll, spinners, updateFarLanes, updateLanes, updateRail, weatherAt, worldGroup };
+export { BIOMES, CHUNK, Inst, biomeAt, biomeIndex, blockColumn, unblockColumn, LANE_BUILDERS, addLane, chunks, dropLane, dropSpinner, ensureLanes, firstNeededRow, fleet, fxRand, getSeed, laneCoins, laneKinds, lanes, lastNeededRow, moveTraffic, near, resetWorld, showLane, spinAll, spinners, updateFarLanes, updateLanes, updateRail, weatherAt, worldGroup };

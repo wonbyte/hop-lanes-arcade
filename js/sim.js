@@ -2,18 +2,18 @@
 // No DOM, no Three.js. players.js plays these rules in the browser (makeRules with effect hooks that move meshes and
 // make sounds); simulate() plays a replay with no effects, so the score server can check a posted score.
 // Everything here is step-driven (fixed STEP), so the browser and simulate() give the same run tick for tick.
-import { BEHIND_LIMIT, COMBO_EVERY, COUNTDOWN, COMBO_GAP, EAGLE_IDLE, EAGLE_SWOOP, EAGLE_WARN, EDGE_DEATH, HIT_PAD, HOP_TIME, MAGNET_REACH, MAGNET_TIME, NEAR_MISS, PLAY_HALF, SHIELD_TIME, SLIDE_TIME, STEP, PLANK_BACK, PLANK_BREAK, TAG_BOOST, hopTarget, hopTime, isWater, plankState, traitOf } from './rules.js';
+import { BEHIND_LIMIT, BOMB_TICKS, COMBO_EVERY, COUNTDOWN, COMBO_GAP, EAGLE_IDLE, EAGLE_SWOOP, EAGLE_WARN, EDGE_DEATH, HIT_PAD, HOP_TIME, LEAD_FROM, LEAD_GAP, LEAD_SLOW, MAGNET_REACH, MAGNET_TIME, NEAR_MISS, PLAY_HALF, SHIELD_TIME, SLIDE_TIME, SPRING_HOP, STEP, PLANK_BACK, PLANK_BREAK, TAG_BOOST, hopTarget, hopTime, isBombRow, isWater, plankState, traitOf } from './rules.js';
 import { createWorldGen, railStep, trafficX } from './gen.js';
 
 const START_X = [-2, 2];   // the columns the two players start on
-const RULE_HOOKS = ['hop', 'combo', 'kill', 'rescue', 'shield', 'power', 'coin', 'land', 'hopPose', 'stand', 'warn', 'eagle', 'swoop', 'label', 'near', 'lives'];
+const RULE_HOOKS = ['hop', 'combo', 'kill', 'rescue', 'shield', 'power', 'coin', 'land', 'hopPose', 'stand', 'warn', 'eagle', 'swoop', 'label', 'near', 'lives', 'teleport', 'bomb', 'unbomb'];
 // a player's run state, as it is when the animal appears on row 0. p.trait (rules.js traitOf) is set by the caller first.
 function resetPlayer(p) {
   p.trait = p.trait || {};
   Object.assign(p, {
     x: START_X[p.id], row: 0, alive: true, hop: null, queue: null, score: 0, idleT: 0, warned: false, eagle: null,
     facing: 0, cause: '', log: null, logOff: 0, trainDir: 0, combo: 0, lastHop: -9, shield: false, safeT: 0, magnetT: 0,
-    coins: 0, lives: p.trait.lives || 0, nearSeen: new Set(), nearRow: null
+    coins: 0, lives: p.trait.lives || 0, nearSeen: new Set(), nearRow: null, lead: false
   });
 }
 // the camera's scroll line: it creeps forward on its own, and catches up fast to a player who runs ahead.
@@ -46,15 +46,48 @@ function makeRules(W) {
   for (const k of RULE_HOOKS) fx[k] = (W.fx && W.fx[k]) || (() => {});
 
   const others = p => (W.players || []).filter(q => q !== p && q.joined && q.alive);
+  const bothJoined = () => (W.players || []).filter(q => q.joined).length === 2;
   const behindLimit = p => BEHIND_LIMIT + (p.trait.behind || 0);
+  // two players (not race or tag): far out, a leader well ahead hops slower so the other can catch up
+  function leading(p) {
+    if (G.mode === 'race' || G.mode === 'tag' || p.row < LEAD_FROM || !bothJoined()) return false;
+    const o = others(p);
+    return o.length > 0 && o.every(q => p.row - q.row >= LEAD_GAP);
+  }
   function giveShield(p) { p.shield = true; fx.shield(p); }
   function payCoins(p, n) { p.coins += n; W.coins(n); }
+  // the bombs in play: a blocked column (a tree the other player can not hop onto) until a world tick
+  const bombs = [];
+  function dropBomb(p, other) {
+    const lane = W.lane(other.row + 1);
+    if (!lane) return false;
+    const x = Math.max(-PLAY_HALF, Math.min(PLAY_HALF, Math.round(other.x)));
+    const own = !lane.trees.has(x);   // a tree already there stays a tree when the bomb goes
+    if (own) lane.trees.add(x);
+    bombs.push({ lane, x, own, until: G.worldTick + BOMB_TICKS });
+    fx.bomb(p, other, lane, x);
+    return true;
+  }
+  function stepBombs() {
+    for (let i = bombs.length - 1; i >= 0; i--) {
+      const b = bombs[i];
+      if (G.worldTick < b.until) continue;
+      bombs.splice(i, 1);
+      if (b.own) b.lane.trees.delete(b.x);
+      fx.unbomb(b.lane, b.x);
+    }
+  }
   function pickPower(p, lane) {
     const pw = lane.power;
     lane.power = null;
-    if (pw.kind === 'shield') giveShield(p); else p.magnetT = MAGNET_TIME * (p.trait.magnet || 1);
+    let kind = pw.kind;
+    if (kind === 'magnet' && bothJoined() && isBombRow(lane.r)) {   // two players: this magnet is a bomb (world.js draws it so)
+      const other = others(p)[0];
+      kind = other && dropBomb(p, other) ? 'bomb' : 'shield';   // nobody to bomb: a shield for the picker
+    }
+    if (kind === 'shield') giveShield(p); else if (kind === 'magnet') p.magnetT = MAGNET_TIME * (p.trait.magnet || 1);
     if (G.run) G.run.powers++;
-    fx.power(p, lane, pw);
+    fx.power(p, lane, { ...pw, kind });
   }
   function collectCoin(p, lane, x, coin) {
     lane.coins.delete(x);
@@ -94,15 +127,19 @@ function makeRules(W) {
     if (p.hop) { p.queue = [dx, dr]; return; }
     // facing: 0 = forward (-z), PI = back, +PI/2 = left, -PI/2 = right
     p.facing = dr > 0 ? 0 : dr < 0 ? Math.PI : (dx > 0 ? -Math.PI / 2 : Math.PI / 2);
+    const from = W.lane(p.row);
+    const spring = dr === 1 && !!from && from.kind === 'spring';   // a spring throws a forward hop two rows on
+    if (spring) dr = 2;
     const tx = hopTarget(W.lane(p.row + dr), p.x, dx, PLAY_HALF);
     if (tx === null) return;
     if (p.row + dr < G.camRow - behindLimit(p)) return;
-    const from = W.lane(p.row);
     let dur = hopTime(from && from.kind, HOP_TIME) * (p.trait.hop || 1);
     if (G.mode === 'tag' && others(p).some(q => q.row > p.row)) dur *= TAG_BOOST;   // tag: the one behind is faster
+    if (spring) dur *= SPRING_HOP;
+    if (leading(p)) dur *= LEAD_SLOW;
     p.hop = {
       t: 0, dur, fromRow: p.row, fx: p.x, fz: -p.row, tx, tz: -(p.row + dr),
-      carry: p.log, carryX0: p.log ? p.log.x : 0, span: p.log ? from.span : 0, dx, dr
+      carry: p.log, carryX0: p.log ? p.log.x : 0, span: p.log ? from.span : 0, dx, dr, high: spring
     };
     p.row += dr;
     p.idleT = 0; p.warned = false;
@@ -130,8 +167,8 @@ function makeRules(W) {
   function kill(p, cause) {
     if (!p.alive) return;
     // just after a rescue cars and trains pass through you, but water still does not hold you up
-    if ((cause === 'squash' || cause === 'train') && p.safeT > 0) return;
-    if ((cause === 'squash' || cause === 'train' || cause === 'splash') && p.shield && rescue(p)) return;
+    if ((cause === 'squash' || cause === 'train' || cause === 'twister') && p.safeT > 0) return;
+    if ((cause === 'squash' || cause === 'train' || cause === 'twister' || cause === 'splash' || cause === 'fall') && p.shield && rescue(p)) return;
     if (cause === 'splash' && p.lives > 0 && rescue(p)) { p.lives--; fx.lives(p); return; }   // the cat's extra life
     p.alive = false; p.cause = cause; p.hop = null;
     fx.kill(p, cause);
@@ -153,10 +190,16 @@ function makeRules(W) {
     } else {
       p.x = Math.round(p.x);
       if (lane && lane.kind === 'lily' && !lane.pads.has(p.x)) { kill(p, 'splash'); return p.alive; }
-      if (lane && lane.kind === 'bridge') {   // a plank holds you for PLANK_BREAK steps, then it drops
-        const st = plankState(lane, p.x, G.worldTick);
-        if (st === 'down') { kill(p, 'splash'); return p.alive; }
-        if (st === 'up') { const pl = lane.planks.get(p.x); pl.breakAt = G.worldTick + PLANK_BREAK; pl.backAt = pl.breakAt + PLANK_BACK; }
+      if (lane && (lane.kind === 'bridge' || lane.kind === 'cliff')) {   // a plank or tile holds you for PLANK_BREAK steps, then it drops
+        const cliff = lane.kind === 'cliff', st = plankState(lane, p.x, G.worldTick);
+        if (st === 'down') { kill(p, cliff ? 'fall' : 'splash'); return p.alive; }
+        // a broken cliff tile is gone for good
+        if (st === 'up') { const pl = lane.planks.get(p.x); pl.breakAt = G.worldTick + PLANK_BREAK; pl.backAt = cliff ? Infinity : pl.breakAt + PLANK_BACK; }
+      }
+      if (lane && lane.kind === 'portal' && lane.portals.includes(p.x)) {   // a portal column: out of the other one, at once
+        const fromX = p.x;
+        p.x = lane.portals[lane.portals[0] === p.x ? 1 : 0];
+        fx.teleport(p, lane, fromX);
       }
       if (G.run && from && from.kind === 'river' && lane && lane.r > from.r) G.run.rivers++;   // crossed a river
       const coin = lane && lane.coins.get(p.x);
@@ -198,13 +241,13 @@ function makeRules(W) {
   function checkHazards(p, lane) {
     // until mid-hop the player is still over the row they left
     const hz = p.hop && p.hop.t < 0.5 ? W.lane(p.hop.fromRow) : lane;
-    if (hz && hz.kind === 'bridge' && (!p.hop || p.hop.t < 0.5) && plankState(hz, Math.round(p.x), G.worldTick) === 'down') { kill(p, 'splash'); return; }
+    if (hz && (hz.kind === 'bridge' || hz.kind === 'cliff') && (!p.hop || p.hop.t < 0.5) && plankState(hz, Math.round(p.x), G.worldTick) === 'down') { kill(p, hz.kind === 'cliff' ? 'fall' : 'splash'); return; }
     if (hz && hz.r !== p.nearRow) { p.nearRow = hz.r; p.nearSeen.clear(); }   // a new row under the player: its cars can each count once
-    if (hz && (hz.kind === 'road' || hz.kind === 'rocks')) {
+    if (hz && (hz.kind === 'road' || hz.kind === 'rocks' || hz.twister)) {   // cars, boulders, or the twister crossing a grass row
       for (const o of hz.objs) {
         const gap = Math.abs(o.x - p.x) - o.len / 2 - HIT_PAD;
-        if (gap < 0) { kill(p, 'squash'); return; }
-        if (gap < NEAR_MISS && !p.nearSeen.has(o)) nearMiss(p, o);
+        if (gap < 0) { kill(p, o.twister ? 'twister' : 'squash'); return; }
+        if (gap < NEAR_MISS && !o.twister && !p.nearSeen.has(o)) nearMiss(p, o);
       }
     } else if (hz && hz.kind === 'rail' && hz.train.active) {
       if (Math.abs(hz.train.x - p.x) < hz.train.len / 2 + HIT_PAD) { p.trainDir = hz.dir; kill(p, 'train'); return; }
@@ -213,11 +256,14 @@ function makeRules(W) {
   }
   // one fixed step of a live player (the browser calls it from updatePlayer, simulate() directly)
   function stepPlayer(p, dt) {
+    if (bombs.length) stepBombs();   // whoever steps first frees a spent bomb
     if (p.safeT > 0) p.safeT = Math.max(0, p.safeT - dt);
     const ok = p.hop ? stepHop(p, W.lane(p.row), dt) : stand(p, dt);
     if (ok && p.alive && !p.safeT) checkHazards(p, W.lane(p.row));
     if (!p.alive || G.state !== 'play') return;
     if (p.magnetT) { updateMagnet(p, dt); if (!p.magnetT) fx.label(p); }
+    const lead = leading(p);
+    if (lead !== p.lead) { p.lead = lead; fx.label(p); }
     if (p.combo && !p.hop && G.playT - p.lastHop > COMBO_GAP * (p.trait.comboGap || 1) + 0.2) { p.combo = 0; fx.label(p); }
     if (!p.hop) p.idleT += dt;
     const idle = EAGLE_IDLE + (p.trait.idle || 0);
@@ -295,7 +341,7 @@ function createSim(rp) {
     for (const r of touchRows(players, hot)) {
       const l = lane(r);
       if (l.kind === 'rail') l.train.active = railStep(l, w);
-      else if (l.kind === 'road' || l.kind === 'river' || l.kind === 'rocks') for (const o of l.objs) o.x = trafficX(l, o, w);
+      else for (const o of l.objs) o.x = trafficX(l, o, w);   // cars, logs, boulders, the twister
     }
     for (const p of players) if (p.joined && p.alive) rules.stepPlayer(p, STEP);
     return S.state !== 'over';

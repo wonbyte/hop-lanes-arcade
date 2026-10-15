@@ -1,4 +1,4 @@
-import { $, G } from './core.js';
+import { $, G, LOOKS } from './core.js';
 import { MODES, dayBefore, hashString, isoDay, streakCount } from './rules.js';
 
 // Saved data: best scores, coins, owned characters. Everything is best effort (private mode, blocked storage).
@@ -31,6 +31,32 @@ const MISSIONS_KEY = 'hoplanes.missions', HANDICAP_KEY = 'hoplanes.handicap', RO
 const MOTION_KEY = 'hoplanes.motion';   // '1': less motion, whatever the system setting says
 const STREAK_KEY = 'hoplanes.streak';   // 'YYYY-MM-DD|n': the last daily run and the days in a row
 const HINT_KEY = 'hoplanes.hint';       // '1' once the floating TAP hint has done its job
+const DAILYDONE_KEY = 'hoplanes.dailydone';   // 'YYYY-MM-DD|bitmask': the daily missions paid today (missions.js)
+const LOCAL_KEY = 'hoplanes.local';     // JSON list of { name, score, day, mode }: the best 10 runs on this device
+const INITIALS_KEY = 'hoplanes.initials';   // the 3 letters in front of the animal's name on the local list
+// ---------- the local top 10 (pure: tests/replay.test.mjs) ----------
+const LOCAL_MAX = 10;
+const cleanInitials = s => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 3);
+// the saved list, checked entry by entry, best first, at most 10
+function parseLocal(text) {
+  let list = [];
+  try { list = JSON.parse(text || '[]'); } catch (e) {}
+  if (!Array.isArray(list)) return [];
+  return list.filter(e => e && typeof e.name === 'string' && Number.isInteger(e.score) && e.score > 0)
+    .map(e => ({ name: e.name.slice(0, 24), score: e.score, day: String(e.day || ''), mode: String(e.mode || '') }))
+    .sort((a, b) => b.score - a.score).slice(0, LOCAL_MAX);
+}
+// a score makes the list when it is a real score and there is room, or it beats the last one
+const entersLocal = (list, score) => score > 0 && (list.length < LOCAL_MAX || score > list[list.length - 1].score);
+// the list with the entry in its place (after equal scores), still at most 10; the same list when it does not make it
+function localTop(list, entry) {
+  if (!entersLocal(list, entry.score)) return list;
+  const out = list.slice();
+  let at = out.findIndex(e => e.score < entry.score);
+  if (at < 0) at = out.length;
+  out.splice(at, 0, entry);
+  return out.slice(0, LOCAL_MAX);
+}
 function loadText(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
 G.bank = load(COINS_KEY);   // coins collected over all games
 const owned = new Set(loadText(OWNED_KEY).split(',').filter(Boolean));
@@ -48,6 +74,8 @@ addEventListener('pagehide', flushBank);
 document.addEventListener('visibilitychange', () => { if (document.hidden) flushBank(); });
 G.bestAll = load(BEST_KEY);
 G.handicap = Math.min(2, load(HANDICAP_KEY));
+const LOOK_KEY = 'hoplanes.look';   // an unlocked look (core.js LOOKS): 'auto', 'desert', 'night', 'tundra', 'swamp'
+G.look = LOOKS.some(l => l.key === loadText(LOOK_KEY) && G.bestAll >= l.at) ? loadText(LOOK_KEY) : 'auto';
 G.room = loadText(ROOM_KEY).replace(/[^A-Z0-9]/g, '').slice(0, 6);
 // the saved mode; room mode needs a code, and a replay may have shown another mode
 const savedMode = () => MODES.includes(loadText(MODE_KEY)) && (loadText(MODE_KEY) !== 'room' || G.room) ? loadText(MODE_KEY) : 'classic';
@@ -76,4 +104,4 @@ setBank(G.bank);
 // a game left open past midnight starts a new "today"
 setInterval(() => { if (dayKey() !== shownDay) { dropOldDays(); refreshBests(); } }, 60000);
 
-export { BEST_KEY, COINS_KEY, DAILY_KEY, DAY_PREFIX, HANDICAP_KEY, HINT_KEY, HOWTO_KEY, STREAK_KEY, INSTALL_KEY, MISSIONS_KEY, MOTION_KEY, ROOM_KEY, MODE_KEY, MUTE_KEY, OWNED_KEY, PICK_KEY, dailySeed, dayKey, deviceTag, dropOldDays, flushBank, load, loadText, owned, refreshBests, save, savedMode, setBank, today };
+export { BEST_KEY, COINS_KEY, LOOK_KEY, DAILY_KEY, DAILYDONE_KEY, DAY_PREFIX, HANDICAP_KEY, HINT_KEY, HOWTO_KEY, INITIALS_KEY, LOCAL_KEY, LOCAL_MAX, STREAK_KEY, INSTALL_KEY, MISSIONS_KEY, MOTION_KEY, ROOM_KEY, MODE_KEY, MUTE_KEY, OWNED_KEY, PICK_KEY, cleanInitials, dailySeed, dayKey, deviceTag, dropOldDays, entersLocal, flushBank, load, loadText, localTop, owned, parseLocal, refreshBests, save, savedMode, setBank, today };

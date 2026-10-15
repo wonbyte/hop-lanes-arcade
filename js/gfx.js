@@ -47,15 +47,17 @@ scene.add(sun, sun.target);
 const DAY = { sky: new THREE.Color(0x74d3f2), sun: new THREE.Color(0xffffff), hemi: 0.65 * Math.PI, sunI: 0.6 * Math.PI };
 const NIGHT = { sky: new THREE.Color(0x1b2242), sun: new THREE.Color(0x9fb3ff), hemi: 0.28 * Math.PI, sunI: 0.42 * Math.PI };
 const RAIN_SKY = new THREE.Color(0x6b8294), SNOW_SKY = new THREE.Color(0xd6e2ec);
-let nightT = -1, wetT = 0, shownWeather = '';
+let nightT = -1, wetT = 0, shownWeather = '', skyHex = -1;
 const weatherEl = $('weather');
-// sky and light by row (night) and weather at the camera; the weather tint fades over a second
-function setNight(row, weather = '') {
-  const t = Math.min(1, Math.max(0, (row - NIGHT_START) / (NIGHT_FULL - NIGHT_START)));
+// sky and light by row (night) and weather at the camera; the weather tint fades over a second.
+// sky: the day sky of the biome at the camera (world.js biomeAt). The 'night' look starts the world at full night.
+function setNight(row, weather = '', sky = 0x74d3f2) {
+  const t = Math.min(1, Math.max(0, (row + (G.look === 'night' ? NIGHT_FULL : 0) - NIGHT_START) / (NIGHT_FULL - NIGHT_START)));
   const wet = weather ? 1 : 0;
   if (weather !== shownWeather) { shownWeather = weather; weatherEl.className = weather; }
-  if (t === nightT && wet === wetT) return;
+  if (t === nightT && wet === wetT && sky === skyHex) return;
   nightT = t; wetT += (wet - wetT) * 0.03; if (Math.abs(wet - wetT) < 0.01) wetT = wet;
+  if (sky !== skyHex) { skyHex = sky; DAY.sky.setHex(sky); }
   glowU.value = Math.min(1, t * 1.5 + wetT * 0.4);   // headlights come on with the dusk, and a little in rain
   scene.background.copy(DAY.sky).lerp(NIGHT.sky, t).lerp(weather === 'snow' ? SNOW_SKY : RAIN_SKY, wetT * (weather === 'snow' ? 0.5 : 0.6));
   sun.color.copy(DAY.sun).lerp(NIGHT.sun, t);
@@ -174,6 +176,8 @@ function watchFrameTime(frameT) {
 }
 
 const getPixelRatio = () => pixelRatio;
+// the view closes in a little at game over (app.js); 1 is the normal view
+function setZoom(z) { if (camera.zoom !== z) { camera.zoom = z; camera.updateProjectionMatrix(); } }
 // shadows are redrawn with every frame while playing; on the menus and the results every other drawn frame
 // is enough (the title traffic moves slowly), which saves about a third of each frame there
 let shadowSkip = false;
@@ -186,4 +190,4 @@ function shadowCadence(idle) {
 // test hook: how the view was fitted
 const viewInfo = () => { const sc = sun.shadow.camera; return { shadowW: sc.right - sc.left, shadowH: sc.top - sc.bottom, fogNear: scene.fog.near, fogFar: scene.fog.far, mapSize: sun.shadow.mapSize.x }; };
 
-export { BAD_FRAME, BLINK_STEPS, CAM_OFF, SUN_OFF, LADDER, ONE, camera, focus, getPixelRatio, hemi, lowGpu, marquee, perf, reduceMotion, renderer, resetFrameWatch, resize, scene, setNight, setRatio, setShadowMapSize, shadowCadence, stage, sun, touchQuery, viewInfo, watchFrameTime };
+export { BAD_FRAME, BLINK_STEPS, CAM_OFF, SUN_OFF, LADDER, ONE, camera, focus, getPixelRatio, hemi, lowGpu, marquee, perf, reduceMotion, renderer, resetFrameWatch, resize, scene, setNight, setRatio, setZoom, setShadowMapSize, shadowCadence, stage, sun, touchQuery, viewInfo, watchFrameTime };

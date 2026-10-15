@@ -57,7 +57,12 @@ const sfx = {
   prize: () => [392, 523, 659, 784, 1047].forEach((f, i) => setTimeout(() => beep(f, 0.14, 'triangle', 0.06), i * 70)),
   whoosh: () => beep(2200, 0.16, 'sawtooth', 0.03, -1800),   // a near miss
   boss: () => { beep(60, 0.5, 'sawtooth', 0.09, -30); beep(90, 0.3, 'square', 0.05, -40); setTimeout(() => beep(55, 0.6, 'sawtooth', 0.09, -25), 320); },   // the boss train: a drum hit
-  snap: () => beep(1800, 0.05, 'square', 0.04)
+  snap: () => beep(1800, 0.05, 'square', 0.04),
+  teleport: () => { beep(600, 0.1, 'square', 0.04, 500); setTimeout(() => beep(1000, 0.14, 'square', 0.04, 800), 100); },   // two rising beeps
+  bounce: () => beep(220, 0.22, 'triangle', 0.06, 660),   // a springy slide up
+  bomb: () => { beep(70, 0.5, 'sawtooth', 0.09, -40); beep(110, 0.25, 'triangle', 0.06, -70); },   // a low boom
+  crack: () => beep(120, 0.08, 'square', 0.05, -80),   // a short crackle
+  wind: () => beep(140, 1.2, 'sawtooth', 0.03, 100)   // a twister: a long low howl
 };
 
 // ---------- the title tune: a short chip loop while the title screen shows ----------
@@ -86,21 +91,34 @@ const tuneOn = () => !!tuneTimer;
 function stopTune() { if (tuneTimer) { clearTimeout(tuneTimer); tuneTimer = 0; } }
 
 // ---------- the play loop: a soft bass line under the game (quieter than the title tune, loops until the run ends) ----------
+// Layers join as the run goes deeper (G.camRow): the bass line always, an arpeggio lead from row 25, drums from row 60.
 const PLAY_LINE = [131, 0, 131, 0, 165, 0, 131, 0, 98, 0, 98, 0, 110, 0, 123, 0];
+// the lead plays on the odd steps (between the bass notes): 16 notes over two rounds of the bass line
+const PLAY_LEAD = [523, 659, 784, 659, 523, 784, 1047, 784, 587, 784, 988, 784, 659, 880, 1047, 880];
 const PLAY_STEP = 190;
+const LEAD_ROW = 25, DRUM_ROW = 60;
+const layersAt = row => 1 + (row >= LEAD_ROW ? 1 : 0) + (row >= DRUM_ROW ? 1 : 0);
 let playTimer = 0, playStep = 0;
 function startPlayLoop() {
   if (playTimer || !actx || actx.state !== 'running' || muted) return;
   playStep = 0;
   const next = () => {
     if (muted || G.state !== 'play') { playTimer = 0; return; }
-    const f = PLAY_LINE[playStep % PLAY_LINE.length];
+    const layers = layersAt(G.camRow), step = playStep % PLAY_LINE.length;
+    const f = PLAY_LINE[step];
     if (f) beep(f, 0.12, 'triangle', 0.02);
+    if (layers >= 2 && step % 2) beep(PLAY_LEAD[(playStep >> 1) % PLAY_LEAD.length], 0.1, 'square', 0.02);
+    if (layers >= 3) {
+      if (step === 0 || step === 8) beep(90, 0.14, 'triangle', 0.05, -50);   // kick
+      if (step % 2) beep(6000, 0.02, 'square', 0.012);                        // hi-hat
+    }
     playStep++;
     playTimer = setTimeout(next, PLAY_STEP);
   };
   next();
 }
+// how many layers the loop plays right now (0 when it is not running)
+const playLayers = () => playTimer ? layersAt(G.camRow) : 0;
 function stopPlayLoop() { if (playTimer) { clearTimeout(playTimer); playTimer = 0; } }
 // the context may still be waking when play starts (audio() resumes it on the join gesture): start the loop then
 function watchContext() { if (actx && !actx.onstatechange) actx.onstatechange = () => { if (actx.state === 'running' && G.state === 'play') startPlayLoop(); }; }
@@ -110,4 +128,4 @@ const isMuted = () => muted;
 // let the audio device sleep on long idle screens; audio() wakes it on the next input
 function idleAudio() { if (actx && actx.state === 'running') actx.suspend().catch(() => {}); }
 
-export { actx, audio, beep, idleAudio, isMuted, muted, playLoopOn, setMuted, sfx, startPlayLoop, startTune, stopPlayLoop, stopTune, tuneOn };
+export { actx, audio, beep, idleAudio, isMuted, muted, playLayers, playLoopOn, setMuted, sfx, startPlayLoop, startTune, stopPlayLoop, stopTune, tuneOn };
