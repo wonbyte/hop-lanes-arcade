@@ -57,7 +57,7 @@ const G = {
 
 // ---------- test hooks and seeds ----------
 // #debug exposes window.hopLanes; #seed-42 or #debug-seed-42 builds the same world every game
-const hashMatch = /^#(debug)?(?:-?seed-(\d+))?$/.exec(location.hash) || [];
+const hashMatch = /^#(debug)?(?:-?seed-(\d+))?$/.exec(location.hash) || [];   // eslint-disable-line security/detect-unsafe-regex -- anchored, one optional group
 const replayMatch = /^#(debug-)?replay-([\w-]+)$/.exec(location.hash) || [];
 const DEBUG = hashMatch[1] === 'debug' || replayMatch[1] === 'debug-';
 const REPLAY_CODE = replayMatch[2] || '';

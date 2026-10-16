@@ -308,7 +308,7 @@ function winnerOf(players, mode) {
 // A replay as a stepping simulation, from the countdown on, exactly as the browser plays it (app.js step()).
 // step() advances one fixed STEP and returns false once the game is over. players[i] are the live player states
 // (row, x, alive, score, hop { t, dur, fromRow, fx, fz, tx, tz } or null, log, cause): a renderer can draw a ghost
-// from them. end is set at game over: { score (the higher score, as posted), scores, endTick (play ticks) }.
+// from them. end is set at game over: { score (the higher score, as posted), scores, coins, endTick (play ticks), winner (index or null) }.
 function createSim(rp) {
   const gen = createWorldGen(rp.seed);
   const lanes = new Map();
@@ -328,7 +328,10 @@ function createSim(rp) {
     over() {
       if (S.state !== 'play' || !runOver(players, rp.mode)) return;
       S.state = 'over';
-      end = { score: topScore(players), scores: players.map(p => (p.joined ? p.score : 0)), coins: players.map(p => p.coins), endTick: playTick };
+      // the winner is decided now, like the results screen: the other player may still die to the same car later in
+      // this very step, so the players' alive flags after the step cannot tell who survived a race
+      const w = winnerOf(players, rp.mode);
+      end = { score: topScore(players), scores: players.map(p => (p.joined ? p.score : 0)), coins: players.map(p => p.coins), endTick: playTick, winner: w ? players.indexOf(w) : null };
     }
   });
   for (const p of players) if (p.joined) { resetPlayer(p); if (rp.handicap === p.id + 1) rules.giveShield(p); }

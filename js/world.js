@@ -1,5 +1,5 @@
 import { sfx } from './audio.js';
-import { BIOME_ROWS, FIRST_ROW, FIXED_SEED, G, LANES_AHEAD, LANES_BEHIND, PLAY_HALF, STEP, TUTORIAL_SEED, WRAP } from './core.js';
+import { BIOME_ROWS, FIRST_ROW, FIXED_SEED, G, LANES_AHEAD, LANES_BEHIND, PLAY_HALF, STEP, TUTORIAL_SEED } from './core.js';
 import { hashString, isBombPower, isBombRow, plankState } from './rules.js';
 import { createWorldGen, railStep, trafficX, wetAt, wetChunk, standGroups } from './gen.js';
 import { touchRows } from './sim.js';

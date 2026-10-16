@@ -1,4 +1,4 @@
-import { audio, isMuted, setMuted, sfx, startPlayLoop, startTune, stopPlayLoop, stopTune } from './audio.js';
+import { audio, isMuted, setMuted, sfx, startPlayLoop, stopPlayLoop, stopTune } from './audio.js';
 import { $, COUNTDOWN, G, GO_TIME, MODES, PRIZE_COST, RESULTS_DELAY, SCORES_TOKEN, SCORES_URL, WIPE_MS } from './core.js';
 import { nextLang, setLang, t } from './i18n.js';
 import { DAILY, DAILY_REWARD, MISSIONS, MISSION_REWARD, advanceMissions, dailyDoneText, dailyMissions, doneDaily, doneMissions, emptyStats, missionsText, parseDailyDone, parseMissions } from './missions.js';

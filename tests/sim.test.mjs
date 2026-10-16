@@ -640,3 +640,584 @@ test('magnet: a coin within MAGNET_REACH on the rows around the player is collec
   assert.ok(Math.abs(1 - p.x) <= MAGNET_REACH && 3 - p.x > MAGNET_REACH);
   assert.equal(p.hop, null, 'the player never hopped');
 });
+
+// ---------- the pure helpers of sim.js, and the rules not stated above ----------
+const { creepCamera, feedReplay, runOver, topScore, touchRows } = await import('../js/sim.js');
+const { BEHIND_LIMIT, MUD_SLOW, CAM_CATCH_RATE, CAM_CATCH_ROWS, CAM_CREEP, CAM_CREEP_GAIN, CAM_CREEP_MAX, COMBO_EVERY, COUNTDOWN, EDGE_DEATH, HIT_PAD, HOP_MID, LOG_SLACK, RESCUE_HOP, SHIELD_TIME, START_X } = await import('../js/rules.js');
+const close = (a, b, what, eps = 1e-9) => assert.ok(Math.abs(a - b) <= eps, `${what}: ${a} ~ ${b}`);
+
+test('creepCamera: the scroll line creeps CAM_CREEP rows/s, faster with time up to CAM_CREEP_MAX, and catches up to a player well ahead', () => {
+  close(creepCamera(0, 0, 0, 1), CAM_CREEP, 'one second at the start');
+  close(creepCamera(10, 0, 0, 0.5), 10 + CAM_CREEP * 0.5, 'half a second');
+  close(creepCamera(0, 100, 0, 1), Math.min(CAM_CREEP_MAX, CAM_CREEP + 100 * CAM_CREEP_GAIN), '100 s in: faster');
+  close(creepCamera(0, 1000, 0, 1), CAM_CREEP_MAX, 'capped');
+  assert.ok(creepCamera(0, 100, 0, 1) > creepCamera(0, 50, 0, 1) && creepCamera(0, 50, 0, 1) > creepCamera(0, 0, 0, 1));
+  // a player more than CAM_CATCH_ROWS ahead pulls the line towards (lead - CAM_CATCH_ROWS) at CAM_CATCH_RATE per second
+  const crept = creepCamera(0, 0, CAM_CATCH_ROWS, 0.01);
+  close(crept, CAM_CREEP * 0.01, 'exactly CAM_CATCH_ROWS ahead: no catch-up');
+  const c = creepCamera(0, 0, 10, 0.01);
+  close(c, CAM_CREEP * 0.01 + (10 - CAM_CATCH_ROWS - CAM_CREEP * 0.01) * 0.01 * CAM_CATCH_RATE, 'ten rows ahead');
+  close(creepCamera(0, 0, 10, 1), CAM_CREEP + (10 - CAM_CATCH_ROWS - CAM_CREEP) * 1, 'a whole second: all the way (the rate is capped at 1)');
+  assert.ok(creepCamera(5, 0, 4, 0.1) < 5.1, 'a player behind the catch-up point does not pull');
+});
+
+test('touchRows: the rows around every joined player plus the row a hop left; feedReplay: every hop due by the tick, in order', () => {
+  const into = new Set([99]);
+  const players = [{ joined: true, row: 5, hop: null }, { joined: false, row: 50, hop: null }];
+  assert.deepEqual([...touchRows(players, into)].sort((a, b) => a - b), [4, 5, 6], 'cleared, then rows 4..6');
+  players[0].hop = { fromRow: 3 };
+  assert.deepEqual([...touchRows(players, into)].sort((a, b) => a - b), [3, 4, 5, 6], 'a long hop keeps its start row hot');
+  players[1].joined = true;
+  assert.deepEqual([...touchRows(players, into)].sort((a, b) => a - b), [3, 4, 5, 6, 49, 50, 51]);
+  const rp = { events: [[5, 0, 0, 1], [5, 1, -1, 0], [7, 0, 1, 0], [9, 1, 0, -1]], i: 0 };
+  const seen = [];
+  feedReplay(rp, 4, (...a) => seen.push(a));
+  assert.deepEqual([seen, rp.i], [[], 0], 'nothing due yet');
+  feedReplay(rp, 5, (...a) => seen.push(a));
+  assert.deepEqual(seen, [[0, 0, 1], [1, -1, 0]], 'both hops of tick 5, in order');
+  feedReplay(rp, 8, (...a) => seen.push(a));
+  assert.deepEqual([seen.length, rp.i], [3, 3], 'tick 7 fed, tick 9 waits');
+  feedReplay(rp, 100, (...a) => seen.push(a)); feedReplay(rp, 200, (...a) => seen.push(a));
+  assert.deepEqual([seen.length, rp.i], [4, 4], 'fed once each, never again');
+});
+
+test('runOver, topScore and winnerOf: the end of a game and its winner by mode', () => {
+  const P = (joined, alive, score = 0, coins = 0) => ({ joined, alive, score, coins });
+  assert.equal(runOver([P(true, true), P(false, false)], 'classic'), false);
+  assert.equal(runOver([P(true, false), P(false, false)], 'classic'), true, 'alone and dead');
+  assert.equal(runOver([P(true, false), P(true, true)], 'classic'), false, 'one still plays');
+  assert.equal(runOver([P(true, false), P(true, true)], 'race'), true, 'a race ends with the first death');
+  assert.equal(runOver([P(true, false), P(false, true)], 'race'), true, 'alone in race mode: a plain game');
+  assert.equal(runOver([P(true, true), P(true, true)], 'race'), false);
+  assert.equal(runOver([P(true, false), P(true, false)], 'coinwar'), true);
+  assert.equal(topScore([P(true, true, 7), P(true, true, 9)]), 9);
+  assert.equal(topScore([P(true, true, 7), P(false, true, 9)]), 7, 'a player who did not join scores nothing');
+  assert.equal(topScore([P(false, true, 7), P(true, true, 3)]), 3);
+  const a = P(true, true, 5, 2), b = P(true, true, 5, 2);
+  assert.equal(winnerOf([a, b], 'classic'), null, 'a tie');
+  assert.equal(winnerOf([a, b], 'coinwar'), null);
+  b.score = 6; assert.equal(winnerOf([a, b], 'classic'), b);
+  assert.equal(winnerOf([a, b], 'coinwar'), null, 'coins decide the coin war, not rows');
+  a.coins = 3; assert.equal(winnerOf([a, b], 'coinwar'), a);
+  assert.equal(winnerOf([a, b], 'race'), b, 'both alive (or both dead): the race goes to the score');
+  a.alive = false; b.alive = false; assert.equal(winnerOf([a, b], 'race'), b);
+  a.alive = true; assert.equal(winnerOf([a, b], 'race'), a, 'the one still standing');
+  assert.equal(winnerOf([a, b], 'tag'), b, 'tag: the score');
+  assert.equal(winnerOf([P(false, true, 9), P(true, true, 1)], 'classic'), null);
+});
+
+test('resetPlayer: the state of an animal on row 0, on its start column, with the trait kept', () => {
+  const p = { id: 1, joined: true, trait: TRAITS.cat, x: 9, row: 9, score: 9, alive: false, shield: true };
+  resetPlayer(p);
+  assert.equal(p.x, START_X[1]);
+  assert.deepEqual([p.row, p.score, p.alive, p.hop, p.queue, p.cause, p.log, p.combo, p.shield, p.safeT, p.magnetT, p.coins, p.lives, p.lead, p.eagle, p.idleT, p.warned, p.lastHop, p.facing, p.nearRow],
+    [0, 0, true, null, null, '', null, 0, false, 0, 0, 0, 1, false, null, 0, false, -9, 0, null]);
+  assert.equal(p.trait, TRAITS.cat);
+  assert.ok(p.nearSeen instanceof Set && p.nearSeen.size === 0);
+  const q = { id: 0, joined: true };
+  resetPlayer(q);
+  assert.deepEqual([q.x, q.lives, q.trait], [START_X[0], 0, {}], 'no trait: a frog');
+});
+
+test('createSim: the world clock starts COUNTDOWN before startTick, the handicap gives a shield, end holds coins and the winner, prune forgets far rows', () => {
+  const rp = decodeReplay(BROWSER_RUNS[0].code);   // race, both joined, handicap 1
+  assert.deepEqual([rp.mode, rp.joined, rp.handicap], ['race', [true, true], 1]);
+  const sim = createSim(rp);
+  assert.equal(sim.worldTick, rp.startTick - Math.ceil(COUNTDOWN / STEP));
+  assert.deepEqual(sim.players.map(p => p.shield), [true, false], 'the handicap shield for player 1');
+  assert.deepEqual(sim.players.map(p => [p.joined, p.alive, p.x]), [[true, true, START_X[0]], [true, true, START_X[1]]]);
+  assert.equal(sim.camRow, 0);
+  assert.equal(sim.end, null);
+  while (sim.step());
+  assert.equal(sim.state, 'over');
+  assert.deepEqual(sim.end.scores, BROWSER_RUNS[0].scores);
+  assert.deepEqual(sim.end.coins, sim.players.map(p => p.coins));
+  assert.ok(sim.end.coins.every(c => Number.isInteger(c) && c >= 0));
+  assert.equal(sim.end.winner, 1, 'the fox was still standing when the frog was squashed');
+  assert.equal(sim.end.score, Math.max(...BROWSER_RUNS[0].scores));
+  // the other handicap, and none
+  assert.deepEqual(createSim({ ...rp, handicap: 2 }).players.map(p => p.shield), [false, true]);
+  assert.deepEqual(createSim({ ...rp, handicap: 0 }).players.map(p => p.shield), [false, false]);
+  // one player: the countdown ends on startTick exactly, the first play tick is 1
+  const solo = createSim({ seed: 5, mode: 'classic', chars: ['frog', 'fox'], joined: [true, false], handicap: 0, startTick: 1000, events: [] });
+  assert.equal(solo.worldTick, 640);
+  let n = 0; while (solo.state === 'countdown') { solo.step(); n++; }
+  assert.ok(n >= 360 && n <= 361, 'about COUNTDOWN / STEP steps: ' + n);
+  assert.deepEqual([solo.worldTick, solo.tick, solo.state], [1000, 0, 'play']);
+  solo.step();
+  assert.deepEqual([solo.worldTick, solo.tick], [1001, 1]);
+  assert.equal(solo.players[1].alive, false, 'the second player never joined');
+  // a tiny startTick never puts the clock below 0
+  assert.equal(createSim({ seed: 5, mode: 'classic', chars: ['frog', 'fox'], joined: [true, false], handicap: 0, startTick: 10, events: [] }).worldTick, 0);
+  // prune: rows further behind the scroll line than any player could stand are forgotten
+  const s2 = createSim({ seed: 5, mode: 'classic', chars: ['frog', 'fox'], joined: [true, false], handicap: 0, startTick: 1000, events: [] });
+  for (let r = -5; r < 10; r++) s2.lane(r);
+  assert.equal(s2.lane(3), s2.lane(3), 'a row is kept once built');
+  s2.prune();
+  assert.equal(s2.lane(-5) !== undefined && s2.lane(-5).r, -5, 'rows behind the line at camRow 0 - 4.5 - 3 stay: -5 is not past it');
+  // walk until the game is over (the eagle) and prune: rows behind are gone, the player's row stays
+  while (s2.step());
+  const keep = s2.lane(0), cam = s2.camRow;
+  s2.prune();
+  assert.equal(s2.lane(0), keep, 'row 0 is within reach of the line at ' + cam);
+});
+
+test('simulate: the first joined player reports; maxMs cuts a run short; until stops with over false and the live score', () => {
+  const base = { seed: 11, mode: 'classic', chars: ['frog', 'fox'], joined: [false, true], handicap: 0, startTick: 300, events: [[10, 1, 0, 1], [30, 1, 0, 1]] };
+  const s = simulate(base);
+  assert.deepEqual([s.players[0].joined, s.players[1].joined, s.row, s.cause], [false, true, 2, 'eagle'], 'only the fox played: its row and cause');
+  assert.deepEqual([s.scores, s.score, s.players[0].score, s.players[1].score], [[0, 2], 2, 0, 2]);
+  assert.equal(simulate(base, { maxMs: 0 }), null, 'no time at all: null');
+  const part = simulate(base, { until: 50 });
+  assert.deepEqual([part.over, part.endTick, part.score, part.scores, part.row], [false, 50, 2, [0, 2], 2]);
+  assert.equal(simulate(base, { maxTicks: 20 }), null);
+  assert.equal(simulate(base, { until: 20 }).endTick, 20, 'until wins over maxTicks when it comes first');
+  assert.deepEqual(Object.keys(simulate(base)).sort(), ['cause', 'coins', 'endTick', 'over', 'players', 'row', 'score', 'scores', 'winner']);
+});
+
+test('hops: a hop while hopping is queued and taken on landing; the animal faces where it goes; hops behind the scroll line are refused', () => {
+  const b = bench(grassRows(6));
+  const p = b.p;
+  p.x = 0;
+  b.rules.tryMove(p, 0, 1);
+  assert.equal(p.facing, 0, 'forward');
+  b.rules.tryMove(p, 1, 0);
+  assert.deepEqual(p.queue, [1, 0], 'queued while in the air');
+  b.rules.tryMove(p, -1, 0);
+  assert.deepEqual(p.queue, [-1, 0], 'the last one wins');
+  b.settle();
+  assert.deepEqual([p.row, p.x, p.queue], [1, -1, null], 'landed, then the queued hop was taken');
+  assert.equal(p.facing, Math.PI / 2, 'left');
+  b.rules.tryMove(p, 1, 0); b.settle();
+  assert.equal(p.facing, -Math.PI / 2, 'right');
+  b.rules.tryMove(p, 0, -1); b.settle();
+  assert.deepEqual([p.facing, p.row, p.score], [Math.PI, 0, 1], 'back, and the score stays');
+  b.G.camRow = 3;   // the line at 3: row 0 is behind the limit (3 - 4.5 = -1.5 < 0, fine), row -2 is not allowed
+  b.lanes.set(-1, { r: -1, kind: 'grass', coins: new Map(), trees: new Set(), objs: [], span: 34, secret: null, power: null });
+  b.lanes.set(-2, { r: -2, kind: 'grass', coins: new Map(), trees: new Set(), objs: [], span: 34, secret: null, power: null });
+  b.G.camRow = 3.6;   // 3.6 - 4.5 = -0.9: row -1 is behind the line
+  b.rules.tryMove(p, 0, -1);
+  assert.equal(p.hop, null, 'no hop behind the scroll line');
+  b.G.camRow = 3.4;   // -1.1: row -1 is allowed
+  b.rules.tryMove(p, 0, -1);
+  assert.ok(p.hop && p.hop.tz === 1, 'just inside the line: allowed');
+  b.settle();
+  assert.equal(p.row, -1);
+  // a dead player and a player in the eagle's claws can not move
+  p.eagle = { t: 0 }; b.rules.tryMove(p, 0, 1); assert.equal(p.hop, null);
+  p.eagle = null; p.alive = false; b.rules.tryMove(p, 0, 1); assert.equal(p.hop, null);
+  // a hop's record
+  const c = bench(grassRows(4)); c.p.x = 1; c.rules.tryMove(c.p, 0, 1);
+  assert.deepEqual({ ...c.p.hop, fz: c.p.hop.fz + 0 }, { t: 0, dur: HOP_TIME, fromRow: 0, fx: 1, fz: 0, tx: 1, tz: -1, carry: null, carryX0: 0, span: 0, dx: 0, dr: 1, high: false, mud: false });
+  assert.deepEqual([c.p.row, c.p.score, c.p.idleT, c.p.warned], [1, 1, 0, false]);
+});
+
+test('hops: mid-hop the animal is between the columns; a hop from mud is MUD_SLOW longer and marked mud', () => {
+  const b = bench([{ kind: 'mud' }, { kind: 'grass' }]);
+  b.p.x = 0; b.rules.tryMove(b.p, 1, 1);
+  assert.ok(b.p.hop.mud && Math.abs(b.p.hop.dur - HOP_TIME * MUD_SLOW) < 1e-9);
+  const steps = Math.round(b.p.hop.dur / STEP);
+  b.run(Math.floor(steps / 2));
+  close(b.p.hop.t, 0.5, 'half way', 0.05);
+  close(b.p.x, 0.5, 'half way across', 0.05);
+  b.settle();
+  assert.deepEqual([b.p.x, b.p.row, b.p.hop], [1, 1, null]);
+});
+
+test('combos: every COMBO_EVERY quick hops pay a coin; a pause of COMBO_GAP + 0.2 s ends the combo; a near miss on a cold combo gives 2', () => {
+  const paid = [];
+  const b = benchWith(grassRows(30), ['frog']);
+  const p = b.players[0];
+  const rules = makeRules({ G: b.G, lane: r => b.lanes.get(r), coins: n => paid.push(n), over() {}, players: b.players });
+  const hop = () => { rules.tryMove(p, 0, 1); while (p.hop) b.run(); };
+  for (let i = 1; i <= 2 * COMBO_EVERY; i++) {
+    hop();
+    assert.equal(p.combo, i, 'combo ' + i);
+    assert.equal(paid.length, Math.floor(i / COMBO_EVERY), `after hop ${i}: ${paid.length} coins`);
+  }
+  assert.deepEqual([paid, p.coins], [[1, 1], 2]);
+  // standing still: the combo lives COMBO_GAP + 0.2 s after the last hop, then it is gone
+  const since = () => b.G.playT - p.lastHop;
+  while (since() < COMBO_GAP + 0.2 - STEP) b.run();
+  assert.equal(p.combo, 10, 'still alive just before');
+  b.run(3);
+  assert.equal(p.combo, 0, 'gone just after');
+  // a near miss on a cold combo counts from 1: it makes 2
+  const c = benchWith([{ kind: 'grass' }, { kind: 'road', objs: [{ x: 3, len: 1.4 }] }], ['frog']);
+  const q = c.players[0];
+  q.x = 0; q.row = 1; q.combo = 0;
+  c.lanes.get(1).objs[0].x = 0.7 + HIT_PAD + 0.3;
+  c.run();
+  assert.equal(q.combo, 2);
+  assert.equal(q.lastHop, c.G.playT, 'a near miss keeps the combo warm');
+  // a near miss at the edge of NEAR_MISS counts, one at the edge of a hit kills
+  const d = benchWith([{ kind: 'grass' }, { kind: 'road', objs: [{ x: 0.7 + HIT_PAD + 0.49, len: 1.4 }] }], ['frog']);
+  d.players[0].x = 0; d.players[0].row = 1; d.run();
+  assert.deepEqual([d.players[0].alive, d.players[0].combo], [true, 2]);
+  const e = benchWith([{ kind: 'grass' }, { kind: 'road', objs: [{ x: 0.7 + HIT_PAD + 0.51, len: 1.4 }] }], ['frog']);
+  e.players[0].x = 0; e.players[0].row = 1; e.run();
+  assert.deepEqual([e.players[0].alive, e.players[0].combo], [true, 0], 'just too far: nothing');
+  const f = benchWith([{ kind: 'grass' }, { kind: 'road', objs: [{ x: 0.7 + HIT_PAD - 0.01, len: 1.4 }] }], ['frog']);
+  f.players[0].x = 0; f.players[0].row = 1; f.run();
+  assert.deepEqual([f.players[0].alive, f.players[0].cause], [false, 'squash'], 'inside HIT_PAD: a hit');
+});
+
+test('logs: a landing within LOG_SLACK of a log end rides it, snapped to a segment; past the edge the log sweeps you away', () => {
+  const log = { x: 0, len: 3 };
+  const b = bench([{ kind: 'grass' }, { kind: 'river', objs: [log] }]);
+  b.p.x = 1; b.rules.tryMove(b.p, 0.5 + LOG_SLACK - 0.01, 1); b.settle();
+  assert.ok(b.p.alive && b.p.log === log, 'just inside the slack: on the log');
+  assert.equal(b.p.logOff, 1, 'snapped to the end segment');
+  const c = bench([{ kind: 'grass' }, { kind: 'river', objs: [{ x: 0, len: 3 }] }]);
+  c.p.x = 1; c.rules.tryMove(c.p, 0.5 + LOG_SLACK + 0.01, 1); c.settle();
+  assert.deepEqual([c.p.alive, c.p.cause], [false, 'splash'], 'just outside: water');
+  // riding: the animal moves with the log, then a hop carries the log's drift
+  const d = bench([{ kind: 'grass' }, { kind: 'river', objs: [{ x: 0, len: 3 }] }, { kind: 'grass' }]);
+  d.p.x = 0; d.rules.tryMove(d.p, 0, 1); d.settle();
+  assert.equal(d.p.logOff, 0);
+  d.lanes.get(1).objs[0].x = 2; d.run();
+  assert.equal(d.p.x, 2, 'carried along');
+  d.rules.tryMove(d.p, 0, 1);
+  assert.deepEqual([d.p.hop.carry, d.p.hop.carryX0, d.p.hop.span], [d.lanes.get(1).objs[0], 2, 34]);
+  d.lanes.get(1).objs[0].x = 2.5; d.run();
+  assert.ok(d.p.x > 2.4 && d.p.x <= 2.5, 'the hop drifts with the log: ' + d.p.x);
+  d.lanes.get(1).objs[0].x = -15.5; d.run();   // the log wrapped around the span (34): 2 -> -15.5 is a drift of +16.5, not -17.5
+  assert.ok(d.p.x > 18.4 && d.p.x < 18.6, 'the wrap is undone: ' + d.p.x);
+  d.lanes.get(1).objs[0].x = 3; d.settle();
+  assert.deepEqual([d.p.row, d.p.x, d.p.log], [2, 3, null], 'landed where the log took it, on a whole column');
+  // a log at the edge
+  const e = bench([{ kind: 'grass' }, { kind: 'river', objs: [{ x: EDGE_DEATH - 0.05, len: 1 }] }]);
+  e.p.row = 1; e.p.log = e.lanes.get(1).objs[0]; e.p.logOff = 0; e.run();
+  assert.ok(e.p.alive, 'just inside the edge');
+  e.lanes.get(1).objs[0].x = EDGE_DEATH + 0.05; e.run();
+  assert.deepEqual([e.p.alive, e.p.cause], [false, 'swept']);
+  const f = bench([{ kind: 'grass' }, { kind: 'river', objs: [{ x: -EDGE_DEATH - 0.05, len: 1 }] }]);
+  f.p.row = 1; f.p.log = f.lanes.get(1).objs[0]; f.p.logOff = 0; f.run();
+  assert.equal(f.p.cause, 'swept', 'either edge');
+  // a landing on a longer log snaps to the nearest whole segment, clamped to the log
+  const g = bench([{ kind: 'grass' }, { kind: 'river', objs: [{ x: 0, len: 4 }] }]);
+  g.p.x = 2; g.rules.tryMove(g.p, -0.1, 1); g.settle();
+  assert.ok(g.p.alive && g.p.log, 'a 4-log spans -2..2: 1.9 is on it');
+  assert.equal(g.p.logOff, 1.5, 'the far segment of a 4-log (-1.5, -0.5, 0.5, 1.5)');
+  g.run();
+  assert.ok(Math.abs(g.p.x - 1.5) < 1e-9, 'standing on the log: snapped to the segment');
+});
+
+test('hazards: until mid-hop the row left still counts; after it the row landed on; a train hit sets trainDir', () => {
+  const car = x => ({ x, len: 1.4 });
+  // a car on the row left kills in the first half of the hop
+  const a = bench([{ kind: 'road', objs: [car(5)] }, { kind: 'grass' }]);
+  a.p.x = 0; a.p.row = 0; a.rules.tryMove(a.p, 0, 1);
+  a.run(2); assert.ok(a.p.alive);
+  a.lanes.get(0).objs[0].x = 0; a.run();
+  assert.deepEqual([a.p.alive, a.p.cause], [false, 'squash'], 'hit from behind in the first half');
+  // the same car does nothing once the hop is past its middle
+  const b = bench([{ kind: 'road', objs: [car(5)] }, { kind: 'grass' }]);
+  b.p.x = 0; b.rules.tryMove(b.p, 0, 1);
+  while (b.p.hop.t < HOP_MID) b.run();
+  b.lanes.get(0).objs[0].x = 0; b.run();
+  assert.ok(b.p.alive, 'safe: already over the next row');
+  // a car on the row ahead does nothing in the first half, and kills in the second
+  const c = bench([{ kind: 'grass' }, { kind: 'road', objs: [car(0)] }]);
+  c.p.x = 0; c.rules.tryMove(c.p, 0, 1); c.run();
+  assert.ok(c.p.alive && c.p.hop.t < HOP_MID);
+  while (c.p.alive && c.p.hop) c.run();
+  assert.deepEqual([c.p.alive, c.p.cause], [false, 'squash']);
+  // trains: a hit within len / 2 + HIT_PAD; the direction is kept for the effect
+  const train = { len: 12, x: 0, active: true };
+  const d = bench([{ kind: 'grass' }, { kind: 'rail', dir: -1, train }]);
+  d.p.x = 0; d.p.row = 1; train.x = 6 + HIT_PAD + 0.01; d.run();
+  assert.ok(d.p.alive, 'just clear');
+  train.x = 6 + HIT_PAD - 0.01; d.run();
+  assert.deepEqual([d.p.alive, d.p.cause, d.p.trainDir], [false, 'train', -1]);
+  const e = bench([{ kind: 'grass' }, { kind: 'rail', dir: 1, train: { len: 12, x: 0, active: false } }]);
+  e.p.x = 0; e.p.row = 1; e.run(5);
+  assert.ok(e.p.alive, 'no train on the track');
+  // a plank that drops under a hop that has not reached its middle
+  const planks = new Map([[0, { breakAt: 1000, backAt: 2000 }], [1, { breakAt: -1, backAt: -1 }]]);
+  const f = bench([{ kind: 'grass' }, { kind: 'bridge', planks }, { kind: 'grass' }]);
+  f.p.x = 0; f.p.row = 1; f.G.worldTick = 995; f.rules.tryMove(f.p, 0, 1);
+  f.run(); f.run(); f.run(); f.run(); f.run();   // tick 1000: the plank is down while the hop is still over it
+  assert.deepEqual([f.p.alive, f.p.cause], [false, 'splash']);
+  const g = bench([{ kind: 'grass' }, { kind: 'bridge', planks: new Map([[0, { breakAt: 1000, backAt: 2000 }]]) }, { kind: 'grass' }]);
+  g.p.x = 0; g.p.row = 1; g.G.worldTick = 980; g.rules.tryMove(g.p, 0, 1);
+  while (g.p.hop && g.p.hop.t < HOP_MID) g.run();
+  g.G.worldTick = 1000; g.run();
+  assert.ok(g.p.alive, 'past the middle the plank behind can drop');
+});
+
+test('the shield: SHIELD_TIME of grace after a rescue in which cars and trains pass through, but water still sinks; no solid row behind: the hit kills', () => {
+  const b = bench([{ kind: 'grass' }, { kind: 'road', objs: [{ x: 0, len: 1.4 }] }]);
+  b.rules.giveShield(b.p);
+  assert.equal(b.p.shield, true);
+  b.p.x = 0.4; b.rules.tryMove(b.p, 0, 1);
+  while (b.p.row === 1) b.run();   // the car hits once the hop is over its middle
+  assert.deepEqual([b.p.alive, b.p.row, b.p.shield], [true, 0, false]);
+  assert.ok(b.p.hop && Math.abs(b.p.hop.dur - HOP_TIME * RESCUE_HOP) < 1e-9 && b.p.hop.tx === 0 && b.p.hop.tz === 0 && b.p.hop.fromRow === 1, 'a slow hop back to a whole column');
+  close(b.p.safeT, SHIELD_TIME, 'the grace starts', STEP * 2);
+  b.settle();
+  assert.equal(b.p.x, 0);
+  // a car on the row the animal was sent back to passes through it while the grace lasts
+  b.lanes.get(0).objs = [{ x: 0, len: 1.4 }]; b.lanes.get(0).kind = 'road';
+  b.settle();
+  assert.ok(b.p.alive && b.p.safeT > 0, 'back on the road, still safe');
+  while (b.p.safeT > 0) b.run();
+  b.run();
+  assert.deepEqual([b.p.alive, b.p.cause], [false, 'squash'], 'the grace over: the car counts');
+  // a train in the grace
+  const t = bench([{ kind: 'grass' }, { kind: 'rail', dir: 1, train: { len: 12, x: 0, active: true } }]);
+  t.rules.giveShield(t.p); t.p.x = 0; t.rules.tryMove(t.p, 0, 1); t.settle(); t.run();
+  assert.deepEqual([t.p.alive, t.p.row], [true, 0], 'rescued from the train');
+  t.p.row = 1; t.p.hop = null; t.run();
+  assert.ok(t.p.alive && t.p.safeT > 0, 'the train passes through during the grace');
+  // water in the grace: still a splash, and no shield to spend
+  const w = bench([{ kind: 'grass' }, { kind: 'road', objs: [{ x: 0, len: 1.4 }] }, { kind: 'lily', pads: new Set([4]) }]);
+  w.rules.giveShield(w.p); w.p.x = 0; w.rules.tryMove(w.p, 0, 1); w.settle(); w.run(); w.settle();
+  w.p.row = 1; w.p.x = 0; w.rules.tryMove(w.p, 0, 1); w.settle();
+  assert.deepEqual([w.p.alive, w.p.cause, w.p.safeT > 0], [false, 'splash', true]);
+  // no solid row behind within reach: the rescue fails and the hit kills after all
+  const n = bench([{ kind: 'river', objs: [] }, { kind: 'lily', pads: new Set([0]) }, { kind: 'road', objs: [{ x: 0, len: 1.4 }] }]);
+  n.rules.giveShield(n.p); n.p.x = 0; n.p.row = 1; n.rules.tryMove(n.p, 0, 1); n.settle(); n.run();
+  assert.deepEqual([n.p.alive, n.p.cause, n.p.shield], [false, 'squash', true], 'nowhere to go: the shield could not help');
+  // the rescue goes to the nearest solid row behind, over water
+  const far = bench([{ kind: 'grass' }, { kind: 'river', objs: [] }, { kind: 'lily', pads: new Set([0]) }, { kind: 'road', objs: [{ x: 0, len: 1.4 }] }]);
+  far.rules.giveShield(far.p); far.p.x = 0; far.p.row = 2; far.rules.tryMove(far.p, 0, 1); far.settle(); far.run(); far.settle();
+  assert.deepEqual([far.p.alive, far.p.row, far.p.x], [true, 0, 0]);
+  // the rescue never goes behind the scroll line
+  const line = bench([{ kind: 'grass' }, { kind: 'grass' }, { kind: 'road', objs: [{ x: 0, len: 1.4 }] }]);
+  line.rules.giveShield(line.p); line.p.x = 0; line.p.row = 1; line.G.camRow = 5.6;   // 5.6 - 4.5 = 1.1: row 1 and below are behind the line
+  line.rules.tryMove(line.p, 0, 1); line.settle(); line.run();
+  assert.deepEqual([line.p.alive, line.p.cause], [false, 'squash'], 'the only solid rows are behind the line');
+  // a shielded player sent back is safe from the 'slow' death too? no: only hits are forgiven
+  const slow = bench(grassRows(3));
+  slow.rules.giveShield(slow.p); slow.G.camRow = 5; slow.run();
+  assert.deepEqual([slow.p.alive, slow.p.cause], [false, 'slow'], 'the shield is no help against the scroll line');
+  const eagle = bench(grassRows(3));
+  eagle.rules.giveShield(eagle.p); eagle.run(Math.round((EAGLE_IDLE + 1) / STEP));
+  assert.deepEqual([eagle.p.alive, eagle.p.cause], [false, 'eagle'], 'nor against the eagle');
+});
+
+test('the run stats: hops, the best row, logs, rivers crossed, coins, secrets, power-ups, combo', () => {
+  const run = { coins: 0, row: 0, rivers: 0, hops: 0, logs: 0, combo: 0, powers: 0, secrets: 0, nears: 0 };
+  const rows = [{ kind: 'grass' }, { kind: 'river', objs: [{ x: 0, len: 3 }] }, { kind: 'grass', secret: 5, coins: new Map([[5, true], [0, {}]]), power: { x: 1, kind: 'shield' } }, { kind: 'grass' }];
+  const b = bench(rows);
+  b.G.run = run;
+  const paid = [];
+  const rules = makeRules({ G: b.G, lane: r => b.lanes.get(r), coins: n => paid.push(n), over() {} });
+  const hop = (dx, dr) => { rules.tryMove(b.p, dx, dr); while (b.p.hop) { b.G.worldTick++; rules.stepPlayer(b.p, STEP); } };
+  b.p.x = 0;
+  hop(0, 1);
+  assert.deepEqual([run.hops, run.row, run.logs, run.rivers], [1, 1, 1, 0], 'onto the log');
+  hop(0, 1);
+  assert.deepEqual([run.hops, run.row, run.rivers, paid, b.p.coins], [2, 2, 1, [1], 1], 'across the river, with the coin');
+  hop(0, -1); hop(0, 1);
+  assert.deepEqual([run.hops, run.row, run.rivers, run.logs], [4, 2, 2, 2], 'back and across again: a second crossing');
+  hop(0, -1); hop(0, -1);
+  assert.deepEqual([run.rivers, run.row, b.p.row], [2, 2, 0], 'going back over it does not count');
+  b.p.x = 1; b.p.row = 1; b.p.log = null;
+  hop(0, 1);
+  assert.deepEqual([run.powers, b.p.shield], [1, true]);
+  hop(1, 0); hop(1, 0); hop(1, 0);
+  assert.equal(b.p.x, 4);
+  hop(1, 0);
+  // playT stands still here, so every hop is a quick one: the combo paid a coin at hops 5 and 10 on the way
+  assert.deepEqual([b.p.x, run.secrets, paid, run.combo, b.p.combo], [5, 1, [1, 1, 1, 3], 11, 11], 'the hidden coin pays three');
+  assert.equal(b.p.coins, 6);
+  assert.equal(run.row, 2, 'the best row of the run');
+  // no run stats (a replay): nothing breaks
+  const c = bench(rows); c.G.run = null; c.p.x = 0; c.rules.tryMove(c.p, 0, 1); c.settle();
+  assert.ok(c.p.alive && c.p.log);
+});
+
+test('stepPlayer: outside play nothing but the step itself happens; the magnet runs down and says so once', () => {
+  const b = bench(grassRows(3));
+  b.G.state = 'countdown';
+  b.run(Math.round(8 / STEP));
+  assert.deepEqual([b.p.idleT, b.p.eagle, b.p.alive], [0, null, true], 'no idle time in the countdown');
+  b.G.state = 'play';
+  const labels = [];
+  const rules = makeRules({ G: b.G, lane: r => b.lanes.get(r), coins() {}, over() {}, fx: { label: () => labels.push(b.G.worldTick) } });
+  b.p.magnetT = 10 * STEP;
+  for (let i = 0; i < 20; i++) { b.G.worldTick++; rules.stepPlayer(b.p, STEP); }
+  assert.equal(b.p.magnetT, 0);
+  assert.equal(labels.length, 1, 'the label changed once, when the magnet ran out');
+});
+
+test('the eagle: a hop in the air does not count as idle; the eagle takes the player after EAGLE_SWOOP; the warning comes once', () => {
+  const b = bench(grassRows(40));
+  const warns = [];
+  const rules = makeRules({ G: b.G, lane: r => b.lanes.get(r), coins() {}, over() {}, fx: { warn: () => warns.push(b.G.worldTick) } });
+  const step = n => { for (let i = 0; i < n; i++) { b.G.worldTick++; b.G.playT += STEP; rules.stepPlayer(b.p, STEP); } };
+  // keep hopping every 3 s: no eagle, ever
+  for (let i = 0; i < 10; i++) { rules.tryMove(b.p, 0, 1); step(Math.round(3 / STEP)); }
+  assert.deepEqual([b.p.alive, b.p.eagle, warns], [true, null, []]);
+  // one more hop, then stop: the warning once, then the eagle
+  rules.tryMove(b.p, 0, 1);
+  const hopTicks = Math.round(HOP_TIME / STEP);   // in the air the clock does not count as idle
+  step(Math.round((EAGLE_IDLE - EAGLE_SWOOP - EAGLE_WARN) / STEP) + hopTicks - 2);
+  assert.equal(warns.length, 0, 'the hop itself was not idle time');
+  step(4);
+  assert.equal(warns.length, 1);
+  step(Math.round(EAGLE_WARN / STEP) + 2);
+  assert.ok(b.p.eagle && b.p.eagle.t > 0 && b.p.eagle.t < 1, 'the swoop is on');
+  assert.equal(warns.length, 1, 'the warning does not repeat');
+  rules.tryMove(b.p, 0, 1);
+  assert.equal(b.p.hop, null, 'too late to move');
+  step(Math.round(EAGLE_SWOOP / STEP) + 2);
+  assert.deepEqual([b.p.alive, b.p.cause, b.p.eagle.t], [false, 'eagle', 1]);
+});
+
+test('boundaries: the scroll line, the log edge and the log slack, exactly at the limit', () => {
+  // a player exactly on the line (camRow - BEHIND_LIMIT) lives; a hair behind it is out
+  const a = bench(grassRows(3)); a.G.camRow = BEHIND_LIMIT; a.run();
+  assert.ok(a.p.alive, 'exactly on the line');
+  a.G.camRow = BEHIND_LIMIT + 1e-6; a.run();
+  assert.deepEqual([a.p.alive, a.p.cause], [false, 'slow']);
+  // a hop back onto the line's own row is allowed
+  const b = bench(grassRows(3)); b.p.x = 0; b.p.row = 1; b.G.camRow = BEHIND_LIMIT;
+  b.rules.tryMove(b.p, 0, -1);
+  assert.ok(b.p.hop && b.p.hop.tz === 0, 'row 0 is exactly on the line: allowed');
+  // and the shield can send you back onto it
+  const c = bench([{ kind: 'grass' }, { kind: 'road', objs: [{ x: 0, len: 1.4 }] }]);
+  c.rules.giveShield(c.p); c.p.x = 0; c.p.row = 1; c.G.camRow = BEHIND_LIMIT; c.run();
+  assert.deepEqual([c.p.alive, c.p.row], [true, 0], 'rescued onto the line');
+  // a rescue to a row above 0: the hop's rows are recorded as z (minus the row)
+  const d = bench([{ kind: 'grass' }, { kind: 'grass' }, { kind: 'road', objs: [{ x: 0, len: 1.4 }] }]);
+  d.rules.giveShield(d.p); d.p.x = 0; d.p.row = 2; d.run();
+  assert.deepEqual([d.p.row, d.p.hop.fromRow, d.p.hop.fz, d.p.hop.tz, d.p.hop.tx], [1, 2, -2, -1, 0]);
+  // a log whose middle is exactly EDGE_DEATH away still holds; LOG_SLACK: exactly on the edge is water
+  const e = bench([{ kind: 'grass' }, { kind: 'river', objs: [{ x: EDGE_DEATH, len: 1 }] }]);
+  e.p.row = 1; e.p.log = e.lanes.get(1).objs[0]; e.p.logOff = 0; e.run();
+  assert.ok(e.p.alive);
+  const f = bench([{ kind: 'grass' }, { kind: 'river', objs: [{ x: 0, len: 3 }] }]);
+  f.p.x = 1; f.rules.tryMove(f.p, 0.55, 1); f.settle();   // 1.55 = 1.5 + LOG_SLACK
+  assert.deepEqual([f.p.alive, f.p.cause], [false, 'splash'], 'exactly at the slack: not on the log');
+});
+
+test('leader and tag with the other player ahead or level; two bombs on two rows; a bomb whose row is gone', () => {
+  const rows = Array.from({ length: 60 }, () => ({ kind: 'grass' }));
+  const b = benchWith(rows, ['frog', 'frog']);
+  const [a, c] = b.players;
+  c.row = LEAD_FROM + 10; a.row = LEAD_FROM;   // player 2 leads
+  b.run();
+  assert.deepEqual([a.lead, c.lead], [false, true], 'player 2 can lead too');
+  b.rules.tryMove(c, 0, 1);
+  assert.ok(Math.abs(c.hop.dur / HOP_TIME - LEAD_SLOW) < 1e-9);
+  const t = benchWith(grassRows(8), ['frog', 'frog'], 'tag');
+  t.players[0].row = 3; t.players[1].row = 3;
+  t.rules.tryMove(t.players[0], 0, 1);
+  assert.equal(t.players[0].hop.dur, HOP_TIME, 'level: nobody is behind');
+  t.rules.tryMove(t.players[1], 0, 1);
+  assert.ok(Math.abs(t.players[1].hop.dur - HOP_TIME * 0.7) < 1e-9, 'the first hop put player 1 ahead, so player 2 is behind now');
+  // two bombs on different rows: both rocks stand, each picked as a bomb
+  const br = Array.from({ length: 30 }, () => ({ kind: 'grass' }));
+  br[24] = { kind: 'grass', power: { x: 0, kind: 'magnet' } };
+  br[28] = { kind: 'grass', power: { x: 0, kind: 'magnet' } };
+  const w = benchWith(br, ['frog', 'fox']);
+  const kinds = [];
+  const rules = makeRules({ G: w.G, lane: r => w.lanes.get(r), coins() {}, over() {}, players: w.players, fx: { power: (p, lane, pw) => kinds.push(pw.kind) } });
+  const step = n => { for (let i = 0; i < n; i++) { w.G.worldTick++; w.G.playT += STEP; for (const p of w.players) if (p.alive) rules.stepPlayer(p, STEP); } };
+  w.players[1].row = 10; w.players[1].x = 0; w.players[0].row = 23; w.players[0].x = 0;
+  rules.tryMove(w.players[0], 0, 1); step(20);
+  w.players[1].row = 15;
+  w.players[0].row = 27; w.players[0].hop = null; rules.tryMove(w.players[0], 0, 1); step(20);
+  assert.deepEqual(kinds, ['bomb', 'bomb']);
+  assert.ok(w.lanes.get(11).trees.has(0) && w.lanes.get(16).trees.has(0), 'a rock on row 11 and one on row 16');
+  assert.ok(!w.players[0].shield, 'no shield for the picker: both were bombs');
+  step(BOMB_TICKS);
+  assert.ok(!w.lanes.get(11).trees.has(0) && !w.lanes.get(16).trees.has(0), 'both lifted');
+  // a bomb on a row that has since been dropped: lifting it is no trouble
+  const z = benchWith(br, ['frog', 'fox']);
+  z.players[1].row = 10; z.players[1].x = 0; z.players[0].row = 23; z.players[0].x = 0;
+  z.rules.tryMove(z.players[0], 0, 1); z.hopTicks(z.players[0]);
+  assert.ok(z.lanes.get(11).trees.has(0));
+  z.lanes.delete(11);
+  z.rules.reset();
+  z.run(BOMB_TICKS + 5);
+  assert.ok(z.players[0].alive, 'nothing broke');
+});
+
+test('more of the rules: a dead player stays dead, the twister in the grace, sideways on a river, slides, the magnet off centre', () => {
+  const killed = [];
+  const b = bench([{ kind: 'grass' }, { kind: 'road', objs: [{ x: 0, len: 1.4 }] }]);
+  const rules = makeRules({ G: b.G, lane: r => b.lanes.get(r), coins() {}, over() { killed.push('over'); }, fx: { kill: (p, c) => killed.push(c) } });
+  rules.kill(b.p, 'squash'); rules.kill(b.p, 'train');
+  assert.deepEqual([killed, b.p.cause, b.p.alive], [['squash', 'over'], 'squash', false], 'the second death does not count');
+  // the twister passes through a just-rescued player too
+  const t = benchWith([{ kind: 'grass' }, { kind: 'road', objs: [{ x: 0, len: 1.4 }] }, { kind: 'grass', twister: true, objs: [{ x: 0, len: 0.9, twister: true }] }], ['frog']);
+  const q = t.players[0];
+  t.rules.giveShield(q); q.x = 0; q.row = 1; t.run(); t.hopTicks(q);
+  assert.deepEqual([q.alive, q.row, q.safeT > 0], [true, 0, true]);
+  q.row = 2; t.run();
+  assert.ok(q.alive, 'the twister passes through during the grace');
+  while (q.safeT > 0) t.run();
+  t.run();
+  assert.deepEqual([q.alive, q.cause], [false, 'twister']);
+  // a sideways hop on a log is not a river crossed
+  const run = { coins: 0, row: 0, rivers: 0, hops: 0, logs: 0, combo: 0, powers: 0, secrets: 0, nears: 0 };
+  const r = bench([{ kind: 'grass' }, { kind: 'river', objs: [{ x: 0, len: 4 }] }, { kind: 'grass' }]);
+  r.G.run = run;
+  r.p.x = 0; r.rules.tryMove(r.p, 0, 1); r.settle(); r.rules.tryMove(r.p, 1, 0); r.settle();
+  assert.deepEqual([r.p.alive, r.p.row, run.rivers, run.logs], [true, 1, 0, 2], 'still on the log, no crossing');
+  r.rules.tryMove(r.p, 0, 1); r.settle();
+  assert.equal(run.rivers, 1);
+  // the slide is a hop of its own: flagged, on the same row, SLIDE_TIME long; a hop with a forward part does not slide
+  const i = bench([{ kind: 'grass' }, { kind: 'ice' }, { kind: 'ice' }]);
+  i.p.x = 0; i.rules.tryMove(i.p, 0, 1); i.settle();
+  i.rules.tryMove(i.p, 1, 0); while (i.p.hop && !i.p.hop.slide) i.run();
+  assert.ok(i.p.hop && i.p.hop.slide === true, 'sliding');
+  assert.deepEqual([i.p.hop.dur, i.p.hop.fromRow, i.p.hop.fz, i.p.hop.tz, i.p.hop.fx, i.p.hop.tx, i.p.hop.dr, i.p.hop.dx], [0.12, 1, -1, -1, 1, 2, 0, 0]);
+  i.settle();
+  i.rules.tryMove(i.p, -1, 1); i.settle();
+  assert.deepEqual([i.p.row, i.p.x], [2, 1], 'a diagonal hop onto ice: no slide');
+  // the magnet reaches MAGNET_REACH either side of the player, not of the column
+  const m = benchWith([{ kind: 'grass', coins: new Map([[2, {}], [-1, {}]]) }], ['frog']);
+  m.players[0].x = 1; m.players[0].magnetT = MAGNET_TIME; m.run();
+  assert.deepEqual([m.lanes.get(0).coins.has(2), m.lanes.get(0).coins.has(-1), m.players[0].coins], [false, true, 1], 'the coin at 2 is within reach of x = 1, the one at -1 is not');
+});
+
+test('planks: landing again on a cracking plank does not give it more time; a landing in water has no landing effect', () => {
+  const planks = new Map([[0, { breakAt: -1, backAt: -1 }], [1, { breakAt: -1, backAt: -1 }]]);
+  const b = bench([{ kind: 'grass' }, { kind: 'bridge', planks }]);
+  b.p.x = 0; b.rules.tryMove(b.p, 0, 1); b.settle();
+  const breakAt = planks.get(0).breakAt;
+  assert.equal(breakAt, b.G.worldTick + PLANK_BREAK);
+  b.rules.tryMove(b.p, 1, 0); b.settle(); b.rules.tryMove(b.p, -1, 0); b.settle();
+  assert.deepEqual([b.p.x, planks.get(0).breakAt], [0, breakAt], 'back on it: the crack is as old as it was');
+  assert.equal(planks.get(1).breakAt, breakAt + Math.ceil(HOP_TIME / STEP - 1e-9), 'the other plank cracked when it was stepped on (a hop is 14.4 steps, so 15)');
+  const lands = [];
+  const d = bench([{ kind: 'grass' }, { kind: 'bridge', planks: new Map([[0, { breakAt: -1, backAt: -1 }]]) }]);
+  const rules = makeRules({ G: d.G, lane: r => d.lanes.get(r), coins() {}, over() {}, fx: { land: (p, lane) => lands.push(lane.r) } });
+  d.p.x = 2; rules.tryMove(d.p, 0, 1); while (d.p.hop) { d.G.worldTick++; rules.stepPlayer(d.p, STEP); }
+  assert.deepEqual([d.p.cause, lands], ['splash', []], 'sunk on landing: no landing');
+  const h = bench(grassRows(4)); h.p.x = 1; h.p.row = 1; h.rules.tryMove(h.p, 0, 1);
+  assert.deepEqual([h.p.hop.fromRow, h.p.hop.fz, h.p.hop.tz], [1, -1, -2], 'a hop from row 1 to row 2, as z');
+  const w = [{ joined: true, alive: true, score: 5, coins: 0 }, { joined: true, alive: false, score: 7, coins: 0 }];
+  assert.equal(winnerOf(w, 'classic'), w[1], 'outside a race the score decides, alive or not');
+  assert.equal(winnerOf(w, 'coinwar'), null);
+});
+
+test('createSim: a dead player ahead does not pull the scroll line; prune forgets rows behind it; nothing moves after the end', () => {
+  const rp = { seed: 5, mode: 'classic', chars: ['frog', 'fox'], joined: [true, true], handicap: 0, startTick: 1000, events: [] };
+  const sim = createSim(rp);
+  while (sim.state === 'countdown') sim.step();
+  sim.players[0].alive = false; sim.players[0].row = 30;   // as if the frog had died far ahead
+  for (let i = 0; i < 120; i++) sim.step();
+  assert.ok(sim.camRow < 1, 'the line creeps on its own, it does not catch up to the dead: ' + sim.camRow);
+  assert.ok(sim.players[1].alive);
+  // prune: with the line at camRow, rows below camRow - BEHIND_LIMIT - 3 are forgotten, the others kept
+  const s2 = createSim({ ...rp, joined: [true, false] });
+  while (s2.step());
+  const cam = s2.camRow, kept = new Map();
+  for (let r = -12; r <= 2; r++) kept.set(r, s2.lane(r));
+  s2.prune();
+  for (let r = -12; r <= 2; r++) assert.equal(s2.lane(r) === kept.get(r), r >= cam - BEHIND_LIMIT - 3, `row ${r} with the line at ${cam}`);
+  assert.ok([...kept.keys()].some(r => r < cam - BEHIND_LIMIT - 3), 'some row was far enough behind to be forgotten');
+  const tick = s2.worldTick;
+  assert.equal(s2.step(), false);
+  assert.equal(s2.worldTick, tick, 'the clock stops at the end');
+  // a player who did not join has no cause; a run that fits in the time allowed completes
+  const s = simulate({ ...rp, joined: [false, true] });
+  assert.deepEqual([s.players[0].cause, s.players[0].alive, s.players[0].row, s.cause], ['', false, 0, 'eagle']);
+  assert.notEqual(simulate({ ...rp, joined: [false, true] }, { maxMs: 60000 }), null, 'a minute is plenty');
+});

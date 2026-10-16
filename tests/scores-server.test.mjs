@@ -10,10 +10,10 @@ import { fileURLToPath } from 'node:url';
 import { decodeReplay, encodeReplay } from '../js/replay.js';
 import { dailySeedFor, hashString } from '../js/rules.js';
 import { simulate } from '../js/sim.js';
-import { isoWeek } from '../server/scores.mjs';
+import { getCacheSize, isoWeek, topJson } from '../server/scores.mjs';
 
 const SERVER = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../server/scores.mjs');
-let proc, base, dir;
+let base, dir;
 const procs = [];
 
 async function start(extraEnv) {
@@ -356,3 +356,30 @@ test('weekly board: ?week= covers Monday to Sunday, any mode', async () => {
   for (const q of ['?week=2026-42', '?week=bad', '?week=2026-W00', '?week=2026-W54', '?week=2026-W4', '?week=', '?week=2026-W41&day=2026-10-05', '?week=2026-W41&mode=x'])
     assert.equal((await get(q)).status, 400, q);
 });
+
+// the HTTP fuzzer (tools/fuzz-server.mjs) found these two
+test('a request target the URL parser rejects is 400, not 500; the server goes on', async () => {
+  const raw = head => new Promise(resolve => {
+    const s = net.connect(new URL(base).port, '127.0.0.1');
+    let data = '';
+    s.on('connect', () => s.write(head)); s.on('data', d => { data += d; }); s.on('close', () => resolve(data)); s.on('error', () => resolve(data));
+    s.setTimeout(3000, () => s.destroy());
+  });
+  for (const target of ['http://[::1/scores', 'http://x:99999/scores', 'http://user@/scores']) {
+    const reply = await raw(`GET ${target} HTTP/1.1\r\nHost: x\r\n\r\n`);
+    assert.match(reply, /^HTTP\/1\.1 400 /, target);
+    assert.ok(reply.includes('{"error":"bad url"}'), target + ': ' + reply.slice(-60));   // chunked: the body ends with 0\r\n\r\n
+  }
+  assert.equal((await raw('GET http://x/scores HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n')).split('\r\n')[0], 'HTTP/1.1 200 OK', 'a valid absolute-form target still works');
+  assert.equal((await fetch(base + '/scores')).status, 200);
+});
+
+test('GET cache: bounded, whatever days and weeks the queries ask for', () => {
+  const day = i => `${1000 + (i % 9000)}-${String(1 + (i % 12)).padStart(2, '0')}-${String(1 + (i % 28)).padStart(2, '0')}`;
+  assert.equal(topJson(day(0), 'classic', null), '{"top":[]}');
+  for (let i = 1; i < 5000; i++) topJson(day(i), MODES_ALL[i % 6], null);
+  for (let i = 0; i < 500; i++) topJson(null, null, `${1000 + i}-W${String(1 + (i % 52)).padStart(2, '0')}`);
+  assert.ok(getCacheSize() > 0 && getCacheSize() <= 64, 'cache entries after 5500 distinct queries: ' + getCacheSize());
+  assert.equal(topJson(day(0), 'classic', null), '{"top":[]}', 'an evicted query is answered again');
+});
+const MODES_ALL = ['classic', 'race', 'coinwar', 'tag', 'daily', 'room'];

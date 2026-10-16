@@ -6,16 +6,27 @@
   "description": "Hop Lanes arcade game",
   "scripts": {
     "check": "for f in js/*.js server/*.mjs tests/*.mjs; do node --check \"$f\" || exit 1; done",
-    "test": "npm run check && node tests/rules.test.mjs && node tests/replay.test.mjs && node tests/sim.test.mjs && node tests/smoke.test.mjs && node tests/layout.test.mjs && node tests/ui.test.mjs && node tests/scores-server.test.mjs",
+    "test": "npm run check && npm run lint && node tests/rules.test.mjs && node tests/replay.test.mjs && node tests/sim.test.mjs && node tests/gen.test.mjs && node tests/property.test.mjs && node tests/smoke.test.mjs && node tests/layout.test.mjs && node tests/ui.test.mjs && node tests/scores-server.test.mjs",
     "build": "./tools/build-standalone.sh",
     "scores": "node server/scores.mjs",
     "icons": "python3 tools/make-icons.py",
-    "build:three": "node tools/build-three.mjs"
+    "build:three": "node tools/build-three.mjs",
+    "lint": "eslint . && node tools/check-exports.mjs",
+    "test:property": "PROP_RUNS=20 node tests/property.test.mjs",
+    "mutate": "stryker run",
+    "fuzz": "node tools/fuzz-replay.mjs --seconds 300",
+    "profile": "node tools/profile-game.mjs",
+    "load": "node tools/load-server.mjs"
   },
   "devDependencies": {
+    "@stryker-mutator/core": "8.7.1",
+    "autocannon": "8.0.0",
+    "esbuild": "0.25.0",
+    "eslint": "9.17.0",
+    "eslint-plugin-security": "3.0.1",
+    "fast-check": "3.23.2",
     "playwright": "1.56.1",
-    "three": "0.186.1",
-    "esbuild": "0.25.0"
+    "three": "0.186.1"
   },
   "engines": {
     "node": ">=20"

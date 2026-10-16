@@ -1,0 +1,41 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "testRunner": "command",
+  "commandRunner": {
+    "command": "node tests/rules.test.mjs && node tests/replay.test.mjs && node tests/sim.test.mjs && node tests/gen.test.mjs"
+  },
+  "mutate": [
+    "js/rules.js",
+    "js/gen.js",
+    "js/sim.js",
+    "js/replay.js",
+    "js/missions.js"
+  ],
+  "ignorePatterns": [
+    "vendor",
+    "fonts",
+    "icons",
+    "server",
+    "tools",
+    "css",
+    "hop-lanes-standalone.html",
+    "tests/*.test.mjs",
+    "!tests/rules.test.mjs",
+    "!tests/replay.test.mjs",
+    "!tests/sim.test.mjs",
+    "!tests/gen.test.mjs",
+    "reports",
+    ".stryker-tmp"
+  ],
+  "concurrency": 4,
+  "timeoutMS": 10000,
+  "ignoreStatic": true,
+  "reporters": [
+    "clear-text",
+    "json"
+  ],
+  "jsonReporter": {
+    "fileName": "reports/mutation/mutation.json"
+  },
+  "cleanTempDir": "always"
+}

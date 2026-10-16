@@ -1,5 +1,5 @@
 import { sfx } from './audio.js';
-import { $, G, HOP_TIME, LAND_DIP, TAU, TRAIN_SPEED } from './core.js';
+import { $, G, LAND_DIP, TAU, TRAIN_SPEED } from './core.js';
 import { t } from './i18n.js';
 import { hatFor, isWater, traitOf } from './rules.js';
 import { feedReplay, makeRules, resetPlayer } from './sim.js';

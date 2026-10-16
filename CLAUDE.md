@@ -8,14 +8,20 @@ except the small offline build script. Keep it that way.
 | Command | What it does |
 |---|---|
 | `npm install` | Installs Playwright and Three.js (test and build only; the game itself has no dependencies) |
-| `npm test` | Syntax check, `tests/rules.test.mjs`, `tests/replay.test.mjs` and `tests/sim.test.mjs` (pure code, instant), then the browser tests `smoke`, `layout`, `ui` and `scores-server` (~6 min) |
+| `npm test` | Syntax check, lint, the pure tests (`rules`, `replay`, `sim`, `gen`, instant), the property tests (`tests/property.test.mjs`: 2000 random replays through the codec and `simulate()`, then 3 random runs in the real page checked against `simulate()`), then the browser tests `smoke`, `layout`, `ui` and `scores-server` (~8 min) |
+| `npm run lint` | ESLint (recommended + security plugin, no unused variables) and `tools/check-exports.mjs` (no export that nothing imports) |
+| `npm run test:property` | The property tests with 20 browser runs (`PROP_RUNS=n`, `PROP_SEED=n` to pick the cases; a failure prints its seed and keys) |
+| `npm run mutate` | Stryker mutation testing of the pure rules files (`stryker.config.json`); the score says how well the tests pin the rules |
+| `npm run fuzz` | `tools/fuzz-replay.mjs`: random and mutated replay codes through `decodeReplay` and `simulate` with a time budget (CI runs 2 minutes of it) |
+| `npm run profile` | `tools/profile-game.mjs`: frame times of the real page under a 4x CPU throttle (SwiftShader: compare runs on one machine only) |
+| `npm run load` | `tools/load-server.mjs`: the score server under autocannon load, with VERIFY on (`tools/fuzz-server.mjs` fuzzes its HTTP surface: bodies, headers, targets) |
 | `npm run check` | Syntax check only (fast) |
 | `npm run build` | Regenerates `hop-lanes-standalone.html` (python3 + the pinned esbuild, minified, no network). Fails over 800 KB. CI fails if this file is stale |
 | `npm run build:three` | Regenerates `vendor/three.min.js` with esbuild from `tools/three-entry.js` (the Three.js names the game uses). CI fails if stale |
 | `npm run icons` | Regenerates `icons/` from the frog pixel art (needs Pillow) |
 | `npm run scores` | Starts the optional score server (`server/`) |
 
-Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-lanes-standalone.html` with the change.
+Run `npm test` and `npm run build` before every commit (CI also lints and fuzzes). Commit the rebuilt `hop-lanes-standalone.html` with the change.
 
 ## Layout
 
@@ -27,7 +33,7 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
 | `js/main.js` | Entry. Checks `window.THREE`, then `import('./app.js')` |
 | `js/rules.js` | Pure rules with no DOM or Three.js: the tuning constants that decide a run (`STEP`, `TICKS_PER_S`, `MAX_RUN_TICKS`, `HOP_TIME`, `PLAY_HALF`, `CAM_CREEP*`, `LEAD_*`, `BOMB_TICKS`, `SPRING_HOP`...), seeded RNG, `dailySeedFor(day)` (the daily world's seed, shared with the score server), `nextLaneKind`, `hopTarget`, `hopTime` (mud), `isBombRow`, `MODES`, `TRAITS` (each animal's edge, `traitOf`), `HATS` (`hatFor(best)`), `isoDay` (the local YYYY-MM-DD), `isoWeek`, the daily streak (`streakAfter`). Tested by node directly: put logic here when it needs no scene |
 | `js/gen.js` | Pure: the world as data. `createWorldGen(seed).lane(r)`: kind (the chain of `nextLaneKind`), direction, speed, cars and logs (`x0`), trees, pads, coins, power-ups, the train schedule (`railStep`), plus the looks drawn from the same rng. `trafficX` (where a car or log is at world time w). `connectRow` makes sure every row gives a way forward (`standColumns` / `standGroups`: each group of columns a player can stand on in the row before gets a straight hop: a pad over a pad, a plank, a felled tree); its draws come after the row's own. The rng draw order here is the world: never reorder a draw |
-| `js/sim.js` | Pure: the rules of a run. `makeRules(W)` (hops, logs, hazards, shield, eagle, near misses, the traits, tag mode, the leader slowdown `p.lead`, spring hops `p.hop.high`, portals, cliff tiles, the twister, the versus bomb; players.js calls it with effect hooks), `createSim(replay)` (stepping, countdown included), `simulate(replay)` (to game over: score, ticks, row, cause, coins) and `winnerOf(players, mode)`. The score server runs it (`VERIFY=1`) |
+| `js/sim.js` | Pure: the rules of a run. `makeRules(W)` (hops, logs, hazards, shield, eagle, near misses, the traits, tag mode, the leader slowdown `p.lead`, spring hops `p.hop.high`, portals, cliff tiles, the twister, the versus bomb; players.js calls it with effect hooks), `createSim(replay)` (stepping, countdown included), `simulate(replay)` (to game over: score, ticks, row, cause, coins, `winner` decided the moment the run ends) and `winnerOf(players, mode)`. The score server runs it (`VERIFY=1`) |
 | `js/missions.js` | Pure: the mission list and the done/advance logic, plus the daily missions (`DAILY`, `dailyMissions(day)`: three a day seeded from the date, paid once, `hoplanes.dailydone`) (`tests/replay.test.mjs`) |
 | `js/replay.js` | Pure: `encodeReplay` / `decodeReplay` for `#replay-<code>` links |
 | `js/i18n.js` | `t(key, args)`: English keys, Spanish and German tables; `data-i18n` for static markup; `#lang` cycles |
@@ -49,8 +55,9 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
 | `.github/workflows/ci.yml` | Runs the tests and the stale-build checks on every push and pull request |
 | `.github/workflows/deploy.yml` | Deploys `main` to GitHub Pages after the tests pass (Settings → Pages → Source: GitHub Actions, once) |
 | `tests/serve.mjs` | Tiny static server for the tests: browsers refuse ES modules from `file://` |
+| `tests/property.test.mjs` | Property tests with fast-check: the codec round trip, a deterministic, bounded, total `simulate()` on random replays, a cut replay, and random play in the real page against `simulate()` (part 2 needs the browser) |
 | `tests/browser.mjs` | The shared browser-test helpers: `launch`, `open(browser, url, opts)`, `waitState`, and the waits on the game's own clock (`settle`, `waitTicks`, `hopKey`): never a fixed sleep |
-| `server/` | Optional dependency-free score server; wired by `<meta name="hop-lanes-scores">` (and `hop-lanes-token` for its `POST_TOKEN`). Set `TRUST_PROXY=1` behind a proxy (only a real IP in `X-Forwarded-For` is trusted). `VERIFY_BUDGET_MS` caps the replay CPU per minute (503 past it), `GET_RATE_MAX` throttles reads; the top lists are cached until the next post. UI test 6b runs it against the real page (`tests/serve.mjs` overrides `/index.html` with the meta and `connect-src` filled in) |
+| `server/` | Optional dependency-free score server; wired by `<meta name="hop-lanes-scores">` (and `hop-lanes-token` for its `POST_TOKEN`). Set `TRUST_PROXY=1` behind a proxy (only a real IP in `X-Forwarded-For` is trusted). `VERIFY_BUDGET_MS` caps the replay CPU per minute (503 past it), `GET_RATE_MAX` throttles reads; the top lists are cached (at most `GET_CACHE_MAX` keys) until the next post; a request target the URL parser rejects is a 400. UI test 6b runs it against the real page (`tests/serve.mjs` overrides `/index.html` with the meta and `connect-src` filled in) |
 
 ## Conventions
 

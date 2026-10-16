@@ -42,6 +42,7 @@ const RATE_WINDOW_MS = 60_000;
 let scores = [];
 const byKey = new Map(); // `${bucket}|${name}` -> entry
 const getCache = new Map(); // GET reply strings by (day, week, mode), cleared on every change
+const GET_CACHE_MAX = 64;   // entries; the key comes from the query, so a client asking for ever new days could otherwise grow it without end
 let newestDay = -Infinity; // newest day number any entry carries (far-future junk ignored)
 
 function load() {
@@ -108,8 +109,9 @@ function dayOf(e) {
   return e.dayN;
 }
 
-// the ISO week of a day (rules.js isoWeek), re-exported for the tests
-export { isoWeek };
+// the ISO week of a day (rules.js isoWeek), re-exported for the tests; topJson and the cache's size are for the tests too
+export { isoWeek, topJson, getCacheSize };
+const getCacheSize = () => getCache.size;
 
 // Newest day an entry may carry: tomorrow UTC (clock skew); later days are refused on POST.
 const latestDay = () => new Date(Date.now() + DAY_MS).toISOString().slice(0, 10);
@@ -167,7 +169,11 @@ function top(day, mode, week, withReplay = true) {
 function topJson(day, mode, week) {
   const k = `${day ?? ''}|${week ?? ''}|${mode ?? ''}`;
   let text = getCache.get(k);
-  if (text === undefined) { text = JSON.stringify({ top: top(day, mode, week) }); getCache.set(k, text); }
+  if (text === undefined) {
+    text = JSON.stringify({ top: top(day, mode, week) });
+    if (getCache.size >= GET_CACHE_MAX) getCache.clear();
+    getCache.set(k, text);
+  }
   return text;
 }
 
@@ -339,7 +345,8 @@ function replayOk(entry) {
 
 const server = http.createServer(async (req, res) => {
   try {
-    const url = new URL(req.url, 'http://x');
+    let url;
+    try { url = new URL(req.url, 'http://x'); } catch { return send(res, 400, { error: 'bad url' }); } // an absolute-form target the parser rejects (http://[::1/x) is the client's fault, not a 500
     if (url.pathname !== '/scores') return send(res, 404, { error: 'not found' });
     if (req.method === 'OPTIONS') { res.writeHead(204, {
       'Access-Control-Allow-Origin': ALLOW_ORIGIN,
