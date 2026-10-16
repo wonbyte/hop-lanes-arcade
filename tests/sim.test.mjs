@@ -250,6 +250,47 @@ function benchWith(rows, chars, mode = 'classic') {
 }
 const grassRows = n => Array.from({ length: n }, () => ({ kind: 'grass' }));
 
+test('ice: a hop queued during a hop waits for the slide, and runs at once when a tree stops the slide', () => {
+  const b = bench([{ kind: 'grass' }, { kind: 'ice', trees: new Set([3]) }, { kind: 'grass' }]);
+  b.p.x = 0;
+  b.rules.tryMove(b.p, 0, 1); b.settle();                // onto the ice at column 0
+  b.rules.tryMove(b.p, 1, 0); b.rules.tryMove(b.p, 0, 1); // hop right, and forward queued
+  b.run(); assert.ok(b.p.hop && b.p.queue, 'the forward hop is queued');
+  for (let i = 0; i < 200 && !(b.p.hop && b.p.hop.slide); i++) b.run();
+  assert.ok(b.p.hop.slide && b.p.queue, 'the slide starts first; the queued hop still waits');
+  b.settle();
+  assert.deepEqual([b.p.row, b.p.x], [2, 2], 'after the slide to 2, the queued hop took the player forward');
+  const c = bench([{ kind: 'grass' }, { kind: 'ice', trees: new Set([2]) }, { kind: 'grass' }]);
+  c.p.x = 0;
+  c.rules.tryMove(c.p, 0, 1); c.settle();
+  c.rules.tryMove(c.p, 1, 0); c.rules.tryMove(c.p, 0, 1);
+  for (let i = 0; i < 200 && c.p.row === 1; i++) c.run();
+  assert.equal(c.p.x, 1, 'the tree at 2 stopped the slide');
+  assert.ok(c.p.hop && !c.p.hop.slide && c.p.hop.dr === 1, 'so the queued forward hop started on landing');
+});
+
+test('a landing on a whole bridge plank goes on as usual: its coin is picked up, a hop queued during the hop starts', () => {
+  const b = bench([{ kind: 'grass' }, { kind: 'bridge', planks: new Map([[0, { breakAt: -1, backAt: -1 }]]), coins: new Map([[0, true]]) }, { kind: 'grass' }]);
+  b.p.x = 0;
+  b.rules.tryMove(b.p, 0, 1); b.rules.tryMove(b.p, 0, 1);   // onto the plank, and on again (queued)
+  for (let i = 0; i < 200 && b.p.row === 1 && !(b.p.row === 1 && !b.p.hop); i++) b.run();
+  assert.ok(b.p.alive, 'the plank held');
+  assert.ok(b.p.hop && b.p.hop.fromRow === 1 && b.p.hop.dr === 1, 'the queued hop left the plank at once');
+  assert.ok(b.lanes.get(1).planks.get(0).breakAt > 1000, 'and the plank started to crack');
+  assert.equal(b.lanes.get(1).coins.has(0), false, 'the coin on the plank was picked up');
+  assert.equal(b.p.coins, 1);
+});
+
+test('a row dropped under a hop (the browser frees far rows) does not break the rules', () => {
+  const b = bench([{ kind: 'grass' }, { kind: 'grass' }]);
+  b.p.x = 0;
+  b.rules.tryMove(b.p, 0, 1);
+  b.run();
+  b.lanes.delete(1);
+  assert.doesNotThrow(() => { b.settle(); b.run(30); });
+  assert.deepEqual([b.p.alive, b.p.row, b.p.x], [true, 1, 0], 'landed, and stands there');
+});
+
 test('traits: the bunny hops faster, the robot waits longer for the eagle, the penguin does not slide', () => {
   const b = benchWith(grassRows(6), ['frog', 'bunny']);
   const [frog, bunny] = b.players;

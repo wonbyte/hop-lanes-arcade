@@ -269,10 +269,12 @@ function makeRules(W) {
     if (hz.kind === 'road' || hz.kind === 'rocks' || hz.twister) {   // the twister crosses a grass row
       for (const o of hz.objs) {
         const gap = Math.abs(o.x - p.x) - o.len / 2 - HIT_PAD;
+        // Stryker disable next-line BooleanLiteral: equivalent: after the kill the caller's slow check does nothing (kill() returns at once for a dead player; a shield rescue lands on a row inside the limit)
         if (gap < 0) { kill(p, o.twister ? 'twister' : 'squash'); return true; }
         if (gap < NEAR_MISS && !o.twister && !p.nearSeen.has(o)) nearMiss(p, o);
       }
     } else if (hz.kind === 'rail' && hz.train.active) {
+      // Stryker disable next-line BooleanLiteral: equivalent: after the kill the caller's slow check does nothing (kill() returns at once for a dead player; a shield rescue lands on a row inside the limit)
       if (Math.abs(hz.train.x - p.x) < hz.train.len / 2 + HIT_PAD) { p.trainDir = hz.dir; kill(p, 'train'); return true; }
     }
     return false;

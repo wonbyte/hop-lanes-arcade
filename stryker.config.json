@@ -25,7 +25,11 @@
     "!tests/sim.test.mjs",
     "!tests/gen.test.mjs",
     "reports",
-    ".stryker-tmp"
+    ".stryker-tmp",
+    ".scan-tools",
+    "bench",
+    "types",
+    "tools/observatory"
   ],
   "concurrency": 4,
   "timeoutMS": 10000,

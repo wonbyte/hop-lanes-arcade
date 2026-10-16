@@ -37,7 +37,7 @@
     "playwright": "1.56.1",
     "spectorjs": "0.9.30",
     "three": "0.186.1",
-    "typescript": "7.0.2"
+    "typescript": "5.9.3"
   },
   "engines": {
     "node": ">=20"

@@ -42,7 +42,9 @@ Five loads of each version, in turns on one machine (`--load-only`):
 | Before | 3798, 3885, 3948, 4033, 4094 | 3948 | 264 504 |
 | After | 3752, 3846, 3983, 4031, 4072 | 3983 | 266 273 |
 
-No change between the versions, and both sit at the 4 s budget: 2 of 5 loads miss it on the proxy. The waterfall shows
+No change between the versions, and both sit at the 4 s budget: 2 of 5 loads miss it on this machine. On GitHub's
+runners, the same measurement gave 3571 ms against this checkout (the CI bench job) and 3588 ms against the live page on
+GitHub Pages itself (271 744 bytes; the deploy job's live check, which gates on 4 s). The waterfall shows
 the last byte at about 2.7 s (264 KB at 1.47 Mbit/s; `vendor/three.min.js` is 136 KB of it) and about 1 s of CPU after
 it. A CPU profile of that second: 802 ms native browser work (parsing, WebGL shader compiles, which SwiftShader does on
 the CPU), 511 ms in Three.js, about 200 ms in the game's own code. A preload of `vendor/three.min.js` with high fetch
@@ -96,7 +98,14 @@ Fixed in the design, not only the code:
 | dependency-cruiser | 1 import cycle (`players.js` <-> `screens.js`) | 0; the rules files import only each other |
 | ESLint complexity (paths per function) | worst 36 (`sim.js` `land`); 10 functions over 20 | worst 20; 0 over 20 |
 | jscpd (50 tokens or more) in `js/`, `server/`, `tools/`, `css/` | 4 clones (the tools' rng and flag parser) | 0 |
-| Mutation score (Stryker), sim.js | 93.9% | AFTER_MUTATION |
+| Mutation score, sim.js (Stryker 10 on both versions) | 93.09% (75 survivors) | 93.03% (76 survivors) |
+| Mutation score, rules.js (Stryker 10) | 98.4% (Stryker 8) | 98.38% |
+
+The refactor of `sim.js` first left 7 more surviving mutants. Four were real gaps, and three new tests in
+`tests/sim.test.mjs` kill them: a hop queued on ice when a tree stops the slide, a coin and a queued hop on a whole
+bridge plank, and a row dropped under a hop. Two are proven equivalent (after a kill, the slow check cannot fire) and
+are marked on their line with the proof. One is left: a slide that starts one step before the camera limit would be
+checked one step later.
 
 The tests (`npm test`): 9 suites, all green, after every change. The saved runs in `tests/sim.test.mjs` and the
 property tests did not change.
