@@ -15,6 +15,11 @@
   --p2-glow: #ff6f5a;
   --deck: #1b2030;
   --shade: rgba(10, 12, 20, .72);
+  --panel: rgba(16, 19, 30, .9);          /* the title menu's buttons and boxes: nearly solid, so the field does not show through */
+  --panel-edge: rgba(255, 255, 255, .14);
+  /* the logo shrinks on a short screen so the logo, the menu and the mission boxes fit above the join cards: about
+     592px of the height is the score bar, the cards and the deck (~400) plus the buttons and boxes (~190) */
+  --logo-size: clamp(22px, min(7.5vw, calc((100vh - 592px) / 3)), 50px);
   --font-pixel: "Press Start 2P", ui-monospace, "Courier New", monospace;
   --font-ui: "Rubik", system-ui, sans-serif;
   color-scheme: dark;
@@ -122,28 +127,40 @@ body {
 #world { color: var(--gold); }
 
 /* title menu: mode and prize machine, under the logo */
+/* top: under the logo (its two lines, the small line and the tilt come to about 3 logo sizes), never over it */
 #menu {
-  position: absolute; z-index: 4; left: 16px; right: 16px; top: calc(var(--marquee-h, 74px) + 150px);
+  position: absolute; z-index: 4; left: 16px; right: 16px; top: calc(var(--marquee-h, 74px) + 34px + var(--logo-size) * 3);
   display: flex; justify-content: center; gap: 8px; flex-wrap: wrap;
 }
 #menu { pointer-events: none; }   /* taps between the buttons reach the field */
 #menu button { pointer-events: auto; }
 #menu button, #share, #replayBtn {
-  font-family: var(--font-pixel); font-size: 8px; min-height: 36px; padding: 8px 12px; border-radius: 10px;
-  background: rgba(10,12,20,.6); color: var(--gold); box-shadow: 0 3px 0 rgba(0,0,0,.5); white-space: nowrap;
+  font-family: var(--font-pixel); font-size: 8px; letter-spacing: .04em; min-height: 36px; padding: 8px 14px; border-radius: 10px;
+  background: var(--panel); color: var(--gold); border: 2px solid var(--panel-edge); box-shadow: 0 3px 0 rgba(0,0,0,.45);
+  white-space: nowrap; transition: transform .08s, box-shadow .08s, border-color .15s;
 }
+#menu button:hover, #share:hover, #replayBtn:hover { border-color: rgba(255, 216, 74, .6); }
+#menu button:active, #share:active, #replayBtn:active { transform: translateY(2px); box-shadow: 0 1px 0 rgba(0,0,0,.45); }
 #menu button:disabled { opacity: .45; }
 #menu::after { content: ''; flex-basis: 100%; height: 0; order: 1; }   /* a line break: the missions sit under the buttons */
 #missions, #dayMissions {
-  order: 2; width: min(100%, 360px); margin-top: 2px; padding: 8px 12px; border-radius: 10px; background: rgba(10,12,20,.55);
-  font-family: var(--font-pixel); font-size: 8px; line-height: 1.9; color: #fff; text-align: center;
+  order: 2; width: min(100%, 340px); box-sizing: border-box; margin-top: 4px; padding: 10px 16px 12px; border-radius: 12px;
+  background: var(--panel); border: 2px solid var(--panel-edge); box-shadow: 0 3px 0 rgba(0,0,0,.45);
+  font-family: var(--font-pixel); font-size: 8px; line-height: 2; color: #fff; text-align: left;
 }
 #dayMissions { order: 3; }
-#missions h3, #dayMissions h3 { margin: 0 0 2px; font-size: 8px; color: var(--gold); letter-spacing: .1em; }
+#missions h3, #dayMissions h3 {
+  margin: 0 0 6px; padding-bottom: 6px; border-bottom: 2px solid var(--panel-edge);
+  font-size: 8px; color: var(--gold); letter-spacing: .1em; text-align: center;
+}
 #missions ul, #dayMissions ul { margin: 0; padding: 0; list-style: none; }
-#missions ul li::before, #dayMissions ul li::before { content: '\25C6 '; color: var(--gold); }
+#missions li, #dayMissions li { padding-left: 18px; text-indent: -18px; }   /* a wrapped line starts under the text, not under the mark */
+/* the mark is a drawn square: the pixel font has no diamond glyph (it fell back to a tiny dot on the baseline) */
+#missions ul li::before, #dayMissions ul li::before {
+  content: ''; display: inline-block; width: 6px; height: 6px; margin-right: 12px; vertical-align: 1px; background: var(--gold);
+}
 #dayMissions li.done { color: #9fd89a; text-decoration: line-through; }
-#dayMissions li.done::before { content: '\2713 '; color: #4cbf3f; }
+#dayMissions li.done::before { background: #4cbf3f; }
 /* a short screen (a small phone, or one held sideways) has no room for a second box: the cards cover it */
 @media (max-height: 620px) { #dayMissions { display: none; } }
 #hint { position: absolute; left: 0; top: 0; z-index: 5; pointer-events: none; will-change: transform; }   /* placed with a transform (app.js placeHint): no layout per frame */
@@ -208,7 +225,7 @@ body {
 #logo { position: absolute; z-index: 4; left: 16px; right: 16px; top: calc(var(--marquee-h, 74px) + 18px); text-align: center; pointer-events: none; }
 #logo h1 {
   margin: 0; font-weight: 400;
-  display: inline-block; font-family: var(--font-pixel); font-size: clamp(22px, 7.5vw, 50px); line-height: 1.15;
+  display: inline-block; font-family: var(--font-pixel); font-size: var(--logo-size); line-height: 1.15;
   color: #fff; text-shadow: 0 5px 0 #b33a26, 4px 9px 0 rgba(0,0,0,.35); transform: rotate(-4deg);
 }
 #logo small { display: block; font-size: .32em; color: var(--gold); text-shadow: 2px 2px 0 #1d3b6b; margin-bottom: 8px; }
@@ -314,7 +331,7 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
   .score span { font-size: .4em; margin-bottom: 4px; }
   #logo { top: calc(var(--marquee-h, 30px) + 12px); }
   #logo h1 { font-size: 24px; }
-  #menu { top: calc(var(--marquee-h, 30px) + 84px); }
+  #menu { top: calc(var(--marquee-h, 30px) + 92px); left: 150px; right: 150px; }   /* between the join cards (136px wide), never under them */
   #cards { bottom: auto; top: 50%; transform: translateY(-50%); justify-content: space-between; padding-inline: max(4px, env(safe-area-inset-left, 0px)) max(4px, env(safe-area-inset-right, 0px)); }
   .card { width: 136px; padding: 8px 6px; gap: 4px; font-size: 8px; }
   .card svg { width: 34%; }
@@ -333,6 +350,8 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
   #start { opacity: .85; }
   #app.playing #start { visibility: hidden; }   /* it does nothing during play, so it must not cover the field */
 }
+/* a narrow phone held sideways (iPhone SE): the buttons take two rows, and the mission box would cover the TAP pads */
+@media (orientation: landscape) and (max-height: 520px) and (max-width: 700px) { #missions { display: none; } }
 /* very short sideways view (a browser with its own top bar): smaller controls, more game */
 @media (orientation: landscape) and (max-height: 360px) {
   .tap { width: 58px; font-size: 11px; border-width: 4px; }
@@ -343,7 +362,7 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
   .card { width: 118px; padding: 6px 4px; gap: 3px; }
   .card svg { width: 28%; }
   #logo h1 { font-size: 20px; }
-  #menu { top: calc(var(--marquee-h, 30px) + 72px); }
+  #menu { top: calc(var(--marquee-h, 30px) + 80px); }
   .score { font-size: 16px; }
 }
 @media (prefers-reduced-motion: reduce) { .card.ready, .card.shake { animation: none; } .tap, .card, .pad, #wipe { transition: none; } .ring { animation: none; opacity: .6; } }
