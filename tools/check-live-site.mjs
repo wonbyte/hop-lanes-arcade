@@ -13,6 +13,8 @@ const HOST = flagArg('--host', 'wonbyte.github.io'), PAGE = flagArg('--path', '/
 const DIR = process.env.OBSERVATORY_DIR || path.resolve(path.dirname(new URL(import.meta.url).pathname), 'observatory/node_modules/@mdn/mdn-http-observatory');
 // failed tests that docs/threat-model.md accepts (GitHub Pages lets a site set no header)
 const ACCEPTED = {
+  'strict-transport-security': 'section 6: Pages sends no HSTS and github.io is not preloaded; the http -> https redirect is the control',
+  'x-content-type-options': 'section 6: Pages sends no nosniff; every file is the game\'s own with its right type, nothing is uploaded',
   'x-frame-options': 'section 6: a meta CSP cannot set frame-ancestors and Pages sends no X-Frame-Options; a framed game can only be played'
 };
 

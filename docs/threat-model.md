@@ -28,7 +28,9 @@ bests, picks), the online score lists and the score server host, the published s
   POST and GET; a global CPU budget for replay checks (503 past it); request and header timeouts; at most 200 entries
   per bucket and 14 days kept; a capped GET cache; atomic file writes; `VERIFY` (on by default) replays every posted run
   with the game's own rules and refuses a score that the run does not reach. `tools/fuzz-server.mjs` fuzzes the HTTP surface,
-  `tools/load-server.mjs` loads it.
+  `tools/load-server.mjs` loads it. Every reply sends `nosniff` and a CSP that allows nothing. CI runs CodeQL
+  (security-extended) on the code and an OWASP ZAP API scan (`server/openapi.yaml`) against a running server on every
+  push.
 - **Accepted risk**:
   - With `VERIFY=0` a posted score is a claim. The default is on; turn it off only on a private server.
   - A verified run is legal, not human: the rules are public, so a bot can search for a long run offline and post it.
@@ -76,10 +78,18 @@ GitHub Pages does not let a site set its own HTTP headers.
 
 - **Attacker**: a network attacker; a page that frames the game.
 - **Gain**: changed scripts in transit; clicks tricked through a frame (clickjacking).
-- **Controls**: HTTPS only (`github.io` is on the HSTS preload list); the CSP in a meta tag (`default-src 'none'`,
-  `script-src 'self'`, `connect-src 'none'`, `base-uri 'none'`, `form-action 'none'`, `worker-src 'none'`); no
-  third-party script, style or font; no cookies.
-- **Accepted risk**:
+- **Controls**: Pages redirects `http://` to `https://`; the CSP in a meta tag (`default-src 'none'`, `script-src 'self'`,
+  `connect-src 'none'`, `base-uri 'none'`, `form-action 'none'`, `worker-src 'none'`); no third-party script, style or
+  font; no cookies. After each deploy CI grades the live page with the MDN HTTP Observatory (`tools/check-live-site.mjs`)
+  and fails on any test this section does not accept. First result (16 Oct 2026): grade C (55); CSP, cookies, CORS,
+  COEP, COOP, CORP, redirection, referrer policy and subresource integrity pass.
+- **Accepted risk** (each one comes from GitHub Pages: a site cannot set its own headers there):
+  - No HSTS. Pages sends no `Strict-Transport-Security`, and `github.io` is not on the browsers' HSTS preload list (this
+    file said it was, until the Observatory showed otherwise). The first visit to an `http://` link can be changed by an
+    attacker on the network before the redirect. Every later request is HTTPS, and the redirect is the control. The
+    fix is a host that sends HSTS (a custom domain behind a CDN that sets headers): the owner's choice.
+  - No `X-Content-Type-Options: nosniff`. Every file is the game's own, served with its right type, and nothing is
+    uploaded, so there is nothing to sniff into a script.
   - A CSP in a meta tag cannot set `frame-ancestors`, and Pages sends no `X-Frame-Options`: another site can frame the
     game. The game has no account, payment or setting of value outside its own origin, so a framed game can only be
     played.

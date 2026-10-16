@@ -11,7 +11,8 @@ need() { [ -x "$T/bin/$1" ] || go install "$2"; }
 need actionlint github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
 need gitleaks github.com/zricethezav/gitleaks/v8@v8.30.1
 need osv-scanner github.com/google/osv-scanner/v2/cmd/osv-scanner@v2.6.0
-if [ ! -x "$T/py/bin/semgrep" ]; then python3 -m venv "$T/py" && "$T/py/bin/pip" install -q semgrep==1.178.0 zizmor==1.30.1; fi
+if [ ! -x "$T/py/bin/shellcheck" ]; then python3 -m venv "$T/py" && "$T/py/bin/pip" install -q semgrep==1.178.0 zizmor==1.30.1 shellcheck-py==0.11.0.1; fi
+export PATH="$T/py/bin:$PATH"   # actionlint runs shellcheck on every run: block (CI's runner has one; this pins it)
 # the community rules at a fixed commit; the jQuery rules are left out: there is no jQuery here ($ is getElementById)
 RULES_REV=a84ff9cc2453ca91d581380de4b8b3f272f6f4be
 R="$T/semgrep-rules"

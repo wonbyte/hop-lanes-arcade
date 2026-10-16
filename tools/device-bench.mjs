@@ -57,15 +57,24 @@ function selfSigned() {
   fs.rmSync(dir, { recursive: true, force: true });
   return pair;
 }
+// one open file, checked and read through the same handle (a check by name, then a read by name, could see two files)
+function readFile(file) {
+  const fd = fs.openSync(file, 'r');
+  try {
+    if (!fs.fstatSync(fd).isFile()) throw new Error('not a file');
+    return fs.readFileSync(fd);
+  } finally { fs.closeSync(fd); }
+}
 function serveGzip(root, h2) {
   const handler = (req, res) => {
     let rel;
     try { rel = decodeURIComponent(new URL(req.url, 'http://x').pathname); } catch { res.writeHead(400); res.end(); return; }
     if (rel === '/') rel = '/index.html';
     const file = path.join(root, rel), out = path.relative(root, file);
-    if (out.startsWith('..') || path.isAbsolute(out) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) { res.writeHead(404); res.end(); return; }
+    if (out.startsWith('..') || path.isAbsolute(out)) { res.writeHead(404); res.end(); return; }
+    let body;
+    try { body = readFile(file); } catch { res.writeHead(404); res.end(); return; }   // missing, or a folder
     const type = TYPES[path.extname(file)] || 'application/octet-stream';
-    let body = fs.readFileSync(file);
     const headers = { 'Content-Type': type, 'Cache-Control': 'no-store' };
     if (/text|json|manifest/.test(type) && /\bgzip\b/.test(req.headers['accept-encoding'] || '')) { body = zlib.gzipSync(body); headers['Content-Encoding'] = 'gzip'; }
     res.writeHead(200, headers); res.end(body);
@@ -101,8 +110,15 @@ async function measureLoad() {
   await page.goto(BASE + 'index.html#debug', { waitUntil: 'commit', timeout: 2 * MIN });
   await waitFor(page, () => window.hopLanes && window.hopLanes.state === 'attract', null, 2 * MIN);
   const ms = await page.evaluate(() => new Promise(r => requestAnimationFrame(() => r(performance.now()))));
-  const proto = await page.evaluate(() => (performance.getEntriesByType('navigation')[0] || {}).nextHopProtocol || '');
-  const res = { playableMs: Math.round(ms), bytes, requests, protocol: proto, network: 'Slow 4G (Lighthouse)', cpuThrottle: CPU };
+  // the waterfall: every request's start and end (ms after navigation) and bytes, and when the HTML was parsed
+  const t = await page.evaluate(() => {
+    const nav = performance.getEntriesByType('navigation')[0] || {};
+    return { proto: nav.nextHopProtocol || '', domInteractive: Math.round(nav.domInteractive || 0), domContentLoaded: Math.round(nav.domContentLoadedEventEnd || 0),
+      waterfall: performance.getEntriesByType('resource').map(e => ({ url: e.name.replace(location.origin, ''), start: Math.round(e.startTime), end: Math.round(e.responseEnd), bytes: e.encodedBodySize }))
+        .sort((a, b) => a.end - b.end) };
+  });
+  const res = { playableMs: Math.round(ms), bytes, requests, protocol: t.proto, domInteractive: t.domInteractive, domContentLoaded: t.domContentLoaded,
+    lastByte: Math.max(0, ...t.waterfall.map(w => w.end)), network: 'Slow 4G (Lighthouse)', cpuThrottle: CPU, waterfall: t.waterfall };
   await context.close();
   return res;
 }
