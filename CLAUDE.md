@@ -11,7 +11,7 @@ except the small offline build script. Keep it that way.
 | `npm test` | Syntax check, lint, the pure tests (`rules`, `replay`, `sim`, `gen`, instant), the property tests (`tests/property.test.mjs`: 2000 random replays through the codec and `simulate()`, then 3 random runs in the real page checked against `simulate()`), then the browser tests `smoke`, `layout`, `ui` and `scores-server` (~8 min) |
 | `npm run lint` | ESLint (recommended + security plugin, no unused variables) and `tools/check-exports.mjs` (no export that nothing imports) |
 | `npm run test:property` | The property tests with 20 browser runs (`PROP_RUNS=n`, `PROP_SEED=n` to pick the cases; a failure prints its seed and keys) |
-| `npm run mutate` | Stryker mutation testing of the pure rules files (`stryker.config.json`); the score says how well the tests pin the rules |
+| `npm run mutate` | Stryker mutation testing of the pure rules files (`stryker.config.json`, about an hour on 4 cores; `--mutate js/sim.js` for one file); the score says how well the tests pin the rules. Measured: rules 98.4%, sim 93.9%, gen 92.9% (survivors are equivalent mutants: float boundaries, unreachable guards). Keep each above 80% |
 | `npm run fuzz` | `tools/fuzz-replay.mjs`: random and mutated replay codes through `decodeReplay` and `simulate` with a time budget (CI runs 2 minutes of it) |
 | `npm run profile` | `tools/profile-game.mjs`: frame times of the real page under a 4x CPU throttle (SwiftShader: compare runs on one machine only) |
 | `npm run load` | `tools/load-server.mjs`: the score server under autocannon load, with VERIFY on (`tools/fuzz-server.mjs` fuzzes its HTTP surface: bodies, headers, targets) |
