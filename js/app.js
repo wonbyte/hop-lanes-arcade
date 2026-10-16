@@ -1,11 +1,11 @@
 import { idleAudio, isMuted, playLayers, playLoopOn, sfx, startTune, stopTune, tuneOn } from './audio.js';
-import { $, BIOME_ROWS, COUNTDOWN, DEBUG, G, LAND_DIP, OVER_SLOW, OVER_SLOW_T, OVER_ZOOM, REPLAY_CODE, RESULTS_DELAY, STEP, TUTORIAL_SEED } from './core.js';
+import { $, BENCH, BIOME_ROWS, COUNTDOWN, DEBUG, G, LAND_DIP, OVER_SLOW, OVER_SLOW_T, OVER_ZOOM, REPLAY_CODE, RESULTS_DELAY, STEP, TUTORIAL_SEED } from './core.js';
 import { pollGamepads } from './input.js';   // also sets up every input listener
 import { decodeReplay } from './replay.js';
 import { creepCamera } from './sim.js';
 import { ghostInfo, ghostMat, ghostWarmGeo, placeGhost, stepGhost } from './ghost.js';
 import { CHARACTERS, LIGHT_OFF, lightGeo } from './models.js';
-import { CAM_OFF, SUN_OFF, camera, focus, getPixelRatio, reduceMotion, renderer, scene, setNight, setZoom, shadowCadence, sun, touchQuery, viewInfo, viewSize, watchFrameTime } from './gfx.js';
+import { CAM_OFF, SUN_OFF, camera, focus, getPixelRatio, holdFrameWatch, reduceMotion, renderer, scene, setNight, setZoom, shadowCadence, sun, touchQuery, viewInfo, viewSize, watchFrameTime } from './gfx.js';
 import { announceFrame } from './panels.js';   // also sets up the settings, pause and top-10 panels
 import { keepAwake } from './device.js';
 import { flushBank } from './storage.js';
@@ -131,6 +131,7 @@ function frame(now) {
   try { frameBody(now); } catch (err) { crash(err); }
 }
 function frameBody(now) {
+  const work0 = DEBUG ? performance.now() : 0;
   const rawDt = (now - lastT) / 1000;
   const dt = Math.max(0, Math.min(0.05, rawDt));
   lastT = now;
@@ -151,31 +152,35 @@ function frameBody(now) {
   updateParts(dt);   // effects: once per frame, not per step
   for (const p of players) dressPlayer(p, dt);   // the animals' turns, blinks and shadow blobs: looks only
 
-  // draw at most ~60 fps while playing (90-144 Hz screens), and every other frame on menus, to save battery
   const idle = G.state === 'attract' || (G.state === 'over' && G.stateT > RESULTS_DELAY);
-  let draw;
-  // a screen already at 30 Hz (iOS Low Power Mode) draws every frame; faster ones skip every other on the menus
-  if (idle) draw = rawDt > 0.025 || (G.frameN++ & 1) === 0;
-  else {
-    draw = now >= nextDraw - 2;   // 2 ms tolerance: timestamps land a hair early or late
-    // keep a steady schedule: 60 draws/s on any refresh rate; after a stall, start the schedule again
-    if (draw) nextDraw = now - nextDraw > DRAW_INTERVAL * 2 ? now + DRAW_INTERVAL : nextDraw + DRAW_INTERVAL;
-  }
-  if (draw) {
-    spinAll(now);
-    updateFarLanes();
-    placeCamera();
-    placeGhost();
-    placeHint();
-    announceFrame();
-    shadowCadence(idle);
-    renderer.render(scene, camera);
-    if (lastDraw) watchFrameTime((now - lastDraw) / 1000);   // judge drawn frames only
-    lastDraw = now;
-    if (DEBUG) countFrame(now);
-  }
+  if (shouldDraw(now, rawDt, idle)) drawFrame(now, idle, work0);
+  if (BENCH) benchStep();
   if (G.state === 'attract') { if (G.stateT < 0.5) startTune(); else if (G.stateT > 14) idleAudio(); }
   requestAnimationFrame(frame);
+}
+
+// draw at most ~60 fps while playing (90-144 Hz screens), and every other frame on menus, to save battery
+function shouldDraw(now, rawDt, idle) {
+  // a screen already at 30 Hz (iOS Low Power Mode) draws every frame; faster ones skip every other on the menus
+  if (idle) return rawDt > 0.025 || (G.frameN++ & 1) === 0;
+  const draw = now >= nextDraw - 2;   // 2 ms tolerance: timestamps land a hair early or late
+  // keep a steady schedule: 60 draws/s on any refresh rate; after a stall, start the schedule again
+  if (draw) nextDraw = now - nextDraw > DRAW_INTERVAL * 2 ? now + DRAW_INTERVAL : nextDraw + DRAW_INTERVAL;
+  return draw;
+}
+// the per-frame looks (never the rules), then the render; work0: when the frame began (#debug frame times)
+function drawFrame(now, idle, work0) {
+  spinAll(now);
+  updateFarLanes();
+  placeCamera();
+  placeGhost();
+  placeHint();
+  announceFrame();
+  shadowCadence(idle);
+  renderer.render(scene, camera);
+  if (lastDraw) watchFrameTime((now - lastDraw) / 1000);   // judge drawn frames only
+  if (DEBUG) { if (lastDraw) recordFrame(now - lastDraw, performance.now() - work0); countFrame(now); }
+  lastDraw = now;
 }
 
 // #debug: drawn frames per second and draw calls, in the corner, once a second
@@ -183,9 +188,39 @@ const fpsEl = $('fps');
 let fpsN = 0, fpsT0 = 0;
 function countFrame(now) {
   fpsN++;
-  if (now - fpsT0 < 1000) return;
+  if (now - fpsT0 < 1000 || benchRuns.length) return;   // the bench result stays once there is one
   if (fpsT0) fpsEl.textContent = Math.round(fpsN * 1000 / (now - fpsT0)) + ' FPS \u00b7 ' + renderer.info.render.calls + ' DRAWS \u00b7 ' + getPixelRatio() + 'x';
   fpsT0 = now; fpsN = 0;
+}
+// #debug: every drawn frame of the current play: the interval since the frame before (what the player sees) and the
+// script time of the frame (ms). The device bench (tools/device-bench.mjs, docs/budgets.md) reads them.
+let frames = [], work = [], frameRows = [], frameState = '';
+const MAX_FRAMES = 1 << 20;
+function recordFrame(ms, workMs) {
+  if (G.state === 'play' && frameState !== 'play') { frames = []; work = []; frameRows = []; }   // a new game
+  frameState = G.state;
+  if (G.state !== 'play' || frames.length >= MAX_FRAMES) return;
+  frames.push(ms); work.push(workMs); frameRows.push(Math.round(G.camRow));
+}
+const quantile = (sorted, q) => sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * q))] : 0;
+function frameSummary() {
+  const s = frames.slice().sort((a, b) => a - b), w = work.slice().sort((a, b) => a - b), r = x => Math.round(x * 10) / 10;
+  // the slowest frames and the row the view was on: where a first-time cost (a new model, a shader) shows
+  const slow = frames.map((ms, i) => [ms, i]).sort((a, b) => b[0] - a[0]).slice(0, 8).map(([ms, i]) => ({ ms: r(ms), work: r(work[i]), row: frameRows[i], frame: i }));
+  return { frames: s.length, p50: r(quantile(s, 0.5)), p95: r(quantile(s, 0.95)), worst: r(s[s.length - 1] || 0), over33: s.filter(x => x > 33.4).length, over100: s.filter(x => x > 100).length, workP95: r(quantile(w, 0.95)), slow };
+}
+// #debug-bench-replay-<code>: at each game over the run's frame times are kept and shown, and the replay plays again
+const benchRuns = [];
+let benchOver = false;
+function benchStep() {
+  if (G.state !== 'over') { benchOver = false; return; }
+  if (benchOver || resultsEl.hidden) return;   // once per game over, when the results show
+  benchOver = true;
+  benchRuns.push({ ...frameSummary(), at: Math.round(performance.now() / 1000) });
+  const first = benchRuns[0], last = benchRuns[benchRuns.length - 1];
+  fpsEl.textContent = 'BENCH RUN ' + benchRuns.length + ' \u00b7 P50 ' + last.p50 + ' \u00b7 P95 ' + last.p95 + ' \u00b7 WORST ' + last.worst + ' MS'
+    + (benchRuns.length > 1 ? ' \u00b7 P95 RUN 1 ' + first.p95 : '');
+  playReplay(REPLAY_CODE);
 }
 if (DEBUG) {
   fpsEl.hidden = false;
@@ -221,12 +256,17 @@ if (DEBUG) {
     get slowT() { return G.slowT; },
     get hintText() { return hintEl.textContent; },
     boom() { G.boom = true; },   // throw inside the next step: the crash notice
-    ladder: { feed: watchFrameTime, get ratio() { return getPixelRatio(); }, get shadow() { return sun.shadow.mapSize.x; }, get shadowHalf() { return viewInfo().shadowHalf; } }
+    get frames() { return frames.slice(); },
+    get work() { return work.slice(); },
+    get frameSummary() { return frameSummary(); },
+    get benchRuns() { return benchRuns.slice(); },
+    playReplay,   // the soak: the same run again without a reload
+    ladder: { feed: t => watchFrameTime(t, true), hold: holdFrameWatch, get ratio() { return getPixelRatio(); }, get shadow() { return sun.shadow.mapSize.x; }, get shadowHalf() { return viewInfo().shadowHalf; } }
   };
 }
 // a replay link: the same world, the same animals, the same hops (a link with an unknown animal is ignored)
-if (REPLAY_CODE) {
-  const rp = decodeReplay(REPLAY_CODE);
+function playReplay(code) {
+  const rp = code ? decodeReplay(code) : null;
   const idx = rp ? rp.chars.map(key => CHARACTERS.findIndex(c => c.key === key)) : [];
   if (rp && idx.every(k => k >= 0)) {
     G.replay = { ...rp, i: 0 };
@@ -234,13 +274,13 @@ if (REPLAY_CODE) {
     setModeLabel();
     idx.forEach((k, i) => { players[i].charIndex = k; });
   }
-}
-toAttract();
-if (G.replay) {
+  toAttract();
+  if (!G.replay) return;
   // start the world clock so the countdown ends on the tick the recorded run began (startPlay sets it exactly)
   G.worldTick = Math.max(0, G.replay.startTick - Math.ceil(COUNTDOWN / STEP));
   G.replay.joined.forEach((on, i) => { if (on) join(i); });
 }
+playReplay(REPLAY_CODE);
 if (loadText(HOWTO_KEY) !== '1' && !G.replay) showHowto();
 // build the other shaders now (rail lights; the see-through landing spot and shield bubble): built on the first
 // join or train, each one stutters the game

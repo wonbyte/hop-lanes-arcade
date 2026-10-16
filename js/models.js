@@ -138,7 +138,7 @@ function drawPix(svg, art) {
   art.rows.forEach((r, y) => [...r].forEach((c, x) => {
     if (c === '.') return;
     const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-    rect.setAttribute('x', x); rect.setAttribute('y', y); rect.setAttribute('width', 1); rect.setAttribute('height', 1);
+    rect.setAttribute('x', String(x)); rect.setAttribute('y', String(y)); rect.setAttribute('width', '1'); rect.setAttribute('height', '1');
     rect.setAttribute('fill', css(art.pal[c]));
     svg.appendChild(rect);
   }));

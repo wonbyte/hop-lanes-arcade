@@ -1,0 +1,35 @@
+name: Soak
+# The 30-minute budgets of docs/budgets.md on the headless proxy: the bench replay played again and again in one page;
+# the game's objects (heap without compiled code), the GPU objects and the frame times must not drift.
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  soak:
+    name: 30-minute soak
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: 30 minutes of the bench replay, against tools/bench-budgets-soak.json
+        run: node tools/device-bench.mjs --soak 30 --cpu 0 --no-load --no-spector --check tools/bench-budgets-soak.json > soak-summary.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: soak
+          path: |
+            bench/
+            soak-summary.json

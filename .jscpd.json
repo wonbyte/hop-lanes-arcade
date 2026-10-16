@@ -1,0 +1,9 @@
+{
+  "//": "npm run dupes: copied code (jscpd). The game, the server and the tools hold no clone of 50 tokens or more; the tests may repeat their setup lines.",
+  "path": ["js", "server", "tools", "css"],
+  "minTokens": 50,
+  "threshold": 0,
+  "reporters": ["console"],
+  "ignore": ["**/node_modules/**"],
+  "absolute": false
+}

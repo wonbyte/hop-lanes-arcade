@@ -33,34 +33,43 @@ const KEYS = {
 };
 window.addEventListener('keydown', e => {
   if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;   // leave browser shortcuts alone
-  // a focused on-screen button handles its own Enter/Space (as a click)
-  if ((e.code === 'Enter' || e.code === 'Space') && e.target.closest && e.target.closest('button')) return;
-  if (e.target.tagName === 'TEXTAREA') return;   // the share text: typing there is not a restart
+  if (ownKey(e)) return;
   const k = KEYS[e.code], start = e.code === 'Space' || e.code === 'Enter';
-  // the first-run help closes on a game key (Tab and Shift still reach its button)
-  if ((k || start || e.code === 'Escape') && hideHowto()) { e.preventDefault(); return; }
-  if (e.code === 'Escape' && G.state !== 'paused' && closeDialog()) { e.preventDefault(); return; }   // settings, top 10
-  if (dialogOpen() && G.state !== 'paused') return;   // a panel is open: keys go to its buttons
+  if (panelKey(e, k || start)) return;
   if (k) { e.preventDefault(); press(...k); }
   else if (start) { e.preventDefault(); pressStart(); }
-  else if (e.code === 'KeyP' || e.code === 'Escape') { if (G.state === 'paused') { audio(); resumeGame(); } else pauseGame(); }
+  else if (e.code === 'KeyP' || e.code === 'Escape') togglePause();
   else if (e.code === 'KeyM') setMuted(!muted);
 });
+// a key the page leaves alone: a focused on-screen button handles its own Enter/Space (as a click), and typing in the
+// share text is not a restart
+function ownKey(e) {
+  const el = /** @type {HTMLElement} */ (e.target);
+  if ((e.code === 'Enter' || e.code === 'Space') && el.closest && el.closest('button')) return true;
+  return el.tagName === 'TEXTAREA';
+}
+// the first-run help and the dialogs take a key first; true when the key is theirs
+function panelKey(e, gameKey) {
+  // the first-run help closes on a game key (Tab and Shift still reach its button)
+  if ((gameKey || e.code === 'Escape') && hideHowto()) { e.preventDefault(); return true; }
+  if (e.code === 'Escape' && G.state !== 'paused' && closeDialog()) { e.preventDefault(); return true; }   // settings, top 10
+  return dialogOpen() && G.state !== 'paused';   // a panel is open: keys go to its buttons
+}
 $('mute').addEventListener('click', () => { audio(); setMuted(!muted); });
 setMuted(muted);
 // character picker arrows on the join cards (they sit on the field, so the field must not also get the touch)
-document.querySelectorAll('.cyc').forEach(btn => {
+/** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll('.cyc')).forEach(btn => {
   const go = () => { audio(); cycleChar(+btn.dataset.p, +btn.dataset.d); };
   btn.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); go(); });
   btn.addEventListener('click', e => { if (e.detail === 0) go(); });
 });
-document.querySelectorAll('.tap').forEach(btn => {
+/** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll('.tap')).forEach(btn => {
   const i = +btn.dataset.p;
   btn.addEventListener('pointerdown', e => { e.preventDefault(); btn.classList.add('down'); press(i, 0, 1); });
   btn.addEventListener('click', e => { if (e.detail === 0) press(i, 0, 1); });   // keyboard activation only
   ['pointerup', 'pointerleave', 'pointercancel'].forEach(t => btn.addEventListener(t, () => btn.classList.remove('down')));
 });
-document.querySelectorAll('.side').forEach(btn => {
+/** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll('.side')).forEach(btn => {
   btn.addEventListener('pointerdown', e => { e.preventDefault(); press(+btn.dataset.p, +btn.dataset.dx, 0); });
   btn.addEventListener('click', e => { if (e.detail === 0) press(+btn.dataset.p, +btn.dataset.dx, 0); });
 });
@@ -89,7 +98,7 @@ function touchRing(clientX, clientY, i, r) {
   setTimeout(gone, 500);   // also without animations (reduced motion)
 }
 stage.addEventListener('pointerdown', e => {
-  if (e.button > 0 || e.target.closest('#cards, #howto, #menu, #results button, #results textarea, #mute, .dialog .box')) return;
+  if (e.button > 0 || /** @type {HTMLElement} */ (e.target).closest('#cards, #howto, #menu, #results button, #results textarea, #mute, .dialog .box')) return;
   const r = stage.getBoundingClientRect();   // one layout read per touch
   const i = fieldPlayer(e.clientX, r);
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, i, done: false });
@@ -129,22 +138,24 @@ function pollGamepads() {
   if (!pads) return;
   for (let n = 0; n < pads.length && n < 2; n++) {
     const g = pads[n];
-    if (!g || !g.buttons) continue;
-    const b = k => !!(g.buttons[k] && g.buttons[k].pressed);
-    const ax = g.axes[0] || 0, ay = g.axes[1] || 0;
-    // sticks use hysteresis: pressed past 0.5, released under 0.3
-    const st = (k, v, dir) => padPrev.get(k) ? v * dir > 0.3 : v * dir > 0.5;
-    const sl = st(n + 'l', ax, -1), sr = st(n + 'r', ax, 1), su = st(n + 'u', ay, -1), sd = st(n + 'd', ay, 1);
-    try {
-      if (padEdge(n + 'u', b(12) || su || b(0))) press(n, 0, 1);
-      if (padEdge(n + 'd', b(13) || sd)) press(n, 0, -1);
-      if (padEdge(n + 'l', b(14) || sl)) press(n, -1, 0);
-      if (padEdge(n + 'r', b(15) || sr)) press(n, 1, 0);
-      if (padEdge(n + 's', b(9) || b(8))) pressStart();
-      if (padEdge(n + 'p', b(1) || b(2))) { if (G.state === 'paused') { audio(); resumeGame(); } else pauseGame(); }
-    } catch (e) {}
+    if (g && g.buttons) try { readPad(n, g); } catch (e) {}
   }
 }
+// pad n is player n: the d-pad, the left stick or A hops; Start / Select starts; B / X pauses
+function readPad(n, g) {
+  const b = k => !!(g.buttons[k] && g.buttons[k].pressed);
+  const ax = g.axes[0] || 0, ay = g.axes[1] || 0;
+  // sticks use hysteresis: pressed past 0.5, released under 0.3
+  const st = (k, v, dir) => padPrev.get(k) ? v * dir > 0.3 : v * dir > 0.5;
+  const sl = st(n + 'l', ax, -1), sr = st(n + 'r', ax, 1), su = st(n + 'u', ay, -1), sd = st(n + 'd', ay, 1);
+  if (padEdge(n + 'u', b(12) || su || b(0))) press(n, 0, 1);
+  if (padEdge(n + 'd', b(13) || sd)) press(n, 0, -1);
+  if (padEdge(n + 'l', b(14) || sl)) press(n, -1, 0);
+  if (padEdge(n + 'r', b(15) || sr)) press(n, 1, 0);
+  if (padEdge(n + 's', b(9) || b(8))) pressStart();
+  if (padEdge(n + 'p', b(1) || b(2))) togglePause();
+}
+function togglePause() { if (G.state === 'paused') { audio(); resumeGame(); } else pauseGame(); }
 $('app').addEventListener('contextmenu', e => e.preventDefault());
 
 export { pollGamepads, press };

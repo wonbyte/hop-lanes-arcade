@@ -65,7 +65,7 @@ const owned = new Set(loadText(OWNED_KEY).split(',').filter(Boolean));
 let bankDirty = false;
 function setBank(n, later = false) {
   G.bank = Math.max(0, n);
-  $('bank').textContent = G.bank;
+  $('bank').textContent = String(G.bank);
   if (later) bankDirty = true; else { bankDirty = false; save(COINS_KEY, G.bank); }
 }
 function flushBank() { if (bankDirty) setBank(G.bank); }
@@ -93,10 +93,10 @@ let bestDay = 0, shownDay = '';
 function refreshBests() {
   shownDay = dayKey();
   bestDay = load(shownDay);
-  $('best').textContent = G.bestAll;
-  $('daily').textContent = bestDay;
+  $('best').textContent = String(G.bestAll);
+  $('daily').textContent = String(bestDay);
   const streak = streakCount(loadText(STREAK_KEY), today(), dayBefore());   // daily runs on days in a row
-  $('streak').textContent = streak;
+  $('streak').textContent = String(streak);
   $('streakBox').hidden = !streak;
 }
 dropOldDays();

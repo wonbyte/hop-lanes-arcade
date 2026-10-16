@@ -218,3 +218,16 @@ test('replay: more shapes a code may not have', () => {
   assert.deepEqual(decodeReplay(btoa('2|1|classic|frog,fox|1|0|0|439200aU')).events, [[439200, 0, 0, 1]], 'a hop on the last tick allowed');
   assert.equal(decodeReplay(btoa('2|1|classic|frog,fox|1|0|0|439201aU')), null, 'one past it');
 });
+
+test('the bench replay (docs/budgets.md) plays to row 160 on seed 21, and the doc links that very run', async () => {
+  const fs = await import('node:fs');
+  const { simulate } = await import('../js/sim.js');
+  const code = fs.readFileSync(new URL('./bench-replay.txt', import.meta.url), 'utf8').trim();
+  const rp = decodeReplay(code);
+  assert.equal(rp.seed, 21);
+  const end = simulate(rp);
+  assert.ok(end.over);
+  assert.equal(end.score, 160);
+  const doc = fs.readFileSync(new URL('../docs/budgets.md', import.meta.url), 'utf8');
+  assert.ok(doc.includes('#debug-bench-replay-' + code + '\n'), 'docs/budgets.md links the current bench replay');
+});

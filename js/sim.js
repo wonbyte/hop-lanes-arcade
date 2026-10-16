@@ -143,10 +143,7 @@ function makeRules(W) {
     const tx = hopTarget(W.lane(p.row + dr), p.x, dx, PLAY_HALF);
     if (tx === null) return;
     if (p.row + dr < G.camRow - behindLimit(p)) return;
-    let dur = hopTime(from && from.kind, HOP_TIME) * (p.trait.hop || 1);
-    if (G.mode === 'tag' && others(p).some(q => q.row > p.row)) dur *= TAG_BOOST;   // tag: the one behind is faster
-    if (spring) dur *= SPRING_HOP;
-    if (leading(p)) dur *= LEAD_SLOW;
+    const dur = hopDuration(p, from, spring);
     p.hop = {
       t: 0, dur, fromRow: p.row, fx: p.x, fz: -p.row, tx, tz: -(p.row + dr),
       carry: p.log, carryX0: p.log ? p.log.x : 0, span: p.log ? from.span : 0, dx, dr, high: spring,
@@ -161,6 +158,14 @@ function makeRules(W) {
     p.lastHop = G.playT;
     comboStep(p);
     fx.hop(p);
+  }
+  // how long a hop from `from` takes: mud is slow, the bunny quick; tag, a spring and the two-player leader change it
+  function hopDuration(p, from, spring) {
+    let dur = hopTime(from && from.kind, HOP_TIME) * (p.trait.hop || 1);
+    if (G.mode === 'tag' && others(p).some(q => q.row > p.row)) dur *= TAG_BOOST;   // tag: the one behind is faster
+    if (spring) dur *= SPRING_HOP;
+    if (leading(p)) dur *= LEAD_SLOW;
+    return dur;
   }
   function comboStep(p) {
     if (G.run) G.run.combo = Math.max(G.run.combo, p.combo);
@@ -185,47 +190,56 @@ function makeRules(W) {
     fx.kill(p, cause);
     W.over();
   }
+  // The landing helpers return undefined when the landing goes on, or the value land() returns at once: after a fall
+  // into water (or off a tile) that is p.alive, which a shield or the cat's extra life can keep true.
+  // a river row: on a log, snapped to the centre of the nearest segment so standing feels solid, or in the water
+  function landOnRiver(p, lane) {
+    const log = lane.objs.find(o => Math.abs(o.x - p.x) < o.len / 2 + LOG_SLACK);
+    if (!log) { kill(p, 'splash'); return p.alive; }
+    const k = (log.len - 1) / 2;
+    p.logOff = Math.max(-k, Math.min(k, Math.round(p.x - log.x + k) - k));
+    p.log = log;
+    if (G.run) G.run.logs++;
+  }
+  // a bridge plank or a cliff tile holds you for PLANK_BREAK steps, then it drops; a broken cliff tile is gone for good
+  function landOnPlank(p, lane) {
+    const cliff = lane.kind === 'cliff', st = plankState(lane, p.x, G.worldTick);
+    if (st === 'down') { kill(p, cliff ? 'fall' : 'splash'); return p.alive; }
+    if (st === 'up') { const pl = lane.planks.get(p.x); pl.breakAt = G.worldTick + PLANK_BREAK; pl.backAt = cliff ? Infinity : pl.breakAt + PLANK_BACK; }
+  }
+  // any other row (lane is undefined past the built rows): pads, planks, portals, then the stats, the coin and the power-up
+  function landOnGround(p, lane, from) {
+    p.x = Math.round(p.x);
+    if (!lane) return;
+    if (lane.kind === 'lily' && !lane.pads.has(p.x)) { kill(p, 'splash'); return p.alive; }
+    if (lane.kind === 'bridge' || lane.kind === 'cliff') { const stop = landOnPlank(p, lane); if (stop !== undefined) return stop; }
+    if (lane.kind === 'portal' && lane.portals.includes(p.x)) {   // a portal column: out of the other one, at once
+      const fromX = p.x;
+      p.x = lane.portals[lane.portals[0] === p.x ? 1 : 0];
+      fx.teleport(p, lane, fromX);
+    }
+    if (G.run && from && from.kind === 'river' && lane.r > from.r) G.run.rivers++;   // crossed a river
+    const coin = lane.coins.get(p.x);
+    if (coin) collectCoin(p, lane, p.x, coin);
+    if (lane.power && lane.power.x === p.x) pickPower(p, lane);
+  }
+  // ice: a sideways hop slides one more column the same way, unless a tree or the edge is there (a queued hop waits)
+  function startSlide(p, lane, h) {
+    if (!(lane && lane.kind === 'ice' && h.dr === 0 && h.dx && !p.trait.noSlide)) return false;
+    const tx = hopTarget(lane, p.x, h.dx, PLAY_HALF);
+    if (tx === null) return false;
+    p.hop = { t: 0, dur: SLIDE_TIME, fromRow: p.row, fx: p.x, fz: -p.row, tx, tz: -p.row, carry: null, carryX0: 0, span: 0, dx: 0, dr: 0, slide: true };
+    return true;
+  }
   // returns false if the landing killed the player
   function land(p, lane) {
     const h = p.hop, from = W.lane(h.fromRow);
     p.hop = null;
     p.log = null;
-    if (lane && lane.kind === 'river') {
-      const log = lane.objs.find(o => Math.abs(o.x - p.x) < o.len / 2 + LOG_SLACK);
-      if (!log) { kill(p, 'splash'); return p.alive; }
-      // snap to the centre of the nearest log segment so standing feels solid
-      const k = (log.len - 1) / 2;
-      p.logOff = Math.max(-k, Math.min(k, Math.round(p.x - log.x + k) - k));
-      p.log = log;
-      if (G.run) G.run.logs++;
-    } else {
-      p.x = Math.round(p.x);
-      if (lane && lane.kind === 'lily' && !lane.pads.has(p.x)) { kill(p, 'splash'); return p.alive; }
-      if (lane && (lane.kind === 'bridge' || lane.kind === 'cliff')) {   // a plank or tile holds you for PLANK_BREAK steps, then it drops
-        const cliff = lane.kind === 'cliff', st = plankState(lane, p.x, G.worldTick);
-        if (st === 'down') { kill(p, cliff ? 'fall' : 'splash'); return p.alive; }
-        // a broken cliff tile is gone for good
-        if (st === 'up') { const pl = lane.planks.get(p.x); pl.breakAt = G.worldTick + PLANK_BREAK; pl.backAt = cliff ? Infinity : pl.breakAt + PLANK_BACK; }
-      }
-      if (lane && lane.kind === 'portal' && lane.portals.includes(p.x)) {   // a portal column: out of the other one, at once
-        const fromX = p.x;
-        p.x = lane.portals[lane.portals[0] === p.x ? 1 : 0];
-        fx.teleport(p, lane, fromX);
-      }
-      if (G.run && from && from.kind === 'river' && lane && lane.r > from.r) G.run.rivers++;   // crossed a river
-      const coin = lane && lane.coins.get(p.x);
-      if (coin) collectCoin(p, lane, p.x, coin);
-      if (lane && lane.power && lane.power.x === p.x) pickPower(p, lane);
-    }
+    const stop = lane && lane.kind === 'river' ? landOnRiver(p, lane) : landOnGround(p, lane, from);
+    if (stop !== undefined) return stop;
     fx.land(p, lane);
-    // ice: a sideways hop slides one more column the same way, unless a tree or the edge is there (a queued hop waits)
-    if (lane && lane.kind === 'ice' && h.dr === 0 && h.dx && !p.trait.noSlide) {
-      const tx = hopTarget(lane, p.x, h.dx, PLAY_HALF);
-      if (tx !== null) {
-        p.hop = { t: 0, dur: SLIDE_TIME, fromRow: p.row, fx: p.x, fz: -p.row, tx, tz: -p.row, carry: null, carryX0: 0, span: 0, dx: 0, dr: 0, slide: true };
-        return true;
-      }
-    }
+    if (startSlide(p, lane, h)) return true;
     if (p.queue) { const [qx, qr] = p.queue; p.queue = null; tryMove(p, qx, qr); }
     return true;
   }
@@ -249,19 +263,27 @@ function makeRules(W) {
     if (p.log && Math.abs(p.x) > EDGE_DEATH) { kill(p, 'swept'); return false; }
     return true;
   }
+  // what moves across the row under the player: cars, boulders or the twister (a near miss counts once per car), a
+  // train. Returns true if it hit.
+  function hitByTraffic(p, hz) {
+    if (hz.kind === 'road' || hz.kind === 'rocks' || hz.twister) {   // the twister crosses a grass row
+      for (const o of hz.objs) {
+        const gap = Math.abs(o.x - p.x) - o.len / 2 - HIT_PAD;
+        if (gap < 0) { kill(p, o.twister ? 'twister' : 'squash'); return true; }
+        if (gap < NEAR_MISS && !o.twister && !p.nearSeen.has(o)) nearMiss(p, o);
+      }
+    } else if (hz.kind === 'rail' && hz.train.active) {
+      if (Math.abs(hz.train.x - p.x) < hz.train.len / 2 + HIT_PAD) { p.trainDir = hz.dir; kill(p, 'train'); return true; }
+    }
+    return false;
+  }
   function checkHazards(p, lane) {
     // until mid-hop the player is still over the row they left
     const hz = p.hop && p.hop.t < HOP_MID ? W.lane(p.hop.fromRow) : lane;
-    if (hz && (hz.kind === 'bridge' || hz.kind === 'cliff') && (!p.hop || p.hop.t < HOP_MID) && plankState(hz, Math.round(p.x), G.worldTick) === 'down') { kill(p, hz.kind === 'cliff' ? 'fall' : 'splash'); return; }
-    if (hz && hz.r !== p.nearRow) { p.nearRow = hz.r; p.nearSeen.clear(); }   // a new row under the player: its cars can each count once
-    if (hz && (hz.kind === 'road' || hz.kind === 'rocks' || hz.twister)) {   // cars, boulders, or the twister crossing a grass row
-      for (const o of hz.objs) {
-        const gap = Math.abs(o.x - p.x) - o.len / 2 - HIT_PAD;
-        if (gap < 0) { kill(p, o.twister ? 'twister' : 'squash'); return; }
-        if (gap < NEAR_MISS && !o.twister && !p.nearSeen.has(o)) nearMiss(p, o);
-      }
-    } else if (hz && hz.kind === 'rail' && hz.train.active) {
-      if (Math.abs(hz.train.x - p.x) < hz.train.len / 2 + HIT_PAD) { p.trainDir = hz.dir; kill(p, 'train'); return; }
+    if (hz) {
+      if ((hz.kind === 'bridge' || hz.kind === 'cliff') && (!p.hop || p.hop.t < HOP_MID) && plankState(hz, Math.round(p.x), G.worldTick) === 'down') { kill(p, hz.kind === 'cliff' ? 'fall' : 'splash'); return; }
+      if (hz.r !== p.nearRow) { p.nearRow = hz.r; p.nearSeen.clear(); }   // a new row under the player: its cars can each count once
+      if (hitByTraffic(p, hz)) return;
     }
     if (p.row < G.camRow - behindLimit(p)) kill(p, 'slow');
   }
@@ -276,15 +298,18 @@ function makeRules(W) {
     const lead = leading(p);
     if (lead !== p.lead) { p.lead = lead; fx.label(p); }
     if (p.combo && !p.hop && G.playT - p.lastHop > COMBO_GAP * (p.trait.comboGap || 1) + 0.2) { p.combo = 0; fx.label(p); }
+    stepEagle(p, dt);
+  }
+  // standing still too long: a warning, then the eagle swoops down; when it arrives it carries the player away
+  function stepEagle(p, dt) {
     if (!p.hop) p.idleT += dt;
     const idle = EAGLE_IDLE + (p.trait.idle || 0);
     if (!p.warned && p.idleT > idle - EAGLE_SWOOP - EAGLE_WARN) { p.warned = true; fx.warn(p); }   // move, or the eagle comes
     if (!p.eagle && p.idleT > idle - EAGLE_SWOOP) { p.eagle = { t: 0 }; fx.eagle(p); }
-    if (p.eagle) {   // the eagle swoops down; when it arrives it carries the player away
-      p.eagle.t = Math.min(1, p.eagle.t + dt / EAGLE_SWOOP);
-      fx.swoop(p);
-      if (p.eagle.t >= 1) kill(p, 'eagle');
-    }
+    if (!p.eagle) return;
+    p.eagle.t = Math.min(1, p.eagle.t + dt / EAGLE_SWOOP);
+    fx.swoop(p);
+    if (p.eagle.t >= 1) kill(p, 'eagle');
   }
   return { giveShield, kill, reset, stepPlayer, tryMove };
 }

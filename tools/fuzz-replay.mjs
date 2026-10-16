@@ -9,30 +9,19 @@
 import { performance } from 'node:perf_hooks';
 import { decodeReplay, encodeReplay } from '../js/replay.js';
 import { simulate } from '../js/sim.js';
-import { MAX_RUN_TICKS, MODES, TRAITS } from '../js/rules.js';
+import { MAX_RUN_TICKS, MODES } from '../js/rules.js';
+import { ANIMALS, DIRS, flagArg, seededRng } from './lib.mjs';
 
 const args = process.argv.slice(2);
-const flag = (name, def) => { const i = args.indexOf(name); return i >= 0 ? Number(args[i + 1]) : def; };
+const flag = (name, def) => Number(flagArg(name, def));
 const SECONDS = flag('--seconds', 60);
 const SEED = flag('--seed', (Date.now() ^ (process.pid << 8)) >>> 0);
 const QUIET = args.includes('--quiet');
 const DECODE_MS = 50, SIM_MS = 1000, BUDGET_MS = 300, BUDGET_SLACK_MS = 400;
 
-// ---- seeded PRNG (mulberry32) ----
-let rngState = SEED >>> 0;
-function rnd() {
-  rngState = (rngState + 0x6d2b79f5) >>> 0;
-  let t = rngState;
-  t = Math.imul(t ^ (t >>> 15), t | 1);
-  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-}
-const int = (lo, hi) => lo + Math.floor(rnd() * (hi - lo + 1));   // inclusive
-const pick = arr => arr[Math.floor(rnd() * arr.length)];
-const chance = p => rnd() < p;
+// ---- seeded PRNG (mulberry32, tools/lib.mjs) ----
+const { int, pick, chance } = seededRng(SEED);
 
-const ANIMALS = [...new Set(['frog', ...Object.keys(TRAITS)])];
-const DIRS = [[0, 1], [0, -1], [-1, 0], [1, 0]];
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 
 // ---- generators ----

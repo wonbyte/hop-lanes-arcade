@@ -26,11 +26,11 @@ bests, picks), the online score lists and the score server host, the published s
 - **Gain**: fake scores; scores under another player's name; the server down (CPU, memory, disk); a crash.
 - **Controls**: body cap 40 KB; name, day, week and mode patterns; a score cap; per-IP (IPv6 per /64) rate limits for
   POST and GET; a global CPU budget for replay checks (503 past it); request and header timeouts; at most 200 entries
-  per bucket and 14 days kept; a capped GET cache; atomic file writes; `VERIFY=1` replays every posted run with the
-  game's own rules and refuses a score that the run does not reach. `tools/fuzz-server.mjs` fuzzes the HTTP surface,
+  per bucket and 14 days kept; a capped GET cache; atomic file writes; `VERIFY` (on by default) replays every posted run
+  with the game's own rules and refuses a score that the run does not reach. `tools/fuzz-server.mjs` fuzzes the HTTP surface,
   `tools/load-server.mjs` loads it.
 - **Accepted risk**:
-  - Without `VERIFY=1` a posted score is a claim. Run a public server with `VERIFY=1`.
+  - With `VERIFY=0` a posted score is a claim. The default is on; turn it off only on a private server.
   - A verified run is legal, not human: the rules are public, so a bot can search for a long run offline and post it.
   - A name is not an account: anyone can post as `FROG ABCD`.
   - Many IP addresses (a botnet) get past the per-IP limits; the global verify budget then answers 503 to everyone for
@@ -44,7 +44,7 @@ bests, picks), the online score lists and the score server host, the published s
 - **Gain**: post scores as if from the page.
 - **Controls**: none, by design: the page ships the token, so every visitor has it.
 - **Accepted risk**: the token stops only bots that do not read the page. It is not a secret and not authentication.
-  `VERIFY=1` is the control for the score itself.
+  `VERIFY` (on by default) is the control for the score itself.
 
 ## 4. npm packages and the build
 

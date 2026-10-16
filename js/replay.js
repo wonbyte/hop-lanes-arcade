@@ -25,6 +25,7 @@ function decodeReplay(code) {
     const keys = chars.split(',');
     if (keys.length !== 2 || !keys.every(k => /^[a-z]+$/.test(k))) return null;
     // the shape first, anchored and bounded: the scan below backtracks (slow) on long junk such as digits only
+    // nosemgrep: detect-redos -- bounded digits, each repeat ends in a letter: linear (measured 1 M chars in 15 ms; tools/fuzz-replay.mjs)
     if (!/^(\d{1,6}[ab][UDLR])*$/.test(ev)) return null;   // eslint-disable-line security/detect-unsafe-regex -- bounded digits, each repeat ends in a letter: linear (measured 1 M chars in 15 ms)
     const events = [];
     let t = 0;

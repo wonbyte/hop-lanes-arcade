@@ -1,0 +1,3 @@
+# ZAP rules for the API scan in CI (.github/workflows/ci.yml): <id>\t<IGNORE|WARN|FAIL>\t<name>. A rule not named here fails the scan.
+# Each IGNORE names its reason in docs/threat-model.md.
+10098	IGNORE	(Cross-Domain Misconfiguration: Access-Control-Allow-Origin * is the default; threat model 2: the lists are public and no cookie or credential is ever sent; ALLOW_ORIGIN narrows it)

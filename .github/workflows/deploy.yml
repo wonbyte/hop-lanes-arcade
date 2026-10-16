@@ -13,6 +13,7 @@ concurrency:
 
 jobs:
   test:
+    name: Tests
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -21,23 +22,26 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm test
 
   deploy:
+    name: Deploy
     needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      pages: write
-      id-token: write
+      pages: write      # upload the site to GitHub Pages
+      id-token: write   # the Pages deployment proves it comes from this workflow (OIDC)
       contents: read
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      page_url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -55,3 +59,36 @@ jobs:
           path: _site
       - id: deployment
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+
+  live:
+    name: The live site (headers, Slow 4G load)
+    needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: 24   # the Observatory needs Node 24
+          cache: npm
+      - run: npm ci
+      - name: MDN HTTP Observatory tests on the game's page (fails on a test docs/threat-model.md does not accept)
+        run: |
+          npm ci --prefix tools/observatory --no-audit --no-fund
+          NODE_EXTRA_CA_CERTS=tools/observatory/node_modules/node_extra_ca_certs_mozilla_bundle/ca_bundle/ca_intermediate_bundle.pem \
+            node tools/check-live-site.mjs --out live-headers.json
+      - run: npx playwright install --with-deps chromium
+      - name: Slow 4G load of the live page (docs/budgets.md), against tools/bench-budgets-live.json
+        run: node tools/device-bench.mjs --url "$SITE" --load-only --no-spector --check tools/bench-budgets-live.json > live-load.json
+        env:
+          SITE: ${{ needs.deploy.outputs.page_url }}
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: live
+          path: |
+            live-headers.json
+            live-load.json
+            bench/

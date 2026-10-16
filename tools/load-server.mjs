@@ -10,37 +10,22 @@ import fs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import autocannon from 'autocannon';
 import { encodeReplay } from '../js/replay.js';
 import { simulate } from '../js/sim.js';
-import { MODES, TRAITS, dailySeedFor } from '../js/rules.js';
+import { MODES, dailySeedFor } from '../js/rules.js';
+import { ANIMALS, DIRS, SERVER, dayAgo, flagArg, seededRng, today } from './lib.mjs';
 
-const HERE = path.dirname(fileURLToPath(import.meta.url));
-const SERVER = path.join(HERE, '../server/scores.mjs');
 const args = process.argv.slice(2);
-const flag = (name, def) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : def; };
+const flag = flagArg;
 const SEED = Number(flag('--seed', 7));
 const OUT = flag('--out', '');
 const TOKEN = flag('--token', process.env.POST_TOKEN || '');
 const SHORT = args.includes('--short');   // a quick check of the tool itself
 const RUN1_S = SHORT ? 5 : 60, RUN1_RATE = 200, RUN2_S = SHORT ? 5 : 30, RUN2_RATE = 50;
 
-// ---- seeded PRNG ----
-let rngState = SEED >>> 0;
-function rnd() {
-  rngState = (rngState + 0x6d2b79f5) >>> 0;
-  let t = rngState;
-  t = Math.imul(t ^ (t >>> 15), t | 1);
-  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-}
-const int = (lo, hi) => lo + Math.floor(rnd() * (hi - lo + 1));
-const pick = arr => arr[Math.floor(rnd() * arr.length)];
-const ANIMALS = [...new Set(['frog', ...Object.keys(TRAITS)])];
-const DIRS = [[0, 1], [0, -1], [-1, 0], [1, 0]];
-const today = () => new Date().toISOString().slice(0, 10);
-const dayAgo = n => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
+// ---- seeded PRNG (mulberry32, tools/lib.mjs) ----
+const { rnd, int, pick } = seededRng(SEED);
 
 // A valid POST body: a random run that simulate() plays to game over, with the score it plays to.
 let built = 0;

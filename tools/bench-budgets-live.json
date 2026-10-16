@@ -1,0 +1,5 @@
+{
+  "//": "The live site after each deploy (deploy.yml): the Slow 4G budget of docs/budgets.md, on GitHub Pages itself (HTTP/2, its gzip), with the CI runner's CPU throttled 4x.",
+  "loadMs": 4000,
+  "loadBytes": 300000
+}

@@ -58,12 +58,14 @@ const G = {
 // ---------- test hooks and seeds ----------
 // #debug exposes window.hopLanes; #seed-42 or #debug-seed-42 builds the same world every game
 const hashMatch = /^#(debug)?(?:-?seed-(\d+))?$/.exec(location.hash) || [];   // eslint-disable-line security/detect-unsafe-regex -- anchored, one optional group
-const replayMatch = /^#(debug-)?replay-([\w-]+)$/.exec(location.hash) || [];
-const DEBUG = hashMatch[1] === 'debug' || replayMatch[1] === 'debug-';
+// #debug-bench-replay-<code>: the device bench (docs/budgets.md): the replay plays again and again, and the frame times show
+const replayMatch = /^#(debug-|debug-bench-)?replay-([\w-]+)$/.exec(location.hash) || [];
+const BENCH = replayMatch[1] === 'debug-bench-';
+const DEBUG = hashMatch[1] === 'debug' || !!replayMatch[1];
 const REPLAY_CODE = replayMatch[2] || '';
 const FIXED_SEED = hashMatch[2] !== undefined ? Number(hashMatch[2]) >>> 0 : null;
 // optional online score list: <meta name="hop-lanes-scores" content="https://.../scores"> (see server/README.md)
-const meta = name => (document.querySelector('meta[name="' + name + '"]') || {}).content || '';
+const meta = name => /** @type {HTMLMetaElement | null} */ (document.querySelector('meta[name="' + name + '"]'))?.content || '';
 const SCORES_URL = meta('hop-lanes-scores');
 const SCORES_TOKEN = meta('hop-lanes-token');   // sent as X-Hop-Token when the server asks for one
 
@@ -76,4 +78,4 @@ function fail(why) {
   b.querySelector('p').textContent = why;
 }
 
-export { $, BIOME_ROWS, LAND_DIP, LOOKS, OVER_SLOW, OVER_SLOW_T, OVER_ZOOM, TUTORIAL_SEED, COUNTDOWN, DEBUG, FIRST_ROW, FIXED_SEED, G, GO_TIME, HOP_TIME, LANES_AHEAD, LANES_BEHIND, MODES, REPLAY_CODE, NIGHT_FULL, NIGHT_START, PLAY_HALF, PRIZE_COST, RESULTS_DELAY, SCORES_TOKEN, SCORES_URL, STEP, TAU, TRAIN_SPEED, WIPE_MS, WRAP, fail };
+export { $, BENCH, BIOME_ROWS, LAND_DIP, LOOKS, OVER_SLOW, OVER_SLOW_T, OVER_ZOOM, TUTORIAL_SEED, COUNTDOWN, DEBUG, FIRST_ROW, FIXED_SEED, G, GO_TIME, HOP_TIME, LANES_AHEAD, LANES_BEHIND, MODES, REPLAY_CODE, NIGHT_FULL, NIGHT_START, PLAY_HALF, PRIZE_COST, RESULTS_DELAY, SCORES_TOKEN, SCORES_URL, STEP, TAU, TRAIN_SPEED, WIPE_MS, WRAP, fail };

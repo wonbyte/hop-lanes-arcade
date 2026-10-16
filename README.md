@@ -112,7 +112,7 @@ Testing hooks: open `index.html#debug` for `window.hopLanes` and an FPS counter,
 
 The score server in [`server/`](server/README.md) is optional. Run it, then point the game at it with a
 `<meta name="hop-lanes-scores">` tag in `index.html`. The TOP 10 button then adds the all-time, today and this-week lists
-to the local one, and the results show the world best. Set `VERIFY=1` so every posted score is checked by replaying the run.
+to the local one, and the results show the world best. Every posted score is checked by replaying the run (`VERIFY=0` turns that off).
 
 ### Deploy
 

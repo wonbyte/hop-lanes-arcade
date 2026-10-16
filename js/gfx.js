@@ -31,9 +31,11 @@ renderer.domElement.setAttribute('role', 'img');
 renderer.domElement.setAttribute('aria-label', 'Game view: roads, rivers and train tracks to hop across');
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x74d3f2);
+const sceneSky = new THREE.Color(0x74d3f2);   // kept typed: scene.background could also be a texture
+scene.background = sceneSky;
 // a light haze toward the top of the screen, in the sky's color (set in resize, recolored in setNight)
-scene.fog = new THREE.Fog(0x74d3f2, 30, 60);
+const sceneFog = new THREE.Fog(0x74d3f2, 30, 60);
+scene.fog = sceneFog;
 const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100);
 const CAM_OFF = new THREE.Vector3(3.2, 12, 7.5);
 const focus = new THREE.Vector3();
@@ -66,11 +68,11 @@ function setNight(row, weather = '', sky = 0x74d3f2) {
   if (sky !== skyHex) { skyHex = sky; skyFrom.copy(DAY.sky); skyTo.setHex(sky); skyT = 0; }   // a new biome: the sky fades over
   if (skyT < 1) { skyT = Math.min(1, skyT + 0.02); DAY.sky.copy(skyFrom).lerp(skyTo, skyT); }
   glowU.value = Math.min(1, t * 1.5 + wetT * 0.4);   // headlights come on with the dusk, and a little in rain
-  scene.background.copy(DAY.sky).lerp(NIGHT.sky, t).lerp(weather === 'snow' ? SNOW_SKY : RAIN_SKY, wetT * (weather === 'snow' ? 0.5 : 0.6));
+  sceneSky.copy(DAY.sky).lerp(NIGHT.sky, t).lerp(weather === 'snow' ? SNOW_SKY : RAIN_SKY, wetT * (weather === 'snow' ? 0.5 : 0.6));
   sun.color.copy(DAY.sun).lerp(NIGHT.sun, t);
   hemi.intensity = (DAY.hemi + (NIGHT.hemi - DAY.hemi) * t) * (1 - wetT * 0.15);
   sun.intensity = (DAY.sunI + (NIGHT.sunI - DAY.sunI) * t) * (1 - wetT * 0.3);
-  scene.fog.color.copy(scene.background);
+  sceneFog.color.copy(sceneSky);
 }
 
 // The sun and the camera keep the same offsets from the focus point, so the visible ground is a fixed shape
@@ -92,7 +94,7 @@ function fitView(halfW, halfH) {
     corners.push(pt.copy(ray).addScaledVector(dir, t).clone());
     if (sy > 0 && h === 0) topDepth = t;
   }
-  scene.fog.near = topDepth - 6; scene.fog.far = topDepth + 14;   // about a third of the sky color at the top edge
+  sceneFog.near = topDepth - 6; sceneFog.far = topDepth + 14;   // about a third of the sky color at the top edge
   // the same corners seen from the sun: their bounds (plus room for shadows cast from just off screen)
   probe.position.copy(SUN_OFF); probe.lookAt(0, 0, 0); probe.updateMatrixWorld();
   const inv = probe.matrixWorldInverse;
@@ -128,7 +130,7 @@ function resize() {
   fitView(halfW, halfW / aspect);
   G.redraw = true;   // a paused game draws one new frame at the new size
 }
-if ('ResizeObserver' in window) {
+if (typeof ResizeObserver === 'function') {
   // the stage and the top bar both change size when fonts load or the phone turns
   const ro = new ResizeObserver(resize);
   ro.observe(stage); ro.observe(marquee);
@@ -140,10 +142,14 @@ resize();
 // Each step is judged after 2 s of play: a step that helped is kept and its rung is tried again (the pixel ratio
 // can go 1.5 -> 1.25 -> 1); a step that did not help is undone and the next rung is tried; a rung with nothing
 // left to lower is passed over. Once past every rung, the ladder stops (a phone capped at 30 fps keeps its quality).
-const perf = { ema: 1 / 60, t: 0, undo: null, before: 0, tried: 0 };   // tried: the rung being tried next
+// Each 2 s window is judged by its mean frame time. (It was a moving average that starts at 1/60 s: on a device that draws
+// 7 frames a second a window holds about 15 frames, the average was still climbing when a step was judged, so every
+// step looked like no gain and was undone; tools/device-bench.mjs showed the ladder ending where it began.)
+const perf = { sum: 0, n: 0, t: 0, undo: null, before: 0, tried: 0 };   // tried: the rung being tried next
+const holdFrameWatch = () => { perf.held = true; };   // tests: the drawn frames stop feeding the ladder
 function resetFrameWatch() {
   perf.undo = null;    // a step taken just before game over stays: it was never judged, and it is cheap
-  perf.ema = 1 / 60; perf.t = 0;
+  perf.sum = 0; perf.n = 0; perf.t = 0;
   perf.tried = 0;      // the next game climbs the ladder again from the first rung
 }
 function setRatio(r) { pixelRatio = r; renderer.setPixelRatio(r); resize(); try { localStorage.setItem(RATIO_KEY, String(r)); } catch (e) {} }
@@ -172,21 +178,27 @@ const LADDER = [
   }
 ];
 const BAD_FRAME = 0.022;   // slower than ~45 fps: lower quality
+// A frame longer than this is a tab switch or a stall, not the speed of the device. (It was 0.1 s: a device that drew
+// under 10 frames a second was never judged, so the slowest devices kept the highest quality; tools/device-bench.mjs.)
+const STALL = 0.5;
 // frameT: seconds since the previous drawn frame (only drawn frames count, so a skipped frame on a 120 Hz screen is not "fast")
-function watchFrameTime(frameT) {
+// fed: from the test hook (hopLanes.ladder.feed); after holdFrameWatch() only those count
+function watchFrameTime(frameT, fed = false) {
+  if (perf.held && !fed) return;
   if (perf.tried >= LADDER.length && !perf.undo) return;
-  if (G.state !== 'play' || frameT > 0.1) return;         // ignore menus and tab switches
-  perf.ema += (frameT - perf.ema) * 0.05;
+  if (G.state !== 'play' || frameT > STALL) return;       // ignore menus, tab switches and stalls
+  perf.sum += frameT; perf.n++;
   if ((perf.t += frameT) < 2) return;
-  perf.t = 0;
+  const mean = perf.sum / perf.n;
+  perf.t = 0; perf.sum = 0; perf.n = 0;
   if (perf.undo) {                                       // judge the last step
-    if (perf.ema > perf.before * 0.9) { perf.undo(); perf.tried++; }   // no real gain: put it back, move on to the next rung
+    if (mean > perf.before * 0.9) { perf.undo(); perf.tried++; }   // no real gain: put it back, move on to the next rung
     perf.undo = null;                                    // (a step that helped keeps its rung: it is tried again)
   }
-  if (perf.ema < BAD_FRAME) return;
+  if (mean < BAD_FRAME) return;
   // the first rung with something left to lower takes a step; a rung that returns null is passed over
-  while (perf.tried < LADDER.length && !(perf.undo = LADDER[perf.tried]())) perf.tried++;
-  perf.before = perf.ema;
+  while (perf.tried < LADDER.length && !(perf.undo = LADDER[perf.tried]())) perf.tried++;   // nosemgrep: unsafe-dynamic-method -- an index into a fixed array
+  perf.before = mean;
 }
 
 const getPixelRatio = () => pixelRatio;
@@ -202,6 +214,6 @@ function shadowCadence(idle) {
   if (!shadowSkip) renderer.shadowMap.needsUpdate = true;
 }
 // test hook: how the view was fitted
-const viewInfo = () => { const sc = sun.shadow.camera; return { shadowW: sc.right - sc.left, shadowH: sc.top - sc.bottom, fogNear: scene.fog.near, fogFar: scene.fog.far, mapSize: sun.shadow.mapSize.x, shadowHalf }; };
+const viewInfo = () => { const sc = sun.shadow.camera; return { shadowW: sc.right - sc.left, shadowH: sc.top - sc.bottom, fogNear: sceneFog.near, fogFar: sceneFog.far, mapSize: sun.shadow.mapSize.x, shadowHalf }; };
 
-export { BLINK_STEPS, CAM_OFF, SUN_OFF, ONE, camera, focus, getPixelRatio, marquee, reduceMotion, renderer, resetFrameWatch, resize, scene, setNight, setZoom, shadowCadence, stage, sun, touchQuery, viewInfo, viewSize, watchFrameTime };
+export { BLINK_STEPS, CAM_OFF, SUN_OFF, ONE, camera, focus, getPixelRatio, holdFrameWatch, marquee, reduceMotion, renderer, resetFrameWatch, resize, scene, setNight, setZoom, shadowCadence, stage, sun, touchQuery, viewInfo, viewSize, watchFrameTime };

@@ -31,7 +31,7 @@ function labelSettings() {
   $('buzz').textContent = t(buzzIsOn() ? 'VIBRATION: ON' : 'VIBRATION: OFF');
   $('motion').textContent = t(motionLess() ? 'MOTION: LESS' : 'MOTION: AUTO');
   labelLook();
-  $('settingsBox').querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+  $('settingsBox').querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(/** @type {HTMLElement} */ (el).dataset.i18n); });
   $('settings').textContent = t('SETTINGS');
   $('motionNote').textContent = t('MOTION CHANGES AFTER A RELOAD');
 }
@@ -60,7 +60,7 @@ document.addEventListener('hoplanes:lang', labelSettings);
 // ---------- pause menu ----------
 document.addEventListener('hoplanes:pause', () => { labelPause(); openDialog('pauseBox'); });   // screens.js pauseGame() shows the box
 function labelPause() {
-  $('pauseBox').querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+  $('pauseBox').querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(/** @type {HTMLElement} */ (el).dataset.i18n); });
   $('pauseMute').textContent = t(isMuted() ? 'SOUND: OFF' : 'SOUND: ON');
 }
 $('resumeBtn').addEventListener('click', () => { audio(); resumeGame(); });

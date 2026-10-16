@@ -6,8 +6,108 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   smoke:
+    name: Tests (rules, property, browser)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm test
+
+  lint:
+    name: Lint, types, module graph, copied code
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: ESLint (no warnings, complexity <= 20 in the game and the server) and unused exports
+        run: npm run lint
+      - name: TypeScript check of the JavaScript (no build)
+        run: npm run typecheck
+      - name: Module graph (no cycles, the rules stay pure)
+        run: npm run deps
+      - name: Copied code (jscpd)
+        run: npm run dupes
+
+  security:
+    name: Security scanners
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0   # gitleaks reads the whole history
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.x'
+          cache: false
+      - run: npm ci
+      - name: actionlint, zizmor, gitleaks, OSV-Scanner, npm audit, Semgrep, CSP Evaluator
+        run: ./tools/security-scan.sh
+        env:
+          GH_TOKEN: ${{ github.token }}   # zizmor's online audits (read only)
+
+  codeql:
+    name: CodeQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        with:
+          languages: javascript-typescript
+          build-mode: none
+          queries: security-extended
+          config: |
+            paths: [js, server, tools, index.html]
+            paths-ignore: [vendor, hop-lanes-standalone.html]
+      - uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        with:
+          output: codeql-sarif
+          upload: never
+      - name: Fail on any CodeQL result
+        run: |
+          node -e "
+            const fs = require('fs');
+            let n = 0;
+            for (const f of fs.readdirSync('codeql-sarif')) for (const run of JSON.parse(fs.readFileSync('codeql-sarif/' + f)).runs)
+              for (const r of run.results || []) { n++; const l = r.locations?.[0]?.physicalLocation; console.log(r.ruleId, (l?.artifactLocation?.uri || '?') + ':' + (l?.region?.startLine || '?'), r.message.text); }
+            console.log('CodeQL results: ' + n);
+            process.exit(n ? 1 : 0);"
+
+  zap:
+    name: OWASP ZAP API scan of the score server
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -16,27 +116,52 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
-          node-version: 20
-          cache: npm
-      - run: npm ci
-      - run: npx playwright install --with-deps chromium
-      - run: npm test
+          node-version: 22
+      - name: Start the score server (VERIFY on, the default; rate limits raised so the scan reaches every check)
+        run: |
+          RATE_MAX=1000000 GET_RATE_MAX=1000000 DATA_FILE="$RUNNER_TEMP/scores.json" PORT=8787 node server/scores.mjs > "$RUNNER_TEMP/server.log" 2>&1 &
+          for i in $(seq 30); do curl -sf http://127.0.0.1:8787/scores > /dev/null && break; sleep 1; done
+      - name: ZAP API scan (fails on any alert not in server/zap-rules.tsv)
+        run: |
+          mkdir -p zap && cp server/openapi.yaml server/zap-rules.tsv zap/ && chmod a+rw zap
+          docker run --rm --network host -v "$PWD/zap:/zap/wrk:rw" \
+            ghcr.io/zaproxy/zaproxy:2.17.0@sha256:5ccfff9a411743ab2615136a2edd7416bec9ce41572fa94e935df38c14adb2b6 \
+            zap-api-scan.py -t /zap/wrk/openapi.yaml -f openapi -O http://127.0.0.1:8787 -c zap-rules.tsv -r report.html -J report.json -z "-config connection.timeoutInSecs=30"
+      - name: The server stayed up and answered every request
+        if: always()
+        run: curl -sf http://127.0.0.1:8787/scores > /dev/null && ! grep -i "error" "$RUNNER_TEMP/server.log"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: zap-report
+          path: zap/report.*
 
-  lint:
+  bench:
+    name: Device bench (headless proxy)
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
       - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run lint
+      - run: npx playwright install --with-deps chromium
+      - name: The bench replay, Slow 4G load, one Spector frame, against tools/bench-budgets.json
+        run: node tools/device-bench.mjs --no-heap-files --check tools/bench-budgets.json > bench-summary.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: bench
+          path: |
+            bench/
+            bench-summary.json
 
   fuzz:
+    name: Fuzz the replay codec and the simulator
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -45,13 +170,14 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
       - name: Fuzz the replay codec and the simulator for two minutes
         run: node tools/fuzz-replay.mjs --seconds 120
 
   standalone-fresh:
+    name: Committed builds are fresh
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -60,7 +186,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
-          node-version: 20
+          node-version: 22
       - run: npm ci
       - name: Rebuild the Three.js bundle and the standalone file
         run: npm run build:three && ./tools/build-standalone.sh

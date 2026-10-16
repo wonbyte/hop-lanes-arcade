@@ -109,7 +109,7 @@ function t(key, args) {
 }
 // static texts: every element with data-i18n gets its text in the current language
 function applyLang() {
-  for (const el of document.querySelectorAll('[data-i18n]')) el.textContent = t(el.dataset.i18n);
+  for (const el of document.querySelectorAll('[data-i18n]')) el.textContent = t(/** @type {HTMLElement} */ (el).dataset.i18n);
   const b = document.getElementById('lang');
   if (b) b.textContent = lang.toUpperCase();
 }

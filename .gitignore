@@ -2,3 +2,5 @@ node_modules/
 test-results/
 reports/
 .stryker-tmp/
+bench/
+.scan-tools/

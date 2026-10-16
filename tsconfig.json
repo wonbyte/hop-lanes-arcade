@@ -1,0 +1,10 @@
+{
+  // npm run typecheck: the game's modules checked as JavaScript (no build step, no emitted files).
+  // Three.js is the global THREE (vendor/three.min.js), typed by @types/three (types/globals.d.ts).
+  "compilerOptions": {
+    "allowJs": true, "checkJs": true, "noEmit": true, "strict": false,
+    "target": "ES2022", "module": "ESNext", "moduleResolution": "Bundler",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"], "types": [], "skipLibCheck": true
+  },
+  "include": ["js/**/*.js", "types/globals.d.ts"]
+}

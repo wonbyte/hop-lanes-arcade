@@ -250,7 +250,7 @@ function createWorldGen(seed) {
       twisterChunk: twister ? chunk : prev.twisterChunk, floodChunk: flood ? chunk : prev.floodChunk,
       objs: [], trees: new Set(), coins: new Map(), secret: null, power: null
     };
-    ROW_BUILDERS[kind](rng, lane, seed);
+    ROW_BUILDERS[kind](rng, lane, seed);   // nosemgrep: unsafe-dynamic-method -- kind comes from nextLaneKind, a fixed set of lane names
     if (flood) lane.speed *= FLOOD_SPEED;   // no draw: the river's logs are where they always were, only faster
     if (r >= 1) connectRow(rng, lane, prev.stand);   // the draws come after the row's own, so rows before stay as they were
     if (twister) {   // after every other draw of the row (rows below 100 never get here)

@@ -6,7 +6,6 @@ import { feedReplay, makeRules, resetPlayer } from './sim.js';
 import { buzz } from './device.js';
 import { ONE, reduceMotion, scene } from './gfx.js';
 import { CHARACTERS, COLORS, eagleBoxes, makeCharacter } from './models.js';
-import { checkOver } from './screens.js';
 import { PICK_KEY, loadText, setBank } from './storage.js';
 import { cachedGeo, voxelMesh } from './voxel.js';
 import { Inst, blockColumn, dropSpinner, fxRand, lanes, unblockColumn } from './world.js';
@@ -169,9 +168,12 @@ function animateDeath(p, dt) {
   else if (p.cause === 'fall') m.position.y = Math.max(-1.6, m.position.y - dt * 5);   // down the chasm
   else if (p.cause === 'twister') { m.position.y += dt * 3; m.rotation.y += dt * 14; }   // spun up into the sky
 }
+// the end of a game: screens.js registers its results (checkOver) here, so the two modules need no cycle
+let overHook = () => {};
+const onGameOver = fn => { overHook = fn; };
 // what the rules do, shown: meshes, sounds, particles. Called by sim.js makeRules at the points where things happen.
 const playRules = makeRules({
-  G, lane: r => lanes.get(r), coins: addCoins, over: () => checkOver(), players,
+  G, lane: r => lanes.get(r), coins: addCoins, over: () => overHook(), players,
   fx: {
     near(p) {   // a car just missed: a whoosh, a nudge of the view and a flash of dust
       sfx.whoosh(); buzz(12);
@@ -278,4 +280,4 @@ function dressPlayer(p, dt) {
   if (air) p.blob.position.set(p.mesh.position.x, 0.02, p.mesh.position.z);
 }
 
-export { blobGeo, blobMat, bubbleGeo, bubbleMat, charOf, despawn, dressPlayer, restorePicks, giveShield, kill, players, queueMove, applyMoves, resetRules, spawn, tryMove, updateParts, updatePlayer };
+export { blobGeo, blobMat, bubbleGeo, bubbleMat, charOf, despawn, dressPlayer, onGameOver, restorePicks, giveShield, kill, players, queueMove, applyMoves, resetRules, spawn, tryMove, updateParts, updatePlayer };

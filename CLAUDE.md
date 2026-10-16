@@ -7,9 +7,14 @@ except the small offline build script. Keep it that way.
 
 | Command | What it does |
 |---|---|
-| `npm install` | Installs Playwright and Three.js (test and build only; the game itself has no dependencies) |
+| `npm install` | Installs Playwright, Three.js and the check tools (test, build and CI only; the game itself has no dependencies). Node 22 |
 | `npm test` | Syntax check, lint, the pure tests (`rules`, `replay`, `sim`, `gen`, instant), the property tests (`tests/property.test.mjs`: 2000 random replays through the codec and `simulate()`, then 3 random runs in the real page checked against `simulate()`), then the browser tests `smoke`, `layout`, `ui` and `scores-server` (~8 min) |
-| `npm run lint` | ESLint (recommended + security plugin, no unused variables) and `tools/check-exports.mjs` (no export that nothing imports) |
+| `npm run lint` | ESLint (recommended + security plugin, no unused variables, no warnings; in `js/` and `server/` a function has at most 20 paths, nesting 4, 5 parameters) and `tools/check-exports.mjs` (no export that nothing imports) |
+| `npm run typecheck` | TypeScript checks the JavaScript with no build (`tsconfig.json`: the game, DOM types, `THREE` from `@types/three` via `types/globals.d.ts`; `tsconfig.server.json`: the server). Zero errors |
+| `npm run deps` | dependency-cruiser (`.dependency-cruiser.cjs`): no import cycle, rules/gen/sim/replay/missions import only each other, the server imports only those, no orphan module |
+| `npm run dupes` | jscpd (`.jscpd.json`): no copied block of 50 tokens or more in `js/`, `server/`, `tools/`, `css/` |
+| `npm run scan` | `tools/security-scan.sh`: actionlint, zizmor, gitleaks (whole history), OSV-Scanner, npm audit, Semgrep, CSP Evaluator, all pinned (installed into `.scan-tools/`; needs go >= 1.27). A false positive is suppressed on its line with the reason (`nosemgrep: rule -- why`) |
+| `node tools/device-bench.mjs` | The budgets of `docs/budgets.md` measured with the bench replay: Slow 4G load (HTTP/2 and gzip, like Pages), a raw Chrome trace, a Spector.js capture of one frame, the frame times, heap snapshots. `--soak 30`, `--android` (a phone over USB), `--url` (the live site), `--check tools/bench-budgets*.json` (CI), `--print-url` (the bench link for any browser) |
 | `npm run test:property` | The property tests with 20 browser runs (`PROP_RUNS=n`, `PROP_SEED=n` to pick the cases; a failure prints its seed and keys) |
 | `npm run mutate` | Stryker mutation testing of the pure rules files (`stryker.config.json`, about an hour on 4 cores; `--mutate js/sim.js` for one file); the score says how well the tests pin the rules. Measured: rules 98.4%, sim 93.9%, gen 92.9% (survivors are equivalent mutants: float boundaries, unreachable guards). Keep each above 80% |
 | `npm run fuzz` | `tools/fuzz-replay.mjs`: random and mutated replay codes through `decodeReplay` and `simulate` with a time budget (CI runs 2 minutes of it) |
@@ -21,7 +26,11 @@ except the small offline build script. Keep it that way.
 | `npm run icons` | Regenerates `icons/` from the frog pixel art (needs Pillow) |
 | `npm run scores` | Starts the optional score server (`server/`) |
 
-Run `npm test` and `npm run build` before every commit (CI also lints and fuzzes). Commit the rebuilt `hop-lanes-standalone.html` with the change.
+Run `npm test` and `npm run build` before every commit (CI also lints, type-checks, scans, fuzzes and runs the bench). Commit the rebuilt `hop-lanes-standalone.html` with the change.
+
+`docs/budgets.md` holds the performance budgets per device and `docs/threat-model.md` every door with its accepted risk: a
+budget a device misses, or a risk not written there, is a bug. `docs/evidence.md` holds the measured before/after numbers
+and every scanner's result.
 
 ## Layout
 
@@ -33,7 +42,7 @@ Run `npm test` and `npm run build` before every commit (CI also lints and fuzzes
 | `js/main.js` | Entry. Checks `window.THREE`, then `import('./app.js')` |
 | `js/rules.js` | Pure rules with no DOM or Three.js: the tuning constants that decide a run (`STEP`, `TICKS_PER_S`, `MAX_RUN_TICKS`, `HOP_TIME`, `PLAY_HALF`, `CAM_CREEP*`, `LEAD_*`, `BOMB_TICKS`, `SPRING_HOP`...), seeded RNG, `dailySeedFor(day)` (the daily world's seed, shared with the score server), `nextLaneKind`, `hopTarget`, `hopTime` (mud), `isBombRow`, `MODES`, `TRAITS` (each animal's edge, `traitOf`), `HATS` (`hatFor(best)`), `isoDay` (the local YYYY-MM-DD), `isoWeek`, the daily streak (`streakAfter`). Tested by node directly: put logic here when it needs no scene |
 | `js/gen.js` | Pure: the world as data. `createWorldGen(seed).lane(r)`: kind (the chain of `nextLaneKind`), direction, speed, cars and logs (`x0`), trees, pads, coins, power-ups, the train schedule (`railStep`), plus the looks drawn from the same rng. `trafficX` (where a car or log is at world time w). `connectRow` makes sure every row gives a way forward (`standColumns` / `standGroups`: each group of columns a player can stand on in the row before gets a straight hop: a pad over a pad, a plank, a felled tree); its draws come after the row's own. The rng draw order here is the world: never reorder a draw |
-| `js/sim.js` | Pure: the rules of a run. `makeRules(W)` (hops, logs, hazards, shield, eagle, near misses, the traits, tag mode, the leader slowdown `p.lead`, spring hops `p.hop.high`, portals, cliff tiles, the twister, the versus bomb; players.js calls it with effect hooks), `createSim(replay)` (stepping, countdown included), `simulate(replay)` (to game over: score, ticks, row, cause, coins, `winner` decided the moment the run ends) and `winnerOf(players, mode)`. The score server runs it (`VERIFY=1`) |
+| `js/sim.js` | Pure: the rules of a run. `makeRules(W)` (hops, logs, hazards, shield, eagle, near misses, the traits, tag mode, the leader slowdown `p.lead`, spring hops `p.hop.high`, portals, cliff tiles, the twister, the versus bomb; players.js calls it with effect hooks), `createSim(replay)` (stepping, countdown included), `simulate(replay)` (to game over: score, ticks, row, cause, coins, `winner` decided the moment the run ends) and `winnerOf(players, mode)`. The score server runs it (`VERIFY`, on by default) |
 | `js/missions.js` | Pure: the mission list and the done/advance logic, plus the daily missions (`DAILY`, `dailyMissions(day)`: three a day seeded from the date, paid once, `hoplanes.dailydone`) (`tests/replay.test.mjs`) |
 | `js/replay.js` | Pure: `encodeReplay` / `decodeReplay` for `#replay-<code>` links |
 | `js/i18n.js` | `t(key, args)`: English keys, Spanish and German tables; `data-i18n` for static markup; `#lang` cycles |
@@ -52,12 +61,15 @@ Run `npm test` and `npm run build` before every commit (CI also lints and fuzzes
 | `js/input.js` | Keyboard, on-screen buttons, taps and swipes on the field, `pollGamepads()`. Side-effect only (imported by `app.js` for that) |
 | `js/app.js` | The frame loop (fixed `STEP` of 1/120 s), the `window.hopLanes` test hook, replay boot, the first-run guided hints (`placeHint`, `hintText`, `hoplanes.hint`), the near-miss view nudge (`G.shakeT`), the landing dip (`G.landT`), the game-over show (`overFx`: slow motion `G.slowT`, zoom, the view slides to `G.lastDead`), the biome banner |
 | `tools/build-standalone.sh` | Inlines CSS, the modules (in `tools/bundle-order.json` order, minified with esbuild), `vendor/three.min.js` and fonts into one offline HTML with a hash-based CSP |
-| `.github/workflows/ci.yml` | Runs the tests and the stale-build checks on every push and pull request |
-| `.github/workflows/deploy.yml` | Deploys `main` to GitHub Pages after the tests pass (Settings → Pages → Source: GitHub Actions, once) |
+| `.github/workflows/ci.yml` | On every push and pull request (Node 22): the tests, lint + types + module graph + copies, the security scanners, CodeQL (security-extended, fails on any result), an OWASP ZAP API scan of the score server (`server/openapi.yaml`, accepted alerts in `server/zap-rules.tsv`), the device bench against `tools/bench-budgets.json`, the fuzzer, the stale-build checks |
+| `.github/workflows/deploy.yml` | Deploys `main` to GitHub Pages after the tests pass (Settings → Pages → Source: GitHub Actions, once), then checks the live page: the MDN HTTP Observatory (`tools/check-live-site.mjs`, its own lockfile in `tools/observatory/`) and the Slow 4G load (`tools/bench-budgets-live.json`) |
+| `.github/workflows/soak.yml` | Nightly: 30 minutes of the bench replay in one page against `tools/bench-budgets-soak.json` (the game's objects, GPU objects, frame times must not drift) |
+| `tools/device-bench.mjs` | The device bench (see Commands). `tools/make-bench-replay.mjs` made `tests/bench-replay.txt` by a search over `createSim` (never edit the file by hand: `tests/replay.test.mjs` pins it and the link in `docs/budgets.md`) |
+| `tools/lib.mjs` | Helpers the fuzzers and the load test share (the flag parser, the game's seeded rng, the animals) |
 | `tests/serve.mjs` | Tiny static server for the tests: browsers refuse ES modules from `file://` |
 | `tests/property.test.mjs` | Property tests with fast-check: the codec round trip, a deterministic, bounded, total `simulate()` on random replays, a cut replay, and random play in the real page against `simulate()` (part 2 needs the browser) |
 | `tests/browser.mjs` | The shared browser-test helpers: `launch`, `open(browser, url, opts)`, `waitState`, and the waits on the game's own clock (`settle`, `waitTicks`, `hopKey`): never a fixed sleep |
-| `server/` | Optional dependency-free score server; wired by `<meta name="hop-lanes-scores">` (and `hop-lanes-token` for its `POST_TOKEN`). Set `TRUST_PROXY=1` behind a proxy (only a real IP in `X-Forwarded-For` is trusted). `VERIFY_BUDGET_MS` caps the replay CPU per minute (503 past it), `GET_RATE_MAX` throttles reads; the top lists are cached (at most `GET_CACHE_MAX` keys) until the next post; a request target the URL parser rejects is a 400. UI test 6b runs it against the real page (`tests/serve.mjs` overrides `/index.html` with the meta and `connect-src` filled in) |
+| `server/` | Optional dependency-free score server (every posted score is replayed unless `VERIFY=0`; every reply sends `nosniff` and a CSP that allows nothing); wired by `<meta name="hop-lanes-scores">` (and `hop-lanes-token` for its `POST_TOKEN`). Set `TRUST_PROXY=1` behind a proxy (only a real IP in `X-Forwarded-For` is trusted). `VERIFY_BUDGET_MS` caps the replay CPU per minute (503 past it), `GET_RATE_MAX` throttles reads; the top lists are cached (at most `GET_CACHE_MAX` keys) until the next post; a request target the URL parser rejects is a 400. UI test 6b runs it against the real page (`tests/serve.mjs` overrides `/index.html` with the meta and `connect-src` filled in) |
 
 ## Conventions
 
@@ -84,11 +96,21 @@ Run `npm test` and `npm run build` before every commit (CI also lints and fuzzes
   A module with only side effects must be imported explicitly in `js/app.js`.
 - No inline `style=` or `on*=` attributes in `index.html` (CSP). Set styles through classes or `el.style`.
 - Text sizes: nothing below 8px; buttons at least 32x32 (the layout test enforces this).
+- A function in `js/` or `server/` that grows past 20 paths is split into named steps (ESLint fails it). Do it as in
+  `sim.js` `land()`: the same checks in the same order, helpers that say when the caller returns at once.
+- Two modules never import each other (`npm run deps`): pass a hook instead (players.js `onGameOver`, set by screens.js).
+- Every GitHub Action is pinned to a full commit SHA (zizmor checks it); a `${{ }}` value reaches a `run:` line only
+  through `env:`.
 - Characters are original (Frog, Fox, Bunny, Cat, Robot). Do not copy characters from existing games.
 - Keep the game playable from `hop-lanes-standalone.html` with no network: the build strips every outbound link and tag.
 
 ## Testing hooks
 
+- `#debug-bench-replay-<code>`: the device bench in any browser: the replay plays again and again (`hopLanes.playReplay`),
+  each run's frame times go to `hopLanes.benchRuns` and the corner. In any `#debug` page `hopLanes.frames` / `work` are
+  the drawn-frame intervals and script times of the current play, `hopLanes.frameSummary` their p50 / p95 / worst and the
+  slowest frames with their row. `hopLanes.ladder.hold()` stops the drawn frames feeding the quality ladder (the ladder
+  tests feed it by hand).
 - `index.html#debug` exposes `window.hopLanes` (`players`, `state`, `camRow` (settable: jump the view to a far row), `seed`, `bank`, `muted`, `drawCalls`, `view` (shadow box, haze, map size), `run` (mission stats), `record` (this run's hops), `replay`, `weather`, `laneCoins(r)`, `laneKinds()`, `kill`, `giveShield`) and shows `#fps` (drawn frames per second, draw calls, pixel ratio).
 - `#replay-<code>` (or `#debug-replay-<code>`) plays a run back; smoke test 5c runs into traffic after waiting on the title, then replays it on a phone-sized screen and checks it ends on the same tick, row and cause. 5d checks the shield and the water rule (`hopLanes.kill`, `hopLanes.giveShield`).
 - `#seed-42` or `#debug-seed-42` makes the world deterministic.
@@ -116,6 +138,8 @@ Run `npm test` and `npm run build` before every commit (CI also lints and fuzzes
 - Vehicle and character models face `-x` / `-z`; rotations were inverted once. Check the screenshot, not the math.
 - The draw loop caps at 60 draws/s on fast screens and skips every other frame on the menus unless the screen is already at 30 Hz (iOS Low Power Mode); judge performance from drawn frames only (`watchFrameTime`).
 - The quality ladder must not change `renderer.shadowMap.type`: that rebuilds every shader mid-game (a visible hitch).
+  It judges each 2 s window by its mean frame time and counts frames up to 0.5 s (a longer one is a stall): a device that
+  draws under 10 frames a second must still step down (the bench showed it never did).
 - Vehicles, logs, trains, coins, power-ups and particles are instanced (`Inst` in `world.js`): one draw call per model.
   `inst.move()` writes only the position; `showLane()` hides a far lane's instances; `drop()` moves the last instance
   into the freed slot (slots stay packed), so never use a handle after dropping it. The paint color is a per-instance

@@ -16,9 +16,12 @@ const SERVER = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../se
 let base, dir;
 const procs = [];
 
-async function start(extraEnv) {
+// VERIFY is on by default; the tests turn it off unless they ask for it (VERIFY: null leaves it unset: the default)
+async function start(extraEnv = {}) {
   const port = await freePort();
-  const p = spawn(process.execPath, [SERVER], { env: { ...process.env, PORT: String(port), DATA_FILE: path.join(dir, `s${port}.json`), ...extraEnv }, stdio: ['ignore', 'pipe', 'inherit'] });
+  const env = { ...process.env, PORT: String(port), DATA_FILE: path.join(dir, `s${port}.json`), VERIFY: '0', ...extraEnv };
+  if (env.VERIFY === null) delete env.VERIFY;
+  const p = spawn(process.execPath, [SERVER], { env, stdio: ['ignore', 'pipe', 'inherit'] });
   procs.push(p);
   await new Promise((res, rej) => { p.stdout.once('data', res); p.once('error', rej); });
   return { port, base: `http://127.0.0.1:${port}`, file: path.join(dir, `s${port}.json`) };
@@ -218,6 +221,22 @@ test('without VERIFY a replay is checked for shape, stored and returned', async 
   assert.equal(top.find(e => e.name === 'Rex').replay, CLASSIC_RUN);
   assert.equal(top.find(e => e.name === 'Pat').replay, null);
   assert.ok(top.every(e => e.replay === null || typeof e.replay === 'string'));
+});
+
+test('every reply says it is not a page: nosniff and a CSP that allows nothing', async () => {
+  for (const r of [await fetch(base + '/scores'), await fetch(base + '/nope'), await fetch(base + '/scores', { method: 'OPTIONS' })]) {
+    assert.equal(r.headers.get('x-content-type-options'), 'nosniff');
+    assert.equal(r.headers.get('content-security-policy'), "default-src 'none'; frame-ancestors 'none'");
+  }
+});
+
+test('VERIFY is on by default: a score without its replay, or with a replay it does not play to, is refused', async () => {
+  const srv = await start({ RATE_MAX: '1000', VERIFY: null });
+  const sp = b => fetch(srv.base + '/scores', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
+  assert.equal((await sp({ name: 'Eve', score: 4000 })).status, 400, 'a bare claim');
+  assert.equal((await sp({ name: 'Eve', score: 18, mode: 'classic', replay: CLASSIC_RUN })).status, 400, 'more than the run reached');
+  assert.equal((await sp({ name: 'Ann', score: 17, mode: 'classic', replay: CLASSIC_RUN })).status, 200, 'the run as it played');
+  assert.deepEqual((await (await fetch(srv.base + '/scores')).json()).top.map(e => [e.name, e.score]), [['Ann', 17]]);
 });
 
 test('VERIFY: the verified replay is stored and returned', async () => {

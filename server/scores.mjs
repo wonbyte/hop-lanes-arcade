@@ -2,7 +2,7 @@
 // Run: node server/scores.mjs
 // Env: PORT (8787), DATA_FILE (./scores.json next to this script), ALLOW_ORIGIN ('*'), POST_TOKEN ('' = none), MAX_SCORE (5000), RATE_MAX (10),
 //      TRUST_PROXY ('1' when a reverse proxy sits in front: the rate limit then keys on the client in X-Forwarded-For),
-//      VERIFY ('1': every POST must carry its replay, and the score must be what the replay plays to; see README.md), VERIFY_MS (300),
+//      VERIFY (on unless '0': every POST must carry its replay, and the score must be what the replay plays to; see README.md), VERIFY_MS (300),
 //      VERIFY_BUDGET_MS (20000: simulation wall time allowed per minute over all clients; past it POSTs get 503), GET_RATE_MAX (60).
 import http from 'node:http';
 import crypto from 'node:crypto';
@@ -20,7 +20,7 @@ const DATA_FILE = process.env.DATA_FILE || path.join(HERE, 'scores.json');
 const ALLOW_ORIGIN = process.env.ALLOW_ORIGIN || '*';
 const POST_TOKEN = process.env.POST_TOKEN || ''; // when set, POSTs must send it as X-Hop-Token (an anti-bot gate, not a secret: the page ships it)
 const TRUST_PROXY = process.env.TRUST_PROXY === '1';
-const VERIFY = process.env.VERIFY === '1';
+const VERIFY = process.env.VERIFY !== '0';   // on by default: without it a posted score is only a claim (docs/threat-model.md)
 const SAVE_DELAY_MS = Number(process.env.SAVE_DELAY_MS ?? 1000); // POSTs are written to disk at most this often (0 = at once)
 
 const MAX_PER_BUCKET = 200;    // entries kept per bucket (mode|day), so a flood in one bucket cannot evict the rest
@@ -261,28 +261,21 @@ function budgetLeft() {
 function spend(ms) { simSpent.push({ t: Date.now(), ms }); }
 
 // ---- http ----------------------------------------------------------------
+const CORS = {
+  'Access-Control-Allow-Origin': ALLOW_ORIGIN,
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, X-Hop-Token',
+  'Access-Control-Max-Age': '86400',
+};
+// a JSON reply is never a page: the browser must not sniff it as one, run anything in it, or frame it
+const SAFE = { 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'" };
+const JSON_HEADERS = { 'Content-Type': 'application/json; charset=utf-8', ...SAFE, ...CORS, ...(ALLOW_ORIGIN !== '*' ? { Vary: 'Origin' } : {}) };
 function send(res, status, body, extra = {}) {
-  res.writeHead(status, {
-    ...(status === 400 ? { Connection: 'close' } : {}),
-    ...extra,
-    'Content-Type': 'application/json; charset=utf-8',
-    'Access-Control-Allow-Origin': ALLOW_ORIGIN,
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, X-Hop-Token',
-    'Access-Control-Max-Age': '86400',
-    ...(ALLOW_ORIGIN !== '*' ? { Vary: 'Origin' } : {}),
-  });
+  res.writeHead(status, { ...(status === 400 ? { Connection: 'close' } : {}), ...extra, ...JSON_HEADERS });
   res.end(JSON.stringify(body));
 }
 function sendText(res, status, text) { // an already serialized JSON body
-  res.writeHead(status, {
-    'Content-Type': 'application/json; charset=utf-8',
-    'Access-Control-Allow-Origin': ALLOW_ORIGIN,
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, X-Hop-Token',
-    'Access-Control-Max-Age': '86400',
-    ...(ALLOW_ORIGIN !== '*' ? { Vary: 'Origin' } : {}),
-  });
+  res.writeHead(status, JSON_HEADERS);
   res.end(text);
 }
 
@@ -304,30 +297,30 @@ function readBody(req) {
   });
 }
 
+// The fields of a POST body. Each returns the clean value, or BAD.
+const BAD = Symbol('bad');
+function nameOf(v) {
+  if (typeof v !== 'string') return BAD;
+  const name = v.trim();
+  return name.length >= 1 && name.length <= 16 && /^[A-Za-z0-9 ]+$/.test(name) ? name : BAD;
+}
+const scoreOf = v => (Number.isInteger(v) && v >= 0 && v <= MAX_SCORE ? v : BAD);
+function dayOfPost(v) {
+  if (v === undefined) return null;
+  if (typeof v !== 'string' || !DAY_RE.test(v)) return BAD;
+  return dayNum(v) <= dayNum(latestDay()) ? v : BAD;   // impossible or far-future date
+}
+const modeOf = v => (v === undefined ? 'classic' : MODES.includes(v) ? v : BAD);
+// the replay link code of the run (screens.js): checked with VERIFY, else only its shape; stored either way
+function replayOf(v) {
+  if (v === undefined) return null;
+  if (typeof v !== 'string' || v.length > MAX_REPLAY || !/^[\w-]+$/.test(v)) return BAD;
+  return !VERIFY && !decodeReplay(v) ? null : v;   // not a replay: do not store the junk
+}
 function validate(obj) {
   if (!obj || typeof obj !== 'object') return null;
-  if (typeof obj.name !== 'string') return null;
-  const name = obj.name.trim();
-  if (name.length < 1 || name.length > 16 || !/^[A-Za-z0-9 ]+$/.test(name)) return null;
-  const score = obj.score;
-  if (!Number.isInteger(score) || score < 0 || score > MAX_SCORE) return null;
-  let day = null, mode = 'classic';
-  if (obj.day !== undefined) {
-    if (typeof obj.day !== 'string' || !DAY_RE.test(obj.day)) return null;
-    if (!(dayNum(obj.day) <= dayNum(latestDay()))) return null; // impossible or far-future date
-    day = obj.day;
-  }
-  if (obj.mode !== undefined) {
-    if (!MODES.includes(obj.mode)) return null;
-    mode = obj.mode;
-  }
-  let replay = null;
-  if (obj.replay !== undefined) {   // the replay link code of the run (screens.js): checked with VERIFY, else only its shape; stored either way
-    if (typeof obj.replay !== 'string' || obj.replay.length > MAX_REPLAY || !/^[\w-]+$/.test(obj.replay)) return null;
-    replay = obj.replay;
-  }
-  if (replay && !VERIFY && !decodeReplay(replay)) replay = null; // not a replay: do not store the junk
-  return { name, score, day, mode, replay };
+  const entry = { name: nameOf(obj.name), score: scoreOf(obj.score), day: dayOfPost(obj.day), mode: modeOf(obj.mode), replay: replayOf(obj.replay) };
+  return Object.values(entry).includes(BAD) ? null : entry;
 }
 
 // VERIFY: play the posted run again (sim.js, the same rules as the game) and accept only the score it plays to.
@@ -343,42 +336,41 @@ function replayOk(entry) {
   return !!run && run.over && run.score === entry.score;
 }
 
+// GET /scores?day=YYYY-MM-DD | week=YYYY-Www, &mode=: the top 10, from the cache
+function getScores(req, res, url) {
+  const day = url.searchParams.get('day'), mode = url.searchParams.get('mode'), week = url.searchParams.get('week');
+  if (day !== null && !DAY_RE.test(day)) return send(res, 400, { error: 'invalid day' });
+  if (week !== null && !WEEK_RE.test(week)) return send(res, 400, { error: 'invalid week' });
+  if (day !== null && week !== null) return send(res, 400, { error: 'day and week cannot be combined' });
+  if (mode !== null && !MODES.includes(mode)) return send(res, 400, { error: 'invalid mode' });
+  if (limited('get:' + clientKey(req), GET_RATE_MAX)) return send(res, 429, { error: 'rate limited' }, { 'Retry-After': '60' });
+  sendText(res, 200, topJson(day, mode, week));
+}
+// POST /scores { name, score, day?, mode?, replay? }: token, rate limit, shape, then (VERIFY) the replay
+async function postScore(req, res) {
+  if (POST_TOKEN && !tokenOk(req.headers['x-hop-token'])) return send(res, 401, { error: 'bad token' });
+  if (limited(clientKey(req))) return send(res, 429, { error: 'rate limited' });
+  let parsed;
+  try { parsed = JSON.parse(await readBody(req)); } catch { return send(res, 400, { error: 'bad json' }); }
+  const entry = validate(parsed);
+  if (!entry) return send(res, 400, { error: 'invalid name, score, day or mode' });
+  if (VERIFY) {
+    const wait = budgetLeft();
+    if (wait) return send(res, 503, { error: 'busy' }, { 'Retry-After': String(wait) });
+    if (!replayOk(entry)) return send(res, 400, { error: 'replay mismatch' });
+  }
+  add(entry.name, entry.score, entry.day, entry.mode, entry.replay);
+  send(res, 200, { top: top(null, null, null, false) });
+}
+const ROUTES = { GET: getScores, POST: postScore, OPTIONS: (req, res) => { res.writeHead(204, { ...SAFE, ...CORS }); res.end(); } };
+
 const server = http.createServer(async (req, res) => {
   try {
     let url;
     try { url = new URL(req.url, 'http://x'); } catch { return send(res, 400, { error: 'bad url' }); } // an absolute-form target the parser rejects (http://[::1/x) is the client's fault, not a 500
-    if (url.pathname !== '/scores') return send(res, 404, { error: 'not found' });
-    if (req.method === 'OPTIONS') { res.writeHead(204, {
-      'Access-Control-Allow-Origin': ALLOW_ORIGIN,
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, X-Hop-Token',
-      'Access-Control-Max-Age': '86400',
-    }); return res.end(); }
-    if (req.method === 'GET') {
-      const day = url.searchParams.get('day'), mode = url.searchParams.get('mode'), week = url.searchParams.get('week');
-      if (day !== null && !DAY_RE.test(day)) return send(res, 400, { error: 'invalid day' });
-      if (week !== null && !WEEK_RE.test(week)) return send(res, 400, { error: 'invalid week' });
-      if (day !== null && week !== null) return send(res, 400, { error: 'day and week cannot be combined' });
-      if (mode !== null && !MODES.includes(mode)) return send(res, 400, { error: 'invalid mode' });
-      if (limited('get:' + clientKey(req), GET_RATE_MAX)) return send(res, 429, { error: 'rate limited' }, { 'Retry-After': '60' });
-      return sendText(res, 200, topJson(day, mode, week));
-    }
-    if (req.method === 'POST') {
-      if (POST_TOKEN && !tokenOk(req.headers['x-hop-token'])) return send(res, 401, { error: 'bad token' });
-      if (limited(clientKey(req))) return send(res, 429, { error: 'rate limited' });
-      let parsed;
-      try { parsed = JSON.parse(await readBody(req)); } catch { return send(res, 400, { error: 'bad json' }); }
-      const entry = validate(parsed);
-      if (!entry) return send(res, 400, { error: 'invalid name, score, day or mode' });
-      if (VERIFY) {
-        const wait = budgetLeft();
-        if (wait) return send(res, 503, { error: 'busy' }, { 'Retry-After': String(wait) });
-        if (!replayOk(entry)) return send(res, 400, { error: 'replay mismatch' });
-      }
-      add(entry.name, entry.score, entry.day, entry.mode, entry.replay);
-      return send(res, 200, { top: top(null, null, null, false) });
-    }
-    send(res, 404, { error: 'not found' });
+    const route = url.pathname === '/scores' && Object.hasOwn(ROUTES, req.method) ? ROUTES[req.method] : null;
+    if (!route) return send(res, 404, { error: 'not found' });
+    await route(req, res, url);
   } catch (err) {
     if (!res.headersSent) send(res, err.status || 500, { error: err.status ? 'bad request' : 'server error' });
   }
@@ -390,4 +382,7 @@ server.maxRequestsPerSocket = 100;   // then the keep-alive connection is closed
 
 // Start only when run as a script (node server/scores.mjs), so tests can import isoWeek.
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url))
-server.listen(PORT, () => console.log(`hop-lanes scores on :${server.address().port} (data: ${DATA_FILE})${VERIFY ? ' (verifying replays)' : ''}`));
+server.listen(PORT, () => {
+  const addr = /** @type {import('node:net').AddressInfo} */ (server.address());
+  console.log(`hop-lanes scores on :${addr.port} (data: ${DATA_FILE})${VERIFY ? ' (verifying replays)' : ''}`);
+});

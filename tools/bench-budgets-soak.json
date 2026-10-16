@@ -1,0 +1,6 @@
+{
+  "//": "The nightly soak (30 minutes, .github/workflows/soak.yml). objectGrowthPct is the leak budget: the heap without V8's compiled code (docs/budgets.md, the note under the table). heapGrowthPct is left out on purpose: the compiled code grows while V8 optimizes, and the summary still reports it.",
+  "objectGrowthPct": 5,
+  "gpuDriftPct": 5,
+  "p95DriftPct": 10
+}

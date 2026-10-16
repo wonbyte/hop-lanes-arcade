@@ -155,7 +155,7 @@ function isoWeek(day) {
   if (d.getUTCMonth() !== +m[2] - 1 || d.getUTCDate() !== +m[3]) return null;
   d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));   // the Thursday of this week decides the year
   const y = d.getUTCFullYear();
-  const week = Math.ceil(((d - Date.UTC(y, 0, 1)) / 86400000 + 1) / 7);
+  const week = Math.ceil(((d.getTime() - Date.UTC(y, 0, 1)) / 86400000 + 1) / 7);
   return y + '-W' + String(week).padStart(2, '0');
 }
 // a local calendar day as YYYY-MM-DD, built by hand (locale date formats are not stable across browsers)

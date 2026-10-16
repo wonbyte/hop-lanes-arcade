@@ -1,0 +1,60 @@
+# The score server's HTTP API (server/scores.mjs; server/README.md has the rules). CI's OWASP ZAP API scan reads it.
+openapi: 3.0.3
+info:
+  title: Hop Lanes scores
+  version: 1.0.0
+servers:
+  - url: http://127.0.0.1:8787
+paths:
+  /scores:
+    get:
+      summary: The top 10, all time or of one day or ISO week, of all modes or one
+      parameters:
+        - { name: day, in: query, required: false, schema: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$', example: '2026-10-16' } }
+        - { name: week, in: query, required: false, schema: { type: string, pattern: '^\d{4}-W\d{2}$', example: '2026-W42' } }
+        - { name: mode, in: query, required: false, schema: { type: string, enum: [classic, race, coinwar, tag, daily, room] } }
+      responses:
+        '200': { description: The list, content: { application/json: { schema: { $ref: '#/components/schemas/Top' } } } }
+        '400': { description: A bad query }
+        '429': { description: Too many requests from this address }
+    post:
+      summary: Post a score; with VERIFY (the default) the replay must play to it
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, score]
+              properties:
+                name: { type: string, pattern: '^[A-Za-z0-9 ]{1,16}$', example: 'FROG AB12' }
+                score: { type: integer, minimum: 0, maximum: 5000, example: 17 }
+                day: { type: string, example: '2026-10-16' }
+                mode: { type: string, enum: [classic, race, coinwar, tag, daily, room] }
+                replay: { type: string, maxLength: 32768, example: 'MnwxMjN8Y2xhc3NpY3xmcm9nLGZveHwxfDB8MHw' }
+      responses:
+        '200': { description: Accepted, content: { application/json: { schema: { $ref: '#/components/schemas/Top' } } } }
+        '400': { description: A bad body, or the replay does not play to the score }
+        '401': { description: A wrong X-Hop-Token (when the server has a POST_TOKEN) }
+        '429': { description: Too many posts from this address }
+        '503': { description: The replay check budget is spent; Retry-After says when to come back }
+    options:
+      summary: CORS preflight
+      responses:
+        '204': { description: The CORS headers }
+components:
+  schemas:
+    Top:
+      type: object
+      properties:
+        top:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              score: { type: integer }
+              at: { type: string }
+              day: { type: string, nullable: true }
+              mode: { type: string }
+              replay: { type: string, nullable: true }

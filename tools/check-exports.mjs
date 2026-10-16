@@ -15,7 +15,7 @@ for (const f of files) {
   const m = /export \{([^}]*)\}/.exec(src[f]); if (!m) continue;
   for (const n of m[1].split(',').map(s => s.trim()).filter(Boolean)) {
     if (n === '$') continue;
-    const re = new RegExp('\\b' + n + '\\b');
+    const re = new RegExp('\\b' + n + '\\b');   // eslint-disable-line security/detect-non-literal-regexp -- n is an exported identifier (word characters and $)
     if (![...files, ...others].some(g => g !== f && re.test(src[g]))) { console.log(`${f}: export "${n}" is used by no other file`); bad++; }
   }
 }

@@ -301,7 +301,7 @@ function addLane(r) {
   lane.group = new THREE.Group(); lane.shown = true;
   lane.group.matrixAutoUpdate = false;   // never moves (identity): Three.js skips it in the per-draw matrix walk
   const ground = [];
-  LANE_BUILDERS[kind](lane, { r, z: -r, ground, B: biomeAt(r) });
+  LANE_BUILDERS[kind](lane, { r, z: -r, ground, B: biomeAt(r) });   // nosemgrep: unsafe-dynamic-method -- kind is a gen.js lane kind (a fixed set)
   placeCoins(lane, -r);
   // unique per lane, disposed with the lane; flat ground does not cast shadows, trees and the rail pole do
   lane.ground = voxelMesh(mergeBoxes(ground), kind === 'grass' || kind === 'ice' ? lane.trees.size > 0 : kind === 'rail');

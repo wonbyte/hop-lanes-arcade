@@ -1,0 +1,8 @@
+{
+  "name": "hop-lanes-observatory",
+  "private": true,
+  "description": "The MDN HTTP Observatory for tools/check-live-site.mjs, with its own lockfile (deploy.yml runs npm ci here). Kept out of the main package: its install script downloads a CA bundle.",
+  "dependencies": {
+    "@mdn/mdn-http-observatory": "1.7.1"
+  }
+}

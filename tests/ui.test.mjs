@@ -299,13 +299,13 @@ test('6b. a finished game posts its score (today, mode) and the world best shows
     assert.equal(top[0].mode, 'classic');
     const d = new Date(), today = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
     assert.equal(top[0].day, today, 'the day is a plain YYYY-MM-DD');
-    assert.match(await page.locator('#world').textContent(), new RegExp('WORLD BEST ' + score + ' · FROG'));
+    assert.match(await page.locator('#world').textContent(), new RegExp('WORLD BEST ' + score + ' · FROG')); // eslint-disable-line security/detect-non-literal-regexp -- the score is a number
     // back on the title the TOP 10 button lists the same score
     await page.keyboard.press('Space');
     await waitState(page, 'attract');
     await page.click('#board');
     await page.waitForFunction(() => document.querySelectorAll('#boardList li').length === 1, null, { timeout: T });
-    assert.match(await page.locator('#boardList li').textContent(), new RegExp('FROG [A-Z2-9]{4}' + score));
+    assert.match(await page.locator('#boardList li').textContent(), new RegExp('FROG [A-Z2-9]{4}' + score)); // eslint-disable-line security/detect-non-literal-regexp -- the score is a number
     await page.click('#closeBoard');
     assert.equal(await page.locator('#boardBox').isHidden(), true);
     assert.deepEqual(errors, []);
@@ -340,7 +340,7 @@ test('6c. without a score server a finished run enters the local top 10 and the 
     await page.locator('#boardBox').waitFor({ state: 'visible', timeout: T });
     assert.match(await page.locator('#boardTitle').textContent(), /THIS DEVICE/);
     assert.equal(await page.locator('#boardList li').count(), 1);
-    assert.match(await page.locator('#boardList li').textContent(), new RegExp('^[A-Z2-9]{3} FROG' + score + '$'));
+    assert.match(await page.locator('#boardList li').textContent(), new RegExp('^[A-Z2-9]{3} FROG' + score + '$')); // eslint-disable-line security/detect-non-literal-regexp -- the score is a number
     assert.equal(await page.locator('#boardList li .watch').count(), 0, 'no watch button on a local row');
     assert.equal(await page.locator('#boardScope').isHidden(), true, 'only one scope: no scope button');
     await page.click('#closeBoard');
@@ -431,6 +431,7 @@ test('8d. the quality ladder lowers the pixel ratio twice when it helps, and kee
   const { context, page, errors } = await open(INDEX, { scale: 1.5 });   // a dense screen: the software renderer is slow here, so the waits are long
   try {
     await waitState(page, 'attract');
+    await hop(page, () => window.hopLanes.ladder.hold());   // only the frames fed below count (real SwiftShader frames are slow)
     assert.equal(await hop(page, () => window.hopLanes.ladder.ratio), 1.5);
     await page.keyboard.press('KeyW');
     await waitState(page, 'play', 120000);
@@ -461,6 +462,7 @@ test('8d2. a dense phone screen starts at 2x and the ladder drops it to 1.5 firs
   const { context, page, errors } = await open(INDEX, { scale: 2, phone: true });
   try {
     await waitState(page, 'attract');
+    await hop(page, () => window.hopLanes.ladder.hold());   // only the frames fed below count (real SwiftShader frames are slow)
     assert.equal(await hop(page, () => window.hopLanes.ladder.ratio), 2);
     const box = await page.locator('#stage').boundingBox();
     await page.touchscreen.tap(box.x + box.width * 0.25, box.y + box.height * 0.5);

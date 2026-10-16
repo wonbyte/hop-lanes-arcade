@@ -8,7 +8,7 @@ import { runOver, topScore, winnerOf } from './sim.js';
 import { keepAwake } from './device.js';
 import { reduceMotion, resetFrameWatch, touchQuery } from './gfx.js';
 import { CHARACTERS, PIX, PRIZES, drawPix, isOwned } from './models.js';
-import { charOf, despawn, players, resetRules, restorePicks, spawn } from './players.js';
+import { charOf, despawn, onGameOver, players, resetRules, restorePicks, spawn } from './players.js';
 import { BEST_KEY, DAILYDONE_KEY, DAILY_KEY, HANDICAP_KEY, HINT_KEY, HOWTO_KEY, INITIALS_KEY, LOCAL_KEY, STREAK_KEY, INSTALL_KEY, MISSIONS_KEY, MODE_KEY, OWNED_KEY, PICK_KEY, ROOM_KEY, cleanInitials, dayKey, deviceTag, entersLocal, flushBank, load, loadText, localTop, owned, parseLocal, refreshBests, save, savedMode, setBank, today } from './storage.js';
 import { getSeed, refreshPowerLooks, resetWorld } from './world.js';
 import { saveGhost, startGhost, stopGhost } from './ghost.js';
@@ -38,7 +38,7 @@ function setCard(i) {
   if (p.joined) { head.textContent = t('READY!'); st.textContent = t('PLAYER {n}', { n: i + 1 }); }
   else if (locked) { head.textContent = G.bank >= ch.price ? t('TAP TO BUY') : t('NEED {n} COINS', { n: ch.price }); st.textContent = t('{name} · {n} COINS', { name: t(ch.name), n: ch.price }); }
   else { head.textContent = joinText(); st.textContent = t(ch.name) + ' \u00b7 ' + t(traitOf(ch.key).text || 'BALANCED'); }
-  for (const b of c.querySelectorAll('.cyc')) b.disabled = p.joined;
+  for (const b of /** @type {NodeListOf<HTMLButtonElement>} */ (c.querySelectorAll('.cyc'))) b.disabled = p.joined;
 }
 function cycleChar(i, d) {
   const p = players[i];
@@ -89,7 +89,7 @@ function cycleMode() {
 }
 function updatePrize() {
   const left = PRIZES.filter(k => !owned.has(k));
-  const b = $('prize');
+  const b = /** @type {HTMLButtonElement} */ ($('prize'));
   b.disabled = !left.length;
   b.textContent = left.length ? t('PRIZE · {n} COINS', { n: PRIZE_COST }) : t('ALL PRIZES WON');
 }
@@ -202,7 +202,7 @@ function shareOut(b, text, sheet) {
     if (shared) { if (n === overN) b.textContent = t('SHARED!'); return; }
     if (await copied) { if (n === overN) b.textContent = t(sheet ? 'COPIED!' : 'REPLAY LINK COPIED!'); return; }
     if (n !== overN) return;
-    const box = $('shareText');                     // nothing automatic works here: let the player copy by hand
+    const box = /** @type {HTMLTextAreaElement} */ ($('shareText'));                     // nothing automatic works here: let the player copy by hand
     box.value = text; box.hidden = false; box.focus(); box.select();
     b.textContent = t('SELECT AND COPY');
   };
@@ -332,11 +332,8 @@ function shareTexts(hero, top, replay) {
   $('replayBtn').hidden = !canReplay;
   return code;
 }
-function checkOver() {
-  if (G.state !== 'play') return;
-  const [p1, p2] = players;
-  const both = p1.joined && p2.joined, race = G.mode === 'race';
-  if (!runOver(players, G.mode)) return;   // sim.js: a race ends at the first death, otherwise when nobody is left
+// the run has ended: play stops (the results come after RESULTS_DELAY)
+function endPlay() {
   G.state = 'over'; G.stateT = 0; overN++;
   flushBank();
   stopPlayLoop();
@@ -344,6 +341,23 @@ function checkOver() {
   $('app').classList.remove('playing');
   keepAwake(false);
   setBanner('');
+}
+// a new best gets its own big line, a jingle and (all time) confetti; returns the note without it
+function showBest(note, top) {
+  const best = top >= 1 && /^NEW .*BEST!/.exec(note.replace(/^.*\. /, ''));
+  $('resBest').hidden = !best;
+  if (!best) { sfx.over(); return note; }
+  $('resBest').textContent = t(best[0]);
+  if (best[0].includes('ALL TIME')) { confetti(); sfx.best(); } else sfx.cheer();
+  return note.replace(best[0], '').replace(/^ +| +$/g, '');
+}
+const resultTitle = (replay, both, winner) => replay ? t('REPLAY OVER') : !both ? t('GAME OVER') : !winner ? t('TIE GAME!') : t('{name} WINS!', { name: t(charOf(winner).name) });
+function checkOver() {
+  if (G.state !== 'play') return;
+  if (!runOver(players, G.mode)) return;   // sim.js: a race ends at the first death, otherwise when nobody is left
+  endPlay();
+  const [p1, p2] = players;
+  const both = p1.joined && p2.joined;
   const top = topScore(players);
   const replay = !!G.replay;   // a replay changes no records and pays nothing
   const hatBefore = hatFor(G.bestAll);
@@ -351,19 +365,12 @@ function checkOver() {
   // who wins: in a race the one still standing (or the higher score), otherwise the higher score
   const winner = winnerOf(players, G.mode);   // sim.js: race, coin war or the higher score
   if (both && G.mode === 'coinwar') note = t('COINS {a} - {b}.', { a: p1.coins, b: p2.coins }) + ' ' + note;
-  $('resTitle').textContent = replay ? t('REPLAY OVER') : !both ? t('GAME OVER') : !winner ? t('TIE GAME!') : t('{name} WINS!', { name: t(charOf(winner).name) });
-  if (race && winner) note = t('BY {n} ROWS.', { n: Math.abs(p1.score - p2.score) }) + ' ' + note;
+  $('resTitle').textContent = resultTitle(replay, both, winner);
+  if (G.mode === 'race' && winner) note = t('BY {n} ROWS.', { n: Math.abs(p1.score - p2.score) }) + ' ' + note;
   const hero = winner || (p1.joined ? p1 : p2);
   const code = shareTexts(hero, top, replay);   // the replay code: the seed, the animals and every hop of this run
   saveGhost(code, top, hero.id);   // daily and room worlds: the best run comes back as a ghost
-  // a new best gets its own big line, a jingle and (all time) confetti
-  const best = top >= 1 && /^NEW .*BEST!/.exec(note.replace(/^.*\. /, ''));
-  $('resBest').hidden = !best;
-  if (best) {
-    $('resBest').textContent = t(best[0]);
-    note = note.replace(best[0], '').replace(/^ +| +$/g, '');
-    if (best[0].includes('ALL TIME')) { confetti(); sfx.best(); } else sfx.cheer();
-  } else sfx.over();
+  note = showBest(note, top);
   if (!replay) note = payMissions() + payDaily() + note;
   if (!replay) enterLocal(charOf(hero).name, top);
   const hat = hatFor(G.bestAll);
@@ -399,6 +406,7 @@ async function postScore(name, score, code, gameN) {
       top = (await (await fetch(u, { signal: ctrl.signal })).json()).top;
     }
     if (Array.isArray(top) && top.length && G.state === 'over' && gameN === overN) {   // still the game that posted
+      // nosemgrep: no-stringify-keys -- $ is getElementById here; nothing is stringified
       $('world').textContent = t(daily ? 'TODAY TOP {n} · {name}' : 'WORLD BEST {n} · {name}', { n: top[0].score, name: top[0].name });
       $('world').hidden = false;
     }
@@ -466,4 +474,6 @@ function hideHowto() {
 }
 $('gotit').addEventListener('click', hideHowto);
 
-export { setLook, setModeLabel, banner, checkOver, confetti, cycleChar, hideHowto, howto, join, menu, pads, pauseGame, restart, resultsEl, resumeGame, setBanner, showHowto, startPlay, toAttract, wipe };
+onGameOver(checkOver);   // players.js calls it when the rules end the game
+
+export { setLook, setModeLabel, banner, confetti, cycleChar, hideHowto, howto, join, menu, pads, pauseGame, restart, resultsEl, resumeGame, setBanner, showHowto, startPlay, toAttract, wipe };
