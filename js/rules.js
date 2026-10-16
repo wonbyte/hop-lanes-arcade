@@ -39,7 +39,14 @@ const START_X = [-2, 2];      // the columns the two players start on
 const CAM_CREEP = 0.3, CAM_CREEP_GAIN = 0.006, CAM_CREEP_MAX = 1.1;   // rows/s the scroll line creeps, faster with time
 const CAM_CATCH_ROWS = 2, CAM_CATCH_RATE = 3;   // it catches up fast to a player more than CAM_CATCH_ROWS ahead
 const RESCUE_HOP = 2;         // a rescue hop (an extra life in water) takes this many hop times
-const LOG_SLACK = 0.05;       // how far past a log's end a landing still counts as on it
+const LOG_SLACK = 0.05;       // how far past a log's end a landing still counts as on it (rules 2)
+const LOG_SLACK_BODY = 0.3;   // rules 3: the body (about 0.62 wide) still overlaps the log's end by a little
+// The rules version: a replay keeps the rules it was played with (replay.js writes it, sim.js reads it), so a change
+// that decides a run differently goes in a new version and every old replay, ghost and posted score plays the same.
+// 3: a landing counts on a log while the body overlaps it (LOG_SLACK_BODY); a forward or back hop from a log carried
+// past the edge of the last column (|x| > 4.5) goes to the last column (it was refused, and the rider was swept away); a plank or tile that
+// breaks drops only a player who stands on it, not one who has hopped off it (that one fell in the first half of the hop).
+const RULES = 3;
 const HOP_MID = 0.5;          // until this part of a hop the player is still over the row they left
 const MAX_RUN_TICKS = TICKS_PER_S * 60 * 61;   // an hour of play (plus a minute): a replay or a run past this is junk
 // the daily world: one seed per local day, the same on every device and on the score server (VERIFY)
@@ -163,7 +170,7 @@ const pad2 = n => String(n).padStart(2, '0');
 const isoDay = (d = new Date()) => d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
 const dayBefore = (d = new Date()) => { const y = new Date(d); y.setDate(y.getDate() - 1); return isoDay(y); };
 
-export { CAM_CATCH_RATE, CAM_CATCH_ROWS, CAM_CREEP, CAM_CREEP_GAIN, CAM_CREEP_MAX, HOP_MID, LOG_SLACK, RESCUE_HOP, START_X, DAY_PREFIX, MAX_RUN_TICKS, TICKS_PER_S, dailySeedFor, BOMB_TICKS, BRIDGE_FROM, CLIFF_FROM, FLOOD_SPEED, HATS, ICE_FROM, LEAD_FROM, LEAD_GAP, LEAD_SLOW, NEAR_MISS, PORTAL_FROM, SPRING_FROM, SPRING_HOP, TAG_BOOST, TWISTER_LEN, isBombPower, isBombRow, TRAITS, dayBefore, hatFor, isoWeek, streakAfter, streakCount, traitOf, PLANK_BACK, PLANK_BREAK, ROCKS_FROM, SLIDE_TIME, isWater, plankState,
+export { LOG_SLACK_BODY, RULES, CAM_CATCH_RATE, CAM_CATCH_ROWS, CAM_CREEP, CAM_CREEP_GAIN, CAM_CREEP_MAX, HOP_MID, LOG_SLACK, RESCUE_HOP, START_X, DAY_PREFIX, MAX_RUN_TICKS, TICKS_PER_S, dailySeedFor, BOMB_TICKS, BRIDGE_FROM, CLIFF_FROM, FLOOD_SPEED, HATS, ICE_FROM, LEAD_FROM, LEAD_GAP, LEAD_SLOW, NEAR_MISS, PORTAL_FROM, SPRING_FROM, SPRING_HOP, TAG_BOOST, TWISTER_LEN, isBombPower, isBombRow, TRAITS, dayBefore, hatFor, isoWeek, streakAfter, streakCount, traitOf, PLANK_BACK, PLANK_BREAK, ROCKS_FROM, SLIDE_TIME, isWater, plankState,
   BEHIND_LIMIT, COIN_CHANCE, COMBO_EVERY, COMBO_GAP, COUNTDOWN, DIFF_ROWS, EAGLE_IDLE, EAGLE_SWOOP, EAGLE_WARN, EDGE_DEATH, FIRST_ROW, HIT_PAD, HOP_TIME,
   LANE_KINDS, MAGNET_REACH, MAGNET_TIME, MODES, MUD_SLOW, PLAY_HALF, POWER_CHANCE, SHIELD_TIME, STEP, STREAK_MAX, TRAIN_SPEED, TRAIN_WARN, WRAP,
   difficulty, difficultyAt, hashString, hopTarget, hopTime, isoDay, mulberry32, nextLaneKind };

@@ -10,7 +10,7 @@ import { serve } from './serve.mjs';
 import { ROOT, T, launch, open as openPage, waitState, settle, hopKey, waitTicks } from './browser.mjs';
 import { decodeReplay, encodeReplay } from '../js/replay.js';
 import { simulate } from '../js/sim.js';
-import { EDGE_DEATH, MAX_RUN_TICKS, MODES, TRAITS } from '../js/rules.js';
+import { EDGE_DEATH, MAX_RUN_TICKS, MODES, RULES, TRAITS } from '../js/rules.js';
 
 const ANIMALS = ['frog', ...Object.keys(TRAITS)];
 const NODE_RUNS = Number(process.env.PROP_NODE_RUNS || 2000);
@@ -19,6 +19,7 @@ const BROWSER_RUNS2 = Number(process.env.PROP_RUNS2 || 2);   // two-player cases
 
 // a random replay: the shape the codec accepts (events as [tick, player, dx, dr], ticks going up)
 const arbReplay = fc.record({
+  version: fc.integer({ min: 2, max: RULES }),   // every rules version a link can carry
   seed: fc.integer({ min: 0, max: 0xffffffff }),
   mode: fc.constantFrom(...MODES),
   chars: fc.tuple(fc.constantFrom(...ANIMALS), fc.constantFrom(...ANIMALS)),
@@ -29,7 +30,7 @@ const arbReplay = fc.record({
 }).map(r => {
   let t = 0;
   const events = r.gaps.map(([gap, who, [dx, dr]]) => { t += gap; return [t, r.joined[who] ? who : r.joined.indexOf(true), dx, dr]; });
-  return { seed: r.seed, mode: r.mode, chars: r.chars, joined: r.joined, handicap: r.handicap, startTick: r.startTick, events };
+  return { version: r.version, seed: r.seed, mode: r.mode, chars: r.chars, joined: r.joined, handicap: r.handicap, startTick: r.startTick, events };
 });
 
 const finite = n => typeof n === 'number' && Number.isFinite(n);

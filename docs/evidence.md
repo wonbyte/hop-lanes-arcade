@@ -67,6 +67,33 @@ row without compiled code, and the nightly soak gates on it. The heap after each
 The first run of each soak is slower because the ladder is still stepping down during it (it ended at pixel ratio 1,
 shadow map 256, shadows every other frame).
 
+## Hazards and fairness (rules 3)
+
+A player reported an animal that fell into the water while riding a wooden board. `tools/hazard-audit.mjs` (random
+play on the real rules and worlds, 20000 runs, seed 1; `npm run audit:hazards`) found three causes, all within the
+rules but unfair: nothing on screen showed the line past which a log sweeps its rider away, the edge refused the hop
+that would have saved the rider, and a bridge plank that broke just after a hop off it still dropped the animal in the
+air. Rules 3 fixes them; old replays keep rules 2 (`js/replay.js` stores the version).
+
+| Measure (20000 runs) | Rules 2 | Rules 3 |
+|---|---|---|
+| Riders swept off a log | 108 | 41 |
+| ... with a refused forward or back hop in the last second | 80 | 0 |
+| ... warned first (sound, buzz, sparks); time from the warning, min / median | (no warning) | 41 of 41; 0.24 s / 0.53 s |
+| Water landings where part of the body was over a log | 786 of 9079 | 32 of 8952 (all within 0.01 of the body's edge) |
+| Plank or tile falls | 208 | 184 |
+| ... of a player in the air (the first half of a hop off it) | 22 | 0 |
+| Shortest time a plank cracked before it dropped | 72 ticks (0.6 s) | 72 ticks (0.6 s) |
+| Largest move of a car / log / train in one step | 0.061 / 0.041 / 0.27 | the same |
+| Narrowest hit width of a car / train | 1.46 / 13.01 | the same: nothing can skip through a player |
+| A rider not moving exactly with its log | 0 | 0 |
+| Car hits that touch the body by less than 0.05 | 1946 of 7806 | 2055 of 8039 (a touch, kept: `HIT_PAD` unchanged) |
+
+The view: the water past the line is darker, with a white line and foam flecks (world.js `rapids`), and a cracking
+plank sinks, tilts and shakes more until it drops, with a crack sound on the landing (world.js `placePlanks`). The
+audit with `--rules 2` gives the same deaths, cause by cause, as the code before the change, so the old rules are unchanged; the
+saved browser runs in `tests/sim.test.mjs` and the bench replay still play the same.
+
 ## Security
 
 | Tool | Before | After |

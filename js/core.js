@@ -32,6 +32,7 @@ const G = {
   tick: 0,             // fixed steps since boot
   worldTick: 0,        // fixed steps since the world was built: traffic and trains run on this
   startTick: 0,        // worldTick when play began (saved in replays)
+  rules: 0,            // the rules version of this run (rules.js RULES; a replay's own): set by startPlay
   boom: false,         // #debug: hopLanes.boom() makes the next step throw (the crash notice test)
   countKey: '',        // the countdown banner that is showing (cleared to redraw it, e.g. after a pause)
   redraw: false,       // paused: draw one frame (the pause banner, a resize)

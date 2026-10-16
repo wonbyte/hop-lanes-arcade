@@ -15,6 +15,7 @@
     "test:property": "PROP_RUNS=20 node tests/property.test.mjs",
     "mutate": "stryker run",
     "fuzz": "node tools/fuzz-replay.mjs --seconds 300",
+    "audit:hazards": "node tools/hazard-audit.mjs --runs 20000",
     "profile": "node tools/profile-game.mjs",
     "load": "node tools/load-server.mjs",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.server.json",

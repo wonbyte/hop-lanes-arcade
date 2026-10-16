@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { createWorldGen, railStep, standColumns, standGroups, trafficX, wetAt } from '../js/gen.js';
 import { createSim, makeRules, resetPlayer, simulate, winnerOf } from '../js/sim.js';
 import { decodeReplay, encodeReplay } from '../js/replay.js';
-import { BOMB_TICKS, BRIDGE_FROM, CLIFF_FROM, COMBO_GAP, EAGLE_IDLE, EAGLE_SWOOP, EAGLE_WARN, HOP_TIME, ICE_FROM, LEAD_FROM, LEAD_GAP, LEAD_SLOW, MAGNET_REACH, MAGNET_TIME, PLANK_BACK, PLANK_BREAK, PORTAL_FROM, ROCKS_FROM, SPRING_FROM, SPRING_HOP, STEP, TRAITS, dailySeedFor, hashString, plankState, traitOf } from '../js/rules.js';
+import { LOG_SLACK_BODY, PLAY_HALF, BOMB_TICKS, BRIDGE_FROM, CLIFF_FROM, COMBO_GAP, EAGLE_IDLE, EAGLE_SWOOP, EAGLE_WARN, HOP_TIME, ICE_FROM, LEAD_FROM, LEAD_GAP, LEAD_SLOW, MAGNET_REACH, MAGNET_TIME, PLANK_BACK, PLANK_BREAK, PORTAL_FROM, ROCKS_FROM, SPRING_FROM, SPRING_HOP, STEP, TRAITS, dailySeedFor, hashString, plankState, traitOf } from '../js/rules.js';
 
 // what the browser built for seed 42 (window.hopLanes.laneKinds()) before world generation moved to gen.js
 const KINDS_42 = ['grass', 'grass', 'grass', 'grass', 'river', 'river', 'river', 'road', 'road', 'road', 'road', 'river', 'river', 'grass',
@@ -117,8 +117,9 @@ test('sim: a replay round-trips through its code', () => {
 });
 
 // the new kinds, rule by rule, on hand-made lanes (makeRules is what the browser and simulate() both run)
-function bench(rows) {
-  const G = { state: 'play', camRow: 0, playT: 0, worldTick: 1000, run: null };
+// version: the rules version (rules.js RULES when left out)
+function bench(rows, version) {
+  const G = { state: 'play', camRow: 0, playT: 0, worldTick: 1000, run: null, rules: version };
   const lanes = new Map(rows.map((l, r) => [r, { r, coins: new Map(), trees: new Set(), objs: [], span: 34, secret: null, power: null, ...l }]));
   const rules = makeRules({ G, lane: r => lanes.get(r), coins() {}, over() {} });
   const p = { id: 0, joined: true };
@@ -903,13 +904,13 @@ test('combos: every COMBO_EVERY quick hops pay a coin; a pause of COMBO_GAP + 0.
   assert.deepEqual([f.players[0].alive, f.players[0].cause], [false, 'squash'], 'inside HIT_PAD: a hit');
 });
 
-test('logs: a landing within LOG_SLACK of a log end rides it, snapped to a segment; past the edge the log sweeps you away', () => {
+test('logs: a landing within LOG_SLACK of a log end rides it (rules 2), snapped to a segment; past the edge the log sweeps you away', () => {
   const log = { x: 0, len: 3 };
-  const b = bench([{ kind: 'grass' }, { kind: 'river', objs: [log] }]);
+  const b = bench([{ kind: 'grass' }, { kind: 'river', objs: [log] }], 2);
   b.p.x = 1; b.rules.tryMove(b.p, 0.5 + LOG_SLACK - 0.01, 1); b.settle();
   assert.ok(b.p.alive && b.p.log === log, 'just inside the slack: on the log');
   assert.equal(b.p.logOff, 1, 'snapped to the end segment');
-  const c = bench([{ kind: 'grass' }, { kind: 'river', objs: [{ x: 0, len: 3 }] }]);
+  const c = bench([{ kind: 'grass' }, { kind: 'river', objs: [{ x: 0, len: 3 }] }], 2);
   c.p.x = 1; c.rules.tryMove(c.p, 0.5 + LOG_SLACK + 0.01, 1); c.settle();
   assert.deepEqual([c.p.alive, c.p.cause], [false, 'splash'], 'just outside: water');
   // riding: the animal moves with the log, then a hop carries the log's drift
@@ -974,12 +975,25 @@ test('hazards: until mid-hop the row left still counts; after it the row landed 
   const e = bench([{ kind: 'grass' }, { kind: 'rail', dir: 1, train: { len: 12, x: 0, active: false } }]);
   e.p.x = 0; e.p.row = 1; e.run(5);
   assert.ok(e.p.alive, 'no train on the track');
-  // a plank that drops under a hop that has not reached its middle
-  const planks = new Map([[0, { breakAt: 1000, backAt: 2000 }], [1, { breakAt: -1, backAt: -1 }]]);
-  const f = bench([{ kind: 'grass' }, { kind: 'bridge', planks }, { kind: 'grass' }]);
+  // rules 2: a plank that drops under a hop that has not reached its middle drops the player too
+  const planks = () => new Map([[0, { breakAt: 1000, backAt: 2000 }], [1, { breakAt: -1, backAt: -1 }]]);
+  const f = bench([{ kind: 'grass' }, { kind: 'bridge', planks: planks() }, { kind: 'grass' }], 2);
   f.p.x = 0; f.p.row = 1; f.G.worldTick = 995; f.rules.tryMove(f.p, 0, 1);
   f.run(); f.run(); f.run(); f.run(); f.run();   // tick 1000: the plank is down while the hop is still over it
   assert.deepEqual([f.p.alive, f.p.cause], [false, 'splash']);
+  // rules 3: the player has hopped off it and is in the air: the hop goes on; a cliff tile the same
+  for (const kind of ['bridge', 'cliff']) {
+    const f3 = bench([{ kind: 'grass' }, { kind, planks: planks() }, { kind: 'grass' }]);
+    f3.p.x = 0; f3.p.row = 1; f3.G.worldTick = 995; f3.rules.tryMove(f3.p, 0, 1);
+    f3.run(5);
+    assert.ok(f3.p.alive && f3.p.hop && f3.p.hop.t < HOP_MID, kind + ': in the air over the gone plank');
+    f3.settle();
+    assert.deepEqual([f3.p.alive, f3.p.row], [true, 2], kind + ': landed on the row ahead');
+    // but one who stands on it still falls
+    const s3 = bench([{ kind: 'grass' }, { kind, planks: planks() }]);
+    s3.p.x = 0; s3.p.row = 1; s3.G.worldTick = 998; s3.run(); assert.ok(s3.p.alive, 'tick 999: still cracking');
+    s3.run(); assert.deepEqual([s3.p.alive, s3.p.cause], [false, kind === 'cliff' ? 'fall' : 'splash'], 'tick 1000: gone under a player who stands on it');
+  }
   const g = bench([{ kind: 'grass' }, { kind: 'bridge', planks: new Map([[0, { breakAt: 1000, backAt: 2000 }]]) }, { kind: 'grass' }]);
   g.p.x = 0; g.p.row = 1; g.G.worldTick = 980; g.rules.tryMove(g.p, 0, 1);
   while (g.p.hop && g.p.hop.t < HOP_MID) g.run();
@@ -1130,9 +1144,92 @@ test('boundaries: the scroll line, the log edge and the log slack, exactly at th
   const e = bench([{ kind: 'grass' }, { kind: 'river', objs: [{ x: EDGE_DEATH, len: 1 }] }]);
   e.p.row = 1; e.p.log = e.lanes.get(1).objs[0]; e.p.logOff = 0; e.run();
   assert.ok(e.p.alive);
-  const f = bench([{ kind: 'grass' }, { kind: 'river', objs: [{ x: 0, len: 3 }] }]);
+  const f = bench([{ kind: 'grass' }, { kind: 'river', objs: [{ x: 0, len: 3 }] }], 2);
   f.p.x = 1; f.rules.tryMove(f.p, 0.55, 1); f.settle();   // 1.55 = 1.5 + LOG_SLACK
-  assert.deepEqual([f.p.alive, f.p.cause], [false, 'splash'], 'exactly at the slack: not on the log');
+  assert.deepEqual([f.p.alive, f.p.cause], [false, 'splash'], 'exactly at the slack: not on the log (rules 2)');
+  const g = bench([{ kind: 'grass' }, { kind: 'river', objs: [{ x: 0, len: 3 }] }]);
+  g.p.x = 1; g.rules.tryMove(g.p, 0.5 + LOG_SLACK_BODY, 1); g.settle();   // 1.8 = 1.5 + LOG_SLACK_BODY
+  assert.deepEqual([g.p.alive, g.p.cause], [false, 'splash'], 'exactly at the body slack: not on the log (rules 3)');
+});
+
+test('rules 3: a landing rides a log while the body overlaps its end; rules 2 needed the middle within LOG_SLACK', () => {
+  for (const [rules, miss, on] of [[3, 0.29, true], [3, 0.31, false], [2, 0.29, false], [undefined, 0.29, true]]) {
+    const b = bench([{ kind: 'grass' }, { kind: 'river', objs: [{ x: 0, len: 2 }] }], rules);
+    b.p.x = 1; b.rules.tryMove(b.p, miss, 1); b.settle();   // the log ends at 1: the middle lands miss past it
+    assert.equal(b.p.alive, on, `rules ${rules}, ${miss} past the end`);
+    if (on) { assert.equal(b.p.logOff, 0.5, 'snapped onto the end segment'); b.run(); assert.equal(b.p.x, 0.5, 'and drawn on the log'); }
+    // the other end, the other way
+    const c = bench([{ kind: 'grass' }, { kind: 'river', objs: [{ x: 0, len: 2 }] }], rules);
+    c.p.x = -1; c.rules.tryMove(c.p, -miss, 1); c.settle();
+    assert.equal(c.p.alive, on, `rules ${rules}, ${miss} past the left end`);
+  }
+});
+
+test('rules 3: a forward or back hop from a log carried past the last column goes to the last column; rules 2 refused it', () => {
+  const rows = () => [{ kind: 'grass' }, { kind: 'river', objs: [{ x: 4.8, len: 1 }] }, { kind: 'grass' }, { kind: 'grass' }];
+  for (const [dr, toRow] of [[1, 2], [-1, 0]]) {
+    const b = bench(rows());
+    b.p.row = 1; b.p.log = b.lanes.get(1).objs[0]; b.p.logOff = 0; b.run();
+    assert.equal(b.p.x, 4.8);
+    b.rules.tryMove(b.p, 0, dr);
+    assert.ok(b.p.hop, 'rules 3: the hop goes');
+    assert.deepEqual([b.p.hop.fx, b.p.hop.tx, b.p.hop.carry], [4.8, PLAY_HALF, b.lanes.get(1).objs[0]], 'from where the animal is, to the last column, with the log drift');
+    b.settle();
+    assert.deepEqual([b.p.alive, b.p.row, b.p.x], [true, toRow, PLAY_HALF]);
+    const c = bench(rows(), 2);
+    c.p.row = 1; c.p.log = c.lanes.get(1).objs[0]; c.p.logOff = 0; c.run();
+    c.rules.tryMove(c.p, 0, dr);
+    assert.equal(c.p.hop, null, 'rules 2: refused (round(4.8) = 5 is past the edge)');
+  }
+  // the left edge, and a hop onto another river row from there: the target column is the last one too
+  const d = bench([{ kind: 'grass' }, { kind: 'river', objs: [{ x: -5, len: 1 }] }, { kind: 'river', objs: [{ x: -PLAY_HALF, len: 3 }] }]);
+  d.p.row = 1; d.p.log = d.lanes.get(1).objs[0]; d.p.logOff = 0; d.run();
+  d.rules.tryMove(d.p, 0, 1);
+  assert.equal(d.p.hop.tx, -PLAY_HALF);
+  d.settle();
+  assert.ok(d.p.alive && d.p.log === d.lanes.get(2).objs[0], 'onto the next log');
+  // a sideways hop is not clamped: toward the edge is still refused, back toward the middle goes one column
+  const e = bench(rows());
+  e.p.row = 1; e.p.log = e.lanes.get(1).objs[0]; e.p.logOff = 0; e.run();
+  e.rules.tryMove(e.p, 1, 0);
+  assert.equal(e.p.hop, null, '5.8 is past the river edge');
+  e.rules.tryMove(e.p, -1, 0);
+  assert.ok(Math.abs(e.p.hop.tx - 3.8) < 1e-9, 'one column in: ' + e.p.hop.tx);
+  // a rider on the play area hops as before (no clamp needed)
+  const f = bench([{ kind: 'grass' }, { kind: 'river', objs: [{ x: 3.4, len: 1 }] }, { kind: 'grass' }]);
+  f.p.row = 1; f.p.log = f.lanes.get(1).objs[0]; f.p.logOff = 0; f.run();
+  f.rules.tryMove(f.p, 0, 1);
+  assert.equal(f.p.hop.tx, 3);
+  // between the last column and its edge (4 < x <= 4.5) rules 2 let the hop go straight: rules 3 does the same, no clamp
+  for (const version of [2, 3]) {
+    const g = bench([{ kind: 'grass' }, { kind: 'river', objs: [{ x: 4.3, len: 1 }] }, { kind: 'river', objs: [{ x: 5.32, len: 2 }] }], version);
+    g.p.row = 1; g.p.log = g.lanes.get(1).objs[0]; g.p.logOff = 0; g.run();
+    g.rules.tryMove(g.p, 0, 1);
+    assert.equal(g.p.hop.tx, 4.3, 'rules ' + version + ': straight ahead');
+  }
+});
+
+test('the edge warning: once per ride, when a log carries the rider past the last column (effects only)', () => {
+  const warned = [];
+  const G = { state: 'play', camRow: 0, playT: 0, worldTick: 1000, run: null };
+  const log = { x: 4, len: 3 };
+  const lanes = new Map([[0, { r: 0, kind: 'grass', coins: new Map(), trees: new Set(), objs: [] }], [1, { r: 1, kind: 'river', coins: new Map(), trees: new Set(), objs: [log], span: 34 }]]);
+  const rules = makeRules({ G, lane: r => lanes.get(r), coins() {}, over() {}, fx: { edge: q => warned.push(q.x) } });
+  const p = { id: 0, joined: true };
+  resetPlayer(p);
+  p.row = 1; p.log = log; p.logOff = 0;
+  const run = () => { G.worldTick++; rules.stepPlayer(p, STEP); };
+  run(); assert.deepEqual(warned, [], 'on the last column: no warning');
+  log.x = PLAY_HALF + 0.5; run(); assert.deepEqual(warned, [], 'exactly half a column out: not yet');
+  log.x = PLAY_HALF + 0.51; run(); log.x = 5; run(); log.x = 5.3; run();
+  assert.deepEqual(warned, [PLAY_HALF + 0.51], 'once, the step it crosses');
+  log.x = 4; run(); log.x = -4.6; run();
+  assert.equal(warned.length, 2, 'back in and out the other side: again');
+  assert.ok(p.alive);
+  // a new ride warns again: a sideways hop along the log is a landing
+  log.x = 4; run(); p.edgeWarned = true; rules.tryMove(p, -1, 0);
+  for (let i = 0; i < 100 && p.hop; i++) run();
+  assert.deepEqual([p.alive, p.log, p.x, p.edgeWarned], [true, log, 3, false], 'a landing starts a new ride');
 });
 
 test('leader and tag with the other player ahead or level; two bombs on two rows; a bomb whose row is gone', () => {

@@ -2,6 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { decodeReplay, encodeReplay } from '../js/replay.js';
+import { RULES } from '../js/rules.js';
 import { DAILY, DAILY_COUNT, advanceMissions, dailyDoneText, dailyMissions, doneDaily, doneMissions, emptyStats, MISSIONS, missionsText, parseDailyDone, parseMissions } from '../js/missions.js';
 
 // storage.js touches the page at import (the coin counter, the marquee, storage events): stub just enough of a browser
@@ -18,7 +19,8 @@ test('replay: encode then decode gives the run back', () => {
     events: [[12, 0, 0, 1], [12, 1, 0, 1], [40, 0, -1, 0], [41, 0, 1, 0], [300, 1, 0, -1]] };
   const code = encodeReplay(run);
   assert.match(code, /^[\w-]+$/, 'url safe');
-  assert.deepEqual(decodeReplay(code), run);
+  assert.deepEqual(decodeReplay(code), { version: RULES, ...run }, 'with the rules version: the current one');
+  assert.deepEqual(decodeReplay(encodeReplay({ ...run, version: 2 })), { version: 2, ...run }, 'an old run keeps its version');
 });
 
 test('replay: bad input is null, not a crash', () => {
@@ -133,6 +135,9 @@ test('replay: every field of a code is checked, and the joined mask and the move
   assert.equal(decodeReplay(btoa('2|1|classic|frog,fox|3||0|')), null);
   assert.equal(decodeReplay(btoa('2|1|classic|frog,fox|3|00|0|')), null);
   assert.equal(decodeReplay(btoa('1|1|classic|frog,fox|1|0|0|')), null, 'an old version');
+  assert.deepEqual([2, 3].map(v => decodeReplay(btoa(v + '|1|classic|frog,fox|1|0|0|')).version), [2, 3], 'the rules versions 2 and 3');
+  assert.equal(decodeReplay(btoa((RULES + 1) + '|1|classic|frog,fox|1|0|0|')), null, 'a version from the future');
+  for (const v of ['', ' 3', '3.0', '03', '+3', '0x3', '33']) assert.equal(decodeReplay(btoa(v + '|1|classic|frog,fox|1|0|0|')), null, 'version ' + JSON.stringify(v));
   assert.equal(decodeReplay(btoa('2|1|Classic|frog,fox|1|0|0|')), null, 'modes are exact');
   for (const mode of ['classic', 'race', 'coinwar', 'tag', 'daily', 'room']) assert.equal(decodeReplay(btoa(`2|1|${mode}|frog,fox|1|0|0|`)).mode, mode);
   assert.equal(decodeReplay(btoa('2|1|classic|frog,fox|1|0|0|') + '!!'), null, 'not base64');
@@ -142,12 +147,12 @@ test('replay: every field of a code is checked, and the joined mask and the move
 test('replay: the code is the run as text, base64 made url safe', () => {
   const run = { seed: 7, mode: 'race', chars: ['cat', 'pig'], joined: [false, true], handicap: 0, startTick: 42, events: [[10, 1, 0, 1], [10, 1, 1, 0], [25, 0, -1, 0], [30, 1, 0, -1]] };
   const code = encodeReplay(run);
-  assert.equal(atob(code.replace(/-/g, '+').replace(/_/g, '/')), '2|7|race|cat,pig|2|0|42|10bU0bR15aL5bD', 'gaps between ticks, a/b the player, the move letter');
-  assert.equal(encodeReplay({ ...run, joined: [true, true], handicap: 2, events: [] }), btoa('2|7|race|cat,pig|3|2|42|').replace(/=+$/, ''));
+  assert.equal(atob(code.replace(/-/g, '+').replace(/_/g, '/')), '3|7|race|cat,pig|2|0|42|10bU0bR15aL5bD', 'gaps between ticks, a/b the player, the move letter');
+  assert.equal(encodeReplay({ ...run, joined: [true, true], handicap: 2, events: [] }), btoa('3|7|race|cat,pig|3|2|42|').replace(/=+$/, ''));
   assert.equal(encodeReplay({ ...run, joined: [true, false], handicap: undefined }).includes('|1|0|42|'), false, 'encoded, not plain');
-  assert.equal(atob(encodeReplay({ ...run, joined: [true, false], handicap: undefined })), '2|7|race|cat,pig|1|0|42|10bU0bR15aL5bD', 'no handicap reads as 0');
+  assert.equal(atob(encodeReplay({ ...run, joined: [true, false], handicap: undefined })), '3|7|race|cat,pig|1|0|42|10bU0bR15aL5bD', 'no handicap reads as 0');
   assert.ok(!/[+/=]/.test(encodeReplay({ ...run, seed: 4022250974, events: Array.from({ length: 40 }, (_, i) => [i * 7, i & 1, 0, 1]) })), 'no +, / or = in a link');
-  assert.deepEqual(decodeReplay(code), run);
+  assert.deepEqual(decodeReplay(code), { version: RULES, ...run });
 });
 
 test('missions: the saved text is checked field by field; done is the goal reached; advance skips active ones', () => {

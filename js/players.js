@@ -115,7 +115,7 @@ function applyMoves() {
   moveQ.length = 0;
 }
 const DEATH_SOUND = { splash: sfx.splash, slow: sfx.fall, eagle: sfx.fall, fall: sfx.fall, twister: sfx.fall };
-const NEAR_FX = 0xfff2a8, PORTAL_FX = 0xd9a5ff;
+const NEAR_FX = 0xfff2a8, PORTAL_FX = 0xd9a5ff, EDGE_FX = 0xff5a4a;
 
 // small particle bursts: water for splashes, dust when a player is left behind
 // the meshes are pooled: a death makes no garbage, so no collector pause
@@ -237,6 +237,11 @@ const playRules = makeRules({
       // a small puff where the feet land: dust on land, mud in mud, a splash on a log or a pad; the view dips a hair
       const wet = lane && isWater(lane.kind) && lane.kind !== 'cliff';   // a cliff counts as water for rescues, but it is stone
       if (!reduceMotion) { burst(p.x, -p.row, wet ? SPLASH : lane && lane.kind === 'mud' ? MUD_FX : DUST, 4, 0.45); G.landT = LAND_DIP; }
+      if (lane && (lane.kind === 'bridge' || lane.kind === 'cliff')) sfx.crack();   // the plank or tile starts to give
+    },
+    edge(p) {   // a log carried the rider past the last column: the rapids are near, hop
+      sfx.warn(); buzz(30);
+      if (!reduceMotion) burst(p.x, -p.row, EDGE_FX, 6, 0.5);
     },
     hopPose(p, t) {
       const h = p.hop, m = p.mesh;

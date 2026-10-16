@@ -35,6 +35,10 @@ bests, picks), the online score lists and the score server host, the published s
   - With `VERIFY=0` a posted score is a claim. The default is on; turn it off only on a private server.
   - A verified run is legal, not human: the rules are public, so a bot can search for a long run offline and post it.
   - A name is not an account: anyone can post as `FROG ABCD`.
+  - A replay keeps its rules version (2 or 3, `js/replay.js`) and is checked with those rules, so a run can be posted
+    under the older rules. Both are rule sets the game shipped, and the old one is not the easier one: each change in
+    version 3 makes a landing or a hop succeed where version 2 failed it (a wider log landing, a hop in from the river
+    edge, no fall in the air).
   - Many IP addresses (a botnet) get past the per-IP limits; the global verify budget then answers 503 to everyone for
     up to a minute. Availability gives way so the host stays up.
   - `ALLOW_ORIGIN` is `*` by default: the lists are public, and no cookie or credential is ever sent, so a foreign page

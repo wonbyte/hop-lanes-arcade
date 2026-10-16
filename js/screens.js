@@ -3,7 +3,7 @@ import { $, COUNTDOWN, G, GO_TIME, MODES, PRIZE_COST, RESULTS_DELAY, SCORES_TOKE
 import { nextLang, setLang, t } from './i18n.js';
 import { DAILY, DAILY_REWARD, MISSIONS, MISSION_REWARD, advanceMissions, dailyDoneText, dailyMissions, doneDaily, doneMissions, emptyStats, missionsText, parseDailyDone, parseMissions } from './missions.js';
 import { encodeReplay } from './replay.js';
-import { dayBefore, hatFor, streakAfter, traitOf } from './rules.js';
+import { RULES, dayBefore, hatFor, streakAfter, traitOf } from './rules.js';
 import { runOver, topScore, winnerOf } from './sim.js';
 import { keepAwake } from './device.js';
 import { reduceMotion, resetFrameWatch, touchQuery } from './gfx.js';
@@ -291,6 +291,7 @@ function startPlay() {
   G.run = emptyStats(); G.record = [];
   // the world clock at the start is part of the run: a replay starts on the same tick
   if (G.replay) { G.replay.i = 0; G.worldTick = G.replay.startTick; }
+  G.rules = G.replay ? G.replay.version : RULES;   // a replay plays with the rules it was played with
   G.startTick = G.worldTick;
   $('app').classList.add('playing');
   resetFrameWatch();
@@ -304,7 +305,7 @@ function startPlay() {
   setCards();
 }
 // this run as a replay code: the seed, the mode, the animals, the handicap, the start tick and every hop
-const runCode = () => encodeReplay({ seed: getSeed(), mode: G.mode, chars: players.map(q => charOf(q).key), joined: players.map(q => q.joined), handicap: G.handicap, startTick: G.startTick, events: G.record });
+const runCode = () => encodeReplay({ version: G.rules, seed: getSeed(), mode: G.mode, chars: players.map(q => charOf(q).key), joined: players.map(q => q.joined), handicap: G.handicap, startTick: G.startTick, events: G.record });
 let overN = 0;   // which game over this is: a server answer that comes late must not label the next game's results
 // the records this run set: the all-time best, today's best, the daily challenge best, the streak; returns the note
 function saveRecords(top) {

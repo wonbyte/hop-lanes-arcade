@@ -2,17 +2,17 @@
 // No DOM, no Three.js. players.js plays these rules in the browser (makeRules with effect hooks that move meshes and
 // make sounds); simulate() plays a replay with no effects, so the score server can check a posted score.
 // Everything here is step-driven (fixed STEP), so the browser and simulate() give the same run tick for tick.
-import { BEHIND_LIMIT, BOMB_TICKS, CAM_CATCH_RATE, CAM_CATCH_ROWS, CAM_CREEP, CAM_CREEP_GAIN, CAM_CREEP_MAX, COMBO_EVERY, HOP_MID, LOG_SLACK, MAX_RUN_TICKS, RESCUE_HOP, START_X, COUNTDOWN, COMBO_GAP, EAGLE_IDLE, EAGLE_SWOOP, EAGLE_WARN, EDGE_DEATH, HIT_PAD, HOP_TIME, LEAD_FROM, LEAD_GAP, LEAD_SLOW, MAGNET_REACH, MAGNET_TIME, NEAR_MISS, PLAY_HALF, SHIELD_TIME, SLIDE_TIME, SPRING_HOP, STEP, PLANK_BACK, PLANK_BREAK, TAG_BOOST, hopTarget, hopTime, isBombPower, isWater, plankState, traitOf } from './rules.js';
+import { BEHIND_LIMIT, BOMB_TICKS, CAM_CATCH_RATE, CAM_CATCH_ROWS, CAM_CREEP, CAM_CREEP_GAIN, CAM_CREEP_MAX, COMBO_EVERY, HOP_MID, LOG_SLACK, LOG_SLACK_BODY, MAX_RUN_TICKS, RULES, RESCUE_HOP, START_X, COUNTDOWN, COMBO_GAP, EAGLE_IDLE, EAGLE_SWOOP, EAGLE_WARN, EDGE_DEATH, HIT_PAD, HOP_TIME, LEAD_FROM, LEAD_GAP, LEAD_SLOW, MAGNET_REACH, MAGNET_TIME, NEAR_MISS, PLAY_HALF, SHIELD_TIME, SLIDE_TIME, SPRING_HOP, STEP, PLANK_BACK, PLANK_BREAK, TAG_BOOST, hopTarget, hopTime, isBombPower, isWater, plankState, traitOf } from './rules.js';
 import { createWorldGen, railStep, trafficX } from './gen.js';
 
-const RULE_HOOKS = ['hop', 'combo', 'kill', 'rescue', 'shield', 'power', 'coin', 'land', 'hopPose', 'stand', 'warn', 'eagle', 'swoop', 'label', 'near', 'lives', 'teleport', 'bomb', 'unbomb'];
+const RULE_HOOKS = ['hop', 'combo', 'kill', 'rescue', 'shield', 'power', 'coin', 'land', 'hopPose', 'stand', 'warn', 'eagle', 'swoop', 'label', 'near', 'lives', 'teleport', 'bomb', 'unbomb', 'edge'];
 // a player's run state, as it is when the animal appears on row 0. p.trait (rules.js traitOf) is set by the caller first.
 function resetPlayer(p) {
   p.trait = p.trait || {};
   Object.assign(p, {
     x: START_X[p.id], row: 0, alive: true, hop: null, queue: null, score: 0, idleT: 0, warned: false, eagle: null,
     facing: 0, cause: '', log: null, logOff: 0, trainDir: 0, combo: 0, lastHop: -9, shield: false, safeT: 0, magnetT: 0,
-    coins: 0, lives: p.trait.lives || 0, nearSeen: new Set(), nearRow: null, lead: false
+    coins: 0, lives: p.trait.lives || 0, nearSeen: new Set(), nearRow: null, lead: false, edgeWarned: false
   });
 }
 // the camera's scroll line: it creeps forward on its own, and catches up fast to a player who runs ahead.
@@ -37,7 +37,8 @@ function feedReplay(rp, playTick, move) {
   while (rp.i < rp.events.length && rp.events[rp.i][0] <= playTick) { const [, i, dx, dr] = rp.events[rp.i++]; move(i, dx, dr); }
 }
 
-// The rules of a player. W = { G, lane(r), coins(n), over(), players, fx }: G holds state, mode, camRow, playT, worldTick and run (stats or null);
+// The rules of a player. W = { G, lane(r), coins(n), over(), players, fx }: G holds state, mode, camRow, playT, worldTick, run (stats or null)
+// and rules (the rules version the run is played with: rules.js RULES when left out);
 // lane(r) is the lane data of row r (gen.js plus the moving state: o.x, train.x/active, coins, power);
 // fx holds optional effect hooks (meshes, sounds, particles), called at the points where the old code made them.
 function makeRules(W) {
@@ -45,6 +46,7 @@ function makeRules(W) {
   for (const k of RULE_HOOKS) fx[k] = (W.fx && W.fx[k]) || (() => {});
 
   const players = W.players || [];
+  const rules3 = () => (G.rules || RULES) >= 3;
   const others = p => players.filter(q => q !== p && q.joined && q.alive);
   const bothJoined = () => players.length === 2 && players[0].joined && players[1].joined;
   const behindLimit = p => BEHIND_LIMIT + (p.trait.behind || 0);
@@ -140,7 +142,7 @@ function makeRules(W) {
     const from = W.lane(p.row);
     const spring = dr === 1 && !!from && from.kind === 'spring';   // a spring throws a forward hop two rows on
     if (spring) dr = 2;
-    const tx = hopTarget(W.lane(p.row + dr), p.x, dx, PLAY_HALF);
+    const tx = hopTo(p, dx, dr);
     if (tx === null) return;
     if (p.row + dr < G.camRow - behindLimit(p)) return;
     const dur = hopDuration(p, from, spring);
@@ -158,6 +160,15 @@ function makeRules(W) {
     p.lastHop = G.playT;
     comboStep(p);
     fx.hop(p);
+  }
+  // where a hop lands (rules.js hopTarget), or null. Rules 3: a log can carry the rider past the last column; a forward
+  // or back hop from there goes to the last column (rules 2 refused it, and the rider was swept away)
+  // rules 3: a forward or back hop from a log that the edge refuses starts from the last column instead
+  function hopTo(p, dx, dr) {
+    const lane = W.lane(p.row + dr);
+    const tx = hopTarget(lane, p.x, dx, PLAY_HALF);
+    if (tx !== null || !p.log || dx !== 0 || !rules3()) return tx;
+    return hopTarget(lane, Math.max(-PLAY_HALF, Math.min(PLAY_HALF, p.x)), dx, PLAY_HALF);
   }
   // how long a hop from `from` takes: mud is slow, the bunny quick; tag, a spring and the two-player leader change it
   function hopDuration(p, from, spring) {
@@ -194,7 +205,8 @@ function makeRules(W) {
   // into water (or off a tile) that is p.alive, which a shield or the cat's extra life can keep true.
   // a river row: on a log, snapped to the centre of the nearest segment so standing feels solid, or in the water
   function landOnRiver(p, lane) {
-    const log = lane.objs.find(o => Math.abs(o.x - p.x) < o.len / 2 + LOG_SLACK);
+    const slack = rules3() ? LOG_SLACK_BODY : LOG_SLACK;
+    const log = lane.objs.find(o => Math.abs(o.x - p.x) < o.len / 2 + slack);
     if (!log) { kill(p, 'splash'); return p.alive; }
     const k = (log.len - 1) / 2;
     p.logOff = Math.max(-k, Math.min(k, Math.round(p.x - log.x + k) - k));
@@ -235,7 +247,7 @@ function makeRules(W) {
   function land(p, lane) {
     const h = p.hop, from = W.lane(h.fromRow);
     p.hop = null;
-    p.log = null;
+    p.log = null; p.edgeWarned = false;
     const stop = lane && lane.kind === 'river' ? landOnRiver(p, lane) : landOnGround(p, lane, from);
     if (stop !== undefined) return stop;
     fx.land(p, lane);
@@ -256,11 +268,15 @@ function makeRules(W) {
     fx.hopPose(p, t);
     return t < 1 || land(p, lane);
   }
-  // standing still (or riding a log); returns false if the log carried the player off the edge
+  // standing still (or riding a log); returns false if the log carried the player off the edge. Past the last column
+  // the rider is warned once (fx.edge: the rapids are near); effects only, the run is the same.
   function stand(p, dt) {
     if (p.log) p.x = p.log.x + p.logOff;
     fx.stand(p, dt);
     if (p.log && Math.abs(p.x) > EDGE_DEATH) { kill(p, 'swept'); return false; }
+    const past = !!p.log && Math.abs(p.x) > PLAY_HALF + 0.5;
+    if (past && !p.edgeWarned) fx.edge(p);
+    p.edgeWarned = past;
     return true;
   }
   // what moves across the row under the player: cars, boulders or the twister (a near miss counts once per car), a
@@ -279,11 +295,18 @@ function makeRules(W) {
     }
     return false;
   }
+  // the plank or tile under the player broke. Rules 3: only under a player who stands on it (one who hopped off is in
+  // the air); rules 2 dropped a player in the first half of a hop off it too
+  function plankGone(p, hz) {
+    if (hz.kind !== 'bridge' && hz.kind !== 'cliff') return false;
+    if (p.hop && (p.hop.t >= HOP_MID || rules3())) return false;
+    return plankState(hz, Math.round(p.x), G.worldTick) === 'down';
+  }
   function checkHazards(p, lane) {
     // until mid-hop the player is still over the row they left
     const hz = p.hop && p.hop.t < HOP_MID ? W.lane(p.hop.fromRow) : lane;
     if (hz) {
-      if ((hz.kind === 'bridge' || hz.kind === 'cliff') && (!p.hop || p.hop.t < HOP_MID) && plankState(hz, Math.round(p.x), G.worldTick) === 'down') { kill(p, hz.kind === 'cliff' ? 'fall' : 'splash'); return; }
+      if (plankGone(p, hz)) { kill(p, hz.kind === 'cliff' ? 'fall' : 'splash'); return; }
       if (hz.r !== p.nearRow) { p.nearRow = hz.r; p.nearSeen.clear(); }   // a new row under the player: its cars can each count once
       if (hitByTraffic(p, hz)) return;
     }
@@ -347,7 +370,7 @@ function createSim(rp) {
   // forget the rows nobody can reach any more (a long ghost run would keep every row it saw)
   const prune = () => { for (const r of lanes.keys()) if (r < S.camRow - BEHIND_LIMIT - 3) lanes.delete(r); };   // -3: the turtle stands one row further back
   // the browser starts the world clock so the countdown ends on the recorded tick (startPlay then sets it exactly)
-  const S = { state: 'countdown', countdown: COUNTDOWN, mode: rp.mode, camRow: 0, playT: 0, run: null, worldTick: Math.max(0, rp.startTick - Math.ceil(COUNTDOWN / STEP)) };
+  const S = { state: 'countdown', countdown: COUNTDOWN, mode: rp.mode, rules: rp.version || RULES, camRow: 0, playT: 0, run: null, worldTick: Math.max(0, rp.startTick - Math.ceil(COUNTDOWN / STEP)) };
   let playTick = 0, end = null;
   const players = [0, 1].map(id => ({ id, joined: !!rp.joined[id], alive: false, row: 0, x: 0, score: 0, coins: 0, hop: null, cause: '', trait: traitOf(rp.chars[id]) }));
   const rules = makeRules({

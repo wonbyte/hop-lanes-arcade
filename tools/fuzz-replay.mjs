@@ -9,7 +9,7 @@
 import { performance } from 'node:perf_hooks';
 import { decodeReplay, encodeReplay } from '../js/replay.js';
 import { simulate } from '../js/sim.js';
-import { MAX_RUN_TICKS, MODES } from '../js/rules.js';
+import { MAX_RUN_TICKS, MODES, RULES } from '../js/rules.js';
 import { ANIMALS, DIRS, flagArg, seededRng } from './lib.mjs';
 
 const args = process.argv.slice(2);
@@ -41,6 +41,7 @@ function validRun() {
     events.push([t, p, d[0], d[1]]);
   }
   return {
+    version: int(2, RULES),   // every rules version a link can carry
     seed: chance(0.1) ? pick([0, 1, 42, 197, 4294967295, 2 ** 32]) : int(0, 4294967295),
     mode: pick(MODES), chars: [pick(ANIMALS), pick(ANIMALS)], joined,
     handicap: int(0, 2), startTick: chance(0.2) ? 0 : int(0, 10000), events
