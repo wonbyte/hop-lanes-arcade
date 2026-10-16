@@ -498,6 +498,16 @@ test('8d. the quality ladder lowers the pixel ratio twice when it helps, and kee
     // slow frames: the first rung (pixel ratio -0.25); then faster ones: the rung helped, so it is taken again
     assert.equal(await hop(page, () => { const L = window.hopLanes.ladder; for (let i = 0; i < 60; i++) L.feed(0.05); return L.ratio; }), 1.25);
     assert.equal(await hop(page, () => { const L = window.hopLanes.ladder; for (let i = 0; i < 90; i++) L.feed(0.03); return L.ratio; }), 1);
+    // still slow with nothing left on the pixel ratio: the shadow map rung is tried (no gain here, so put back),
+    // then the last rung draws the shadows every other frame; faster frames keep it
+    const half = await hop(page, () => {
+      const L = window.hopLanes.ladder;
+      for (let i = 0; i < 40; i++) L.feed(0.02);   // fast frames first: the step to 1.0 is judged a gain and kept
+      for (let n = 0; n < 8 && !L.shadowHalf; n++) for (let i = 0; i < 40; i++) L.feed(0.05);
+      return { half: L.shadowHalf, shadow: L.shadow, ratio: L.ratio };
+    });
+    assert.deepEqual(half, { half: true, shadow: 1024, ratio: 1 });
+    assert.equal(await hop(page, () => { const L = window.hopLanes.ladder; for (let i = 0; i < 40; i++) L.feed(0.03); return L.shadowHalf; }), true, 'the rung helped: it stays');
     await hop(page, () => { const h = window.hopLanes; h.kill(h.players[0], 'test'); });
     await waitState(page, 'over', 60000);
     await resultsVisible(page);   // a restart counts only once the results are up

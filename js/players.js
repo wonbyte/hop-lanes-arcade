@@ -259,18 +259,23 @@ const playRules = makeRules({
 const { giveShield, kill, tryMove } = playRules;
 const resetRules = playRules.reset;   // screens.js toAttract: no bomb carries into the next game
 
+// one fixed step: the rules (sim.js) move the player; a dead one is carried off by its death animation
 function updatePlayer(p, dt) {
   if (!p.mesh) return;
-  // standing a while, the animal looks around
-  const look = p.alive && !p.hop && !p.eagle && p.idleT > 1.2 ? Math.sin((p.idleT - 1.2) * 1.8) * 0.4 : 0;
-  turnToward(p.mesh, p.facing + look, dt);
   if (!p.alive) { if (p.eagle) flyOff(p, dt); else animateDeath(p, dt); return; }
   playRules.stepPlayer(p, dt);
+}
+// once per drawn frame, looks only: the turn toward the way it faces, the idle look-around, the safe-time blink
+// and the shadow blob under a hop (nothing here changes the run)
+function dressPlayer(p, dt) {
   if (!p.mesh) return;
+  const look = p.alive && !p.hop && !p.eagle && p.idleT > 1.2 ? Math.sin((p.idleT - 1.2) * 1.8) * 0.4 : 0;
+  turnToward(p.mesh, p.facing + look, dt);
+  if (!p.alive) return;
   p.mesh.visible = !p.safeT || Math.floor(p.safeT * 12) % 2 === 0;
-  const air = p.alive && p.hop && p.mesh.position.y > 0.08;   // the blob shows only while the animal is up
+  const air = p.hop && p.mesh.position.y > 0.08;   // the blob shows only while the animal is up
   p.blob.visible = !!air;
   if (air) p.blob.position.set(p.mesh.position.x, 0.02, p.mesh.position.z);
 }
 
-export { blobGeo, blobMat, bubbleGeo, bubbleMat, charOf, despawn, restorePicks, giveShield, kill, players, queueMove, applyMoves, resetRules, spawn, tryMove, updateParts, updatePlayer };
+export { blobGeo, blobMat, bubbleGeo, bubbleMat, charOf, despawn, dressPlayer, restorePicks, giveShield, kill, players, queueMove, applyMoves, resetRules, spawn, tryMove, updateParts, updatePlayer };

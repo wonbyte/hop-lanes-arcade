@@ -66,6 +66,13 @@ class Inst {
     this.f.mesh.setMatrixAt(this.i, tmpM.compose(tmpP, tmpQ, tmpS));
     this.f.mesh.instanceMatrix.needsUpdate = true;
   }
+  // position and a turn about y, scale 1 (visible): the eight cells written directly, no compose (coins spin every frame)
+  spin(x, y, z, rotY) {
+    const a = this.f.mesh.instanceMatrix.array, k = this.i * 16, c = Math.cos(rotY), s = Math.sin(rotY);
+    a[k] = c; a[k + 2] = -s; a[k + 5] = 1; a[k + 8] = s; a[k + 10] = c;
+    a[k + 12] = x; a[k + 13] = y; a[k + 14] = z;
+    this.f.mesh.instanceMatrix.needsUpdate = true;
+  }
   // move only: rotation and scale stay as the last set() left them (cheap: no matrix compose)
   move(x, y, z) {
     const a = this.f.mesh.instanceMatrix.array, k = this.i * 16;
@@ -110,7 +117,7 @@ function spinner(lane, key, build, x, z) {
 function dropSpinner(s) { s.inst.drop(); spinners.delete(s); }
 function spinAll(now) {
   const rot = now / 300;
-  for (const s of spinners) if (s.lane.shown) s.inst.set(s.x, 0, s.z, rot);
+  for (const s of spinners) if (s.lane.shown) s.inst.spin(s.x, 0, s.z, rot);
 }
 // the coins (and a power-up) gen.js put on the lane: lane.coins maps a column to its spinner
 function placeCoins(lane, z) {
@@ -290,6 +297,7 @@ function addLane(r) {
   // (gen.js), so a replay or a shared seed never drifts
   const lane = worldGen.lane(r), kind = lane.kind;
   lane.group = new THREE.Group(); lane.shown = true;
+  lane.group.matrixAutoUpdate = false;   // never moves (identity): Three.js skips it in the per-draw matrix walk
   const ground = [];
   LANE_BUILDERS[kind](lane, { r, z: -r, ground, B: biomeAt(r) });
   placeCoins(lane, -r);

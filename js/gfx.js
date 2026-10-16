@@ -106,9 +106,11 @@ function fitView(halfW, halfH) {
   sc.updateProjectionMatrix();
 }
 
+const viewSize = { w: 1, h: 1 };   // the canvas size in CSS pixels, as of the last resize
 function resize() {
   const w = stage.clientWidth, h = stage.clientHeight;
   if (!w || !h) return;
+  viewSize.w = w; viewSize.h = h;   // read here once, so no frame needs a layout read
   renderer.setSize(w, h, false);
   // the score and the logo sit just under the top bar, whatever its height
   stage.style.setProperty('--marquee-h', marquee.offsetHeight + 'px');
@@ -162,6 +164,11 @@ const LADDER = [
     const was = sun.shadow.mapSize.x;
     setShadowMapSize(was / 2);
     return () => setShadowMapSize(was);
+  },
+  () => {   // last: shadows every other drawn frame while playing (a moving shadow lags one frame: hard to see)
+    if (shadowHalf) return null;
+    shadowHalf = true;
+    return () => { shadowHalf = false; };
   }
 ];
 const BAD_FRAME = 0.022;   // slower than ~45 fps: lower quality
@@ -187,14 +194,14 @@ const getPixelRatio = () => pixelRatio;
 function setZoom(z) { if (camera.zoom !== z) { camera.zoom = z; camera.updateProjectionMatrix(); } }
 // shadows are redrawn with every frame while playing; on the menus and the results every other drawn frame
 // is enough (the title traffic moves slowly), which saves about a third of each frame there
-let shadowSkip = false;
+let shadowSkip = false, shadowHalf = false;   // shadowHalf: the ladder's last rung (every other frame in play too)
 function shadowCadence(idle) {
-  if (!idle) { renderer.shadowMap.autoUpdate = true; return; }
+  if (!idle && !shadowHalf) { renderer.shadowMap.autoUpdate = true; return; }
   renderer.shadowMap.autoUpdate = false;
   shadowSkip = !shadowSkip;
   if (!shadowSkip) renderer.shadowMap.needsUpdate = true;
 }
 // test hook: how the view was fitted
-const viewInfo = () => { const sc = sun.shadow.camera; return { shadowW: sc.right - sc.left, shadowH: sc.top - sc.bottom, fogNear: scene.fog.near, fogFar: scene.fog.far, mapSize: sun.shadow.mapSize.x }; };
+const viewInfo = () => { const sc = sun.shadow.camera; return { shadowW: sc.right - sc.left, shadowH: sc.top - sc.bottom, fogNear: scene.fog.near, fogFar: scene.fog.far, mapSize: sun.shadow.mapSize.x, shadowHalf }; };
 
-export { BAD_FRAME, BLINK_STEPS, CAM_OFF, SUN_OFF, LADDER, ONE, camera, focus, getPixelRatio, hemi, lowGpu, marquee, perf, reduceMotion, renderer, resetFrameWatch, resize, scene, setNight, setRatio, setZoom, setShadowMapSize, shadowCadence, stage, sun, touchQuery, viewInfo, watchFrameTime };
+export { BAD_FRAME, BLINK_STEPS, CAM_OFF, SUN_OFF, LADDER, ONE, camera, focus, getPixelRatio, hemi, lowGpu, marquee, perf, reduceMotion, renderer, resetFrameWatch, resize, scene, setNight, setRatio, setZoom, setShadowMapSize, shadowCadence, stage, sun, touchQuery, viewInfo, viewSize, watchFrameTime };

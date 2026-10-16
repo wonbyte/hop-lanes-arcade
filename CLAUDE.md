@@ -69,7 +69,7 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
   car, log or train position (`o.x`, `train.x`) must stay inside that window, or widen it in `updateLanes`.
 - A replay pays no coins, sets no records and takes no input except restart (`G.replay` checks in players, screens, input).
 - Coins during play go through `setBank(n, true)` and are saved at game over or when the tab hides (`flushBank`).
-- Per-frame (not per-step) work: `placeCamera`, `spinAll` (coins), `updateParts` (particles). Gameplay never goes there.
+- Per-frame (not per-step) work: `placeCamera`, `spinAll` (coins), `updateParts` (particles), `dressPlayer` (the animal's turn, blink and shadow blob). Gameplay never goes there.
 - User-facing text goes through `t()` (keys are the English strings). Add new strings to the ES and DE tables in `js/i18n.js`.
 - New module names must be unique across all modules: the offline build concatenates them into one scope.
   A module with only side effects must be imported explicitly in `js/app.js`.
@@ -128,7 +128,7 @@ Run `npm test` and `npm run build` before every commit. Commit the rebuilt `hop-
   on a state change (`paintSignal`, `o.lightRed`).
 - Phones use `BasicShadowMap` (hard edges, one shadow read per pixel) and a 512 shadow map; desktops `PCFShadowMap`
   (r186 removed `PCFSoftShadowMap`) and 1024. Chosen once at boot. The quality ladder retries a rung that helped
-  (pixel ratio 2 → 1.5 → 1.25 → 1.0; phones with a dense screen start at 2, everything else at 1.5); the lowered setting stays for the next game (`hoplanes.ratio`), and every rung may be tried again (`resetFrameWatch`). On the menus the shadow map is redrawn every other frame (`shadowCadence`).
+  (pixel ratio 2 → 1.5 → 1.25 → 1.0; phones with a dense screen start at 2, everything else at 1.5; then the shadow map size; last, shadows every other drawn frame in play too, `shadowHalf`); the lowered setting stays for the next game (`hoplanes.ratio`), and every rung may be tried again (`resetFrameWatch`). On the menus the shadow map is redrawn every other frame (`shadowCadence`).
 - The window of built rows follows `visRows` (fewer rows on a sideways phone): `rowsBehind()` and the ahead limit in
   `ensureLanes`.
 - `near()`, `visRows` and `firstNeededRow()` decide which rows exist and sound; keep them in step with the camera.

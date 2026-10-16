@@ -5,11 +5,11 @@ import { decodeReplay } from './replay.js';
 import { creepCamera } from './sim.js';
 import { ghostInfo, ghostMat, ghostWarmGeo, placeGhost, stepGhost } from './ghost.js';
 import { CHARACTERS, LIGHT_OFF, lightGeo } from './models.js';
-import { CAM_OFF, SUN_OFF, camera, focus, getPixelRatio, reduceMotion, renderer, scene, setNight, setZoom, shadowCadence, sun, touchQuery, viewInfo, watchFrameTime } from './gfx.js';
+import { CAM_OFF, SUN_OFF, camera, focus, getPixelRatio, reduceMotion, renderer, scene, setNight, setZoom, shadowCadence, sun, touchQuery, viewInfo, viewSize, watchFrameTime } from './gfx.js';
 import { announceFrame } from './panels.js';   // also sets up the settings, pause and top-10 panels
 import { keepAwake } from './device.js';
 import { flushBank } from './storage.js';
-import { applyMoves, blobGeo, blobMat, bubbleGeo, bubbleMat, giveShield, kill, players, updateParts, updatePlayer } from './players.js';
+import { applyMoves, blobGeo, blobMat, bubbleGeo, bubbleMat, giveShield, kill, players, dressPlayer, updateParts, updatePlayer } from './players.js';
 import { join, resultsEl, setBanner, setModeLabel, showHowto, startPlay, toAttract } from './screens.js';
 import { HINT_KEY, HOWTO_KEY, dailySeed, loadText, owned, save } from './storage.js';
 import { biomeAt, biomeIndex, ensureLanes, getSeed, laneCoins, laneKinds, lanes, showLane, spinAll, updateFarLanes, updateLanes, weatherAt } from './world.js';
@@ -74,9 +74,8 @@ function placeHint() {
   if (G.state !== 'play' || !p || !p.mesh) { hintEl.hidden = true; return; }
   if (p.score >= (getSeed() === TUTORIAL_SEED ? HINT_ROWS : 5)) { G.hint = false; save(HINT_KEY, 1); hintEl.hidden = true; return; }
   hintPos.set(p.x, 1.5, p.mesh.position.z).project(camera);
-  const r = renderer.domElement.getBoundingClientRect();
-  hintEl.style.left = (hintPos.x + 1) / 2 * r.width + 'px';
-  hintEl.style.top = (1 - hintPos.y) / 2 * r.height + 'px';
+  hintEl.style.left = (hintPos.x + 1) / 2 * viewSize.w + 'px';
+  hintEl.style.top = (1 - hintPos.y) / 2 * viewSize.h + 'px';
   const text = hintText(p);
   if (hintEl.textContent !== text) hintEl.textContent = text;
   hintEl.hidden = false;
@@ -149,6 +148,7 @@ function frameBody(now) {
   while (acc >= STEP && steps < MAX_STEPS) { step(STEP); acc -= STEP; steps++; }
   if (steps === MAX_STEPS) acc = 0;
   updateParts(dt);   // effects: once per frame, not per step
+  for (const p of players) dressPlayer(p, dt);   // the animals' turns, blinks and shadow blobs: looks only
 
   // draw at most ~60 fps while playing (90-144 Hz screens), and every other frame on menus, to save battery
   const idle = G.state === 'attract' || (G.state === 'over' && G.stateT > RESULTS_DELAY);
@@ -220,7 +220,7 @@ if (DEBUG) {
     get slowT() { return G.slowT; },
     get hintText() { return hintEl.textContent; },
     boom() { G.boom = true; },   // throw inside the next step: the crash notice
-    ladder: { feed: watchFrameTime, get ratio() { return getPixelRatio(); }, get shadow() { return sun.shadow.mapSize.x; } }
+    ladder: { feed: watchFrameTime, get ratio() { return getPixelRatio(); }, get shadow() { return sun.shadow.mapSize.x; }, get shadowHalf() { return viewInfo().shadowHalf; } }
   };
 }
 // a replay link: the same world, the same animals, the same hops (a link with an unknown animal is ignored)
