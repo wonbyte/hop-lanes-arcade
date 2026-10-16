@@ -17,9 +17,11 @@ const rowRng = (seed, r) => mulberry32((seed ^ Math.imul(r + 4096, 0x9e3779b1)) 
 // the train schedule of a rail row has a generator of its own (it runs on world time, see railStep)
 const railSeed = (seed, r) => (seed ^ Math.imul(r + 1000, 0x9e3779b1)) >>> 0;
 // rain or snow, by 40-row chunk from row 20 on (world.js picks snow or rain; either makes traffic faster)
+const WET_FROM = 20, WET_CHUNK = 40;
+const wetChunk = r => r < WET_FROM ? -1 : Math.floor(r / WET_CHUNK);   // -1: never wet
 function wetAt(seed, r) {
-  if (r < 20) return false;
-  const chunk = Math.floor(r / 40);
+  const chunk = wetChunk(r);
+  if (chunk < 0) return false;
   return mulberry32((seed ^ Math.imul(chunk + 7, 0x85ebca6b)) >>> 0)() < 0.25;
 }
 
@@ -174,7 +176,7 @@ const ROW_BUILDERS = {
     lane.speed = TRAIN_SPEED * (lane.boss ? 1.25 : 1);
     const first = genRand(rng, 2, 6);
     // the schedule is seeded per lane and runs on world time: trains come at the same moments in a replay
-    Object.assign(lane, { timer: first, warned: false, rng: mulberry32(railSeed(seed, lane.r)), warn: TRAIN_WARN * (lane.boss ? 1.7 : 1),
+    Object.assign(lane, { warned: false, rng: mulberry32(railSeed(seed, lane.r)), warn: TRAIN_WARN * (lane.boss ? 1.7 : 1),
       pass: (2 * WRAP + len + 5) / lane.speed, nextStart: first });   // pass: seconds a train is on the track
     lane.nextEnd = lane.nextStart + lane.pass;
     lane.train = { len, x: 99, active: false };
@@ -283,4 +285,4 @@ function railStep(lane, w) {
   return active;
 }
 
-export { CAR_COLORS, LANE_SPAN, TRAIN_CARS, TRAIN_CAR_LEN, TRAIN_GAP, createWorldGen, playColumns, railStep, standColumns, standGroups, trafficX, trainLen, wetAt };
+export { wetChunk, TRAIN_CARS, TRAIN_CAR_LEN, TRAIN_GAP, createWorldGen, railStep, standColumns, standGroups, trafficX, trainLen, wetAt };

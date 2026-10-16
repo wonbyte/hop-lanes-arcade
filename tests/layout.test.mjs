@@ -1,41 +1,12 @@
 // Layout tests for Hop Lanes across viewports. Run: node tests/layout.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-import { chromium } from 'playwright';
 import { serve } from './serve.mjs';
+import { ROOT, launch, open, waitState } from './browser.mjs';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let INDEX = '';   // served over http (set in before): module scripts do not load from file://
-const ARGS = ['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist'];
-const T = 60000;
 
 let browser, site;
-
-async function launch() {
-  try {
-    return await chromium.launch({ args: ARGS });
-  } catch (err) {
-    const base = process.env.PLAYWRIGHT_BROWSERS_PATH || '/opt/pw-browsers';
-    const found = [];
-    const walk = (d, depth) => {
-      if (depth > 4 || !fs.existsSync(d)) return;
-      for (const e of fs.readdirSync(d, { withFileTypes: true })) {
-        const p = path.join(d, e.name);
-        if (e.isDirectory()) walk(p, depth + 1);
-        else if (/^(chrome|headless_shell)$/.test(e.name)) found.push(p);
-      }
-    };
-    walk(base, 0);
-    if (!found.length) throw err;
-    return chromium.launch({ args: ARGS, executablePath: found[0] });
-  }
-}
-
-const waitState = (page, s) =>
-  page.waitForFunction(x => window.hopLanes && window.hopLanes.state === x, s, { timeout: T });
 
 const VIEWPORTS = [
   { name: '320x568', width: 320, height: 568, touch: false },
@@ -90,17 +61,11 @@ test.after(async () => { await browser?.close(); await site?.close(); });
 
 for (const vp of VIEWPORTS) {
   test(`layout ${vp.name}`, async () => {
-    const context = await browser.newContext({
+    const { context, page } = await open(browser, INDEX + '#debug-seed-3', { context: {
       viewport: { width: vp.width, height: vp.height },
       ...(vp.touch ? { isMobile: true, hasTouch: true } : {}),
-    });
-    await context.addInitScript(() => {
-      try { localStorage.setItem('hoplanes.howto', '1'); } catch {}
-    });
-    const page = await context.newPage();
-    await page.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
+    } });
     try {
-      await page.goto(INDEX + '#debug-seed-3');
       await waitState(page, 'attract');
       assert.deepEqual(await page.evaluate(collectProblems), [], `attract @ ${vp.name}`);
 

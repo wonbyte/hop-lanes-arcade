@@ -79,4 +79,4 @@ function stopGhost() {
 }
 const ghostInfo = () => ghost ? { row: ghost.p.row, x: ghost.p.x, alive: ghost.p.alive && !ghost.done, score: ghost.score } : null;
 
-export { GHOST_KEY, ghostInfo, ghostMat, ghostWarmGeo, placeGhost, saveGhost, startGhost, stepGhost, stopGhost };
+export { ghostInfo, ghostMat, ghostWarmGeo, placeGhost, saveGhost, startGhost, stepGhost, stopGhost };

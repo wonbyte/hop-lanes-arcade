@@ -3,85 +3,23 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { chromium } from 'playwright';
 import { serve } from './serve.mjs';
+import { ROOT, T, launch, open as openPage, waitState, settle, waitTicks } from './browser.mjs';
 import { spawn } from 'node:child_process';
 import os from 'node:os';
 import net from 'node:net';
+import { STEP } from '../js/rules.js';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const ARGS = ['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required'];
-const T = 60000;
 const SLOW = 120000; // whole-test budget for tests that wait through a game
 
 let browser, site, INDEX = '';
 
-async function launch() {
-  try {
-    return await chromium.launch({ args: ARGS });
-  } catch (err) {
-    const base = process.env.PLAYWRIGHT_BROWSERS_PATH || '/opt/pw-browsers';
-    const found = [];
-    const walk = (d, depth) => {
-      if (depth > 4 || !fs.existsSync(d)) return;
-      for (const e of fs.readdirSync(d, { withFileTypes: true })) {
-        const p = path.join(d, e.name);
-        if (e.isDirectory()) walk(p, depth + 1);
-        else if (/^(chrome|headless_shell)$/.test(e.name)) found.push(p);
-      }
-    };
-    walk(base, 0);
-    if (!found.length) throw err;
-    return chromium.launch({ args: ARGS, executablePath: found[0] });
-  }
-}
-
-// New context + page. `storage` entries are written to localStorage before every load;
-// `clipboard` stubs navigator.clipboard and removes navigator.share.
-// `scale` sets the device pixel ratio; `noShare` removes the share sheet and the clipboard (the copy-by-hand fallback).
-// `phone` opens a touch screen the size of a phone.
-async function open(url, { storage = {}, clipboard = false, scale = 0, noShare = false, phone = false } = {}) {
-  const context = await browser.newContext({
-    ...(scale ? { deviceScaleFactor: scale } : {}),
-    ...(phone ? { isMobile: true, hasTouch: true, viewport: { width: 390, height: 760 } } : {})
-  });
-  if (noShare) {
-    await context.addInitScript(() => {
-      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined });
-      Object.defineProperty(navigator, 'share', { configurable: true, value: undefined });
-    });
-  }
-  await context.addInitScript(() => { try { localStorage.setItem('hoplanes.howto', '1'); } catch (e) {} });
-  if (Object.keys(storage).length) {
-    await context.addInitScript(entries => {
-      try { for (const [k, v] of Object.entries(entries)) localStorage.setItem(k, v); } catch (e) {}
-    }, storage);
-  }
-  if (clipboard) {
-    await context.addInitScript(() => {
-      Object.defineProperty(navigator, 'clipboard', {
-        configurable: true,
-        value: { writeText: t => { window.__copied = t; return Promise.resolve(); } },
-      });
-      Object.defineProperty(navigator, 'share', { configurable: true, value: undefined });
-    });
-  }
-  const page = await context.newPage();
-  const errors = [];
-  page.on('pageerror', e => errors.push(String(e)));
-  page.on('console', m => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push('console: ' + m.text()); });
-  await page.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
-  await page.goto(url);
-  return { context, page, errors };
-}
-
-const waitState = (page, s, timeout = T) =>
-  page.waitForFunction(x => window.hopLanes && window.hopLanes.state === x, s, { timeout });
+// New context + page on the game (browser.mjs open): storage, clipboard, scale, noShare, phone
+const open = (url, opts) => openPage(browser, url, opts);
 const hop = (page, fn) => page.evaluate(fn);
 const resultsVisible = page => page.locator('#results').waitFor({ state: 'visible', timeout: T });
 
-test.before(async () => { browser = await launch(); site = await serve(ROOT); INDEX = site.url + '/index.html#debug'; });
+test.before(async () => { browser = await launch({ autoplay: true }); site = await serve(ROOT); INDEX = site.url + '/index.html#debug'; });
 test.after(async () => { await browser?.close(); await site?.close(); });
 
 test('1a. shop: buy BUNNY with coins through the card arrow and TAP', async () => {
@@ -118,7 +56,8 @@ test('1b. shop: cannot afford BUNNY, does not join, card shakes', async () => {
         .observe(card, { attributes: true, attributeFilter: ['class'] });
     });
     await page.click('#tap1');
-    await page.waitForTimeout(300);
+    await page.waitForFunction(() => window.__shook, null, { timeout: T });
+    await settle(page, 300);   // then the page runs on: a late join would show
     assert.equal(await hop(page, () => window.hopLanes.players[0].joined), false, 'did not join');
     assert.equal(await hop(page, () => window.hopLanes.bank), 10, 'bank unchanged');
     assert.equal(await hop(page, () => window.__shook), true, 'card got the shake class');
@@ -215,7 +154,7 @@ test('2b. prize machine: a second pull with too few coins leaves the bank alone'
     assert.equal(await hop(page, () => window.hopLanes.bank), 20);
     const owned = await hop(page, () => window.hopLanes.owned.length);
     await page.evaluate(() => document.getElementById('prize').click()); // no-op if disabled
-    await page.waitForTimeout(300);
+    await settle(page, 300);
     assert.equal(await hop(page, () => window.hopLanes.bank), 20, 'bank unchanged');
     assert.equal(await hop(page, () => window.hopLanes.owned.length), owned, 'nothing new owned');
     assert.deepEqual(errors, []);
@@ -292,7 +231,7 @@ test('5. race mode: idle P1 is taken by the eagle, P2 wins', { timeout: 180000 }
     const deadline = Date.now() + 90000;
     while (Date.now() < deadline && (await hop(page, () => window.hopLanes.state)) !== 'over') {
       await page.keyboard.press('ArrowUp');
-      await page.waitForTimeout(1500);
+      await waitTicks(page, Math.round(1.5 / STEP));   // 1.5 s of game steps between hops
     }
     assert.equal(await hop(page, () => window.hopLanes.state), 'over');
     const p2alive = await hop(page, () => window.hopLanes.players[1].alive);
@@ -445,7 +384,7 @@ test('8a. a tap on the copy-by-hand text box does not restart the game', async (
     assert.match(await page.locator('#share').textContent(), /SELECT AND COPY/);
     await page.click('#shareText');
     await page.keyboard.press('Space');
-    await page.waitForTimeout(600);
+    await settle(page, 600);
     assert.equal(await hop(page, () => window.hopLanes.state), 'over', 'still on the results');
     assert.deepEqual(errors, []);
   } finally { await context.close(); }
@@ -480,7 +419,7 @@ test('8c. the title tune starts with the first tap on the title', async () => {
   const { context, page, errors } = await open(INDEX);
   try {
     await waitState(page, 'attract');
-    await page.waitForTimeout(800);   // past the old 0.5 s window
+    await settle(page, 800);   // past the old 0.5 s window
     assert.equal(await hop(page, () => window.hopLanes.tune), false);
     await page.click('#mute'); await page.click('#mute');   // two gestures, sound back on
     await page.waitForFunction(() => window.hopLanes.tune === true, null, { timeout: 5000 });

@@ -146,10 +146,11 @@ body {
 #dayMissions li.done::before { content: '\2713 '; color: #4cbf3f; }
 /* a short screen (a small phone, or one held sideways) has no room for a second box: the cards cover it */
 @media (max-height: 620px) { #dayMissions { display: none; } }
-#hint { position: absolute; z-index: 5; transform: translate(-50%, -100%); padding: 6px 10px; border-radius: 10px; background: var(--gold); color: #10131c;
-  font-family: var(--font-pixel); font-size: 10px; white-space: nowrap; pointer-events: none; animation: hintbob .5s ease-in-out infinite alternate; }
-@keyframes hintbob { from { margin-top: 0; } to { margin-top: -8px; } }
-@media (prefers-reduced-motion: reduce) { #hint { animation: none; } }
+#hint { position: absolute; left: 0; top: 0; z-index: 5; pointer-events: none; will-change: transform; }   /* placed with a transform (app.js placeHint): no layout per frame */
+#hint span { display: block; transform: translate(-50%, -100%); padding: 6px 10px; border-radius: 10px; background: var(--gold); color: #10131c;
+  font-family: var(--font-pixel); font-size: 10px; white-space: nowrap; animation: hintbob .5s ease-in-out infinite alternate; }
+@keyframes hintbob { from { transform: translate(-50%, -100%); } to { transform: translate(-50%, calc(-100% - 8px)); } }
+@media (prefers-reduced-motion: reduce) { #hint span { animation: none; } }
 #boardList li .watch { font-family: inherit; font-size: 9px; min-width: 32px; min-height: 32px; padding: 0 8px; border-radius: 8px; background: var(--gold); color: #10131c; }
 #fps { position: absolute; z-index: 9; right: 6px; bottom: 6px; padding: 3px 6px; background: rgba(0,0,0,.6); color: #9f9; font: 10px/1.4 monospace; pointer-events: none; }
 #replayTag {
@@ -289,8 +290,8 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
 /* very narrow phones (320px and less) */
 @media (max-width: 340px) {
   #marquee { gap: 3px; }
-  .hs small { font-size: 7px; }
-  #mute { font-size: 7px; padding: 6px 4px; }
+  .hs small { font-size: 8px; letter-spacing: 0; }
+  #mute { font-size: 8px; padding: 6px 3px; }
   .side { width: 34px; }
   .tap { width: 60px; }
   .pad { gap: 2px; }

@@ -20,7 +20,7 @@ const ES = {
   'WORLD BEST {n} · {name}': 'MEJOR DEL MUNDO {n} · {name}', 'TODAY TOP {n} · {name}': 'MEJOR DE HOY {n} · {name}',
   'I scored {n} in Hop Lanes as {name}!': '¡Hice {n} en Hop Lanes como {name}!', 'Room {code}': 'Sala {code}',
   PAUSED: 'PAUSA', 'TAP TO CONTINUE': 'TOCA PARA SEGUIR', 'PRESS ANY KEY': 'PULSA UNA TECLA', 'GO!': '¡YA!',
-  'FROG VS FOX': 'RANA CONTRA ZORRO', 'OTHER PLAYER: TAP TO JOIN': 'OTRO JUGADOR: TOCA PARA ENTRAR', 'TAP TO HOP · SWIPE TO TURN': 'TOCA PARA SALTAR · DESLIZA PARA GIRAR',
+  '{a} VS {b}': '{a} CONTRA {b}', 'OTHER PLAYER: TAP TO JOIN': 'OTRO JUGADOR: TOCA PARA ENTRAR', 'TAP TO HOP · SWIPE TO TURN': 'TOCA PARA SALTAR · DESLIZA PARA GIRAR',
   'Tap the game to hop forward.\nSwipe to move left, right or back.\nCollect coins to unlock animals.\nStand still too long and the eagle gets you!':
     'Toca el juego para saltar.\nDesliza para ir a un lado o atrás.\nJunta monedas para abrir animales.\n¡Si te quedas quieto, el águila te atrapa!',
   'Player 1: W A S D.  Player 2: arrow keys.\nCollect coins to unlock animals.\nStand still too long and the eagle gets you!':
@@ -62,7 +62,7 @@ const DE = {
   'WORLD BEST {n} · {name}': 'WELTREKORD {n} · {name}', 'TODAY TOP {n} · {name}': 'HEUTE BESTE {n} · {name}',
   'I scored {n} in Hop Lanes as {name}!': 'Ich habe {n} in Hop Lanes als {name} geschafft!', 'Room {code}': 'Raum {code}',
   PAUSED: 'PAUSE', 'TAP TO CONTINUE': 'TIPPEN ZUM WEITERSPIELEN', 'PRESS ANY KEY': 'DRÜCKE EINE TASTE', 'GO!': 'LOS!',
-  'FROG VS FOX': 'FROSCH GEGEN FUCHS', 'OTHER PLAYER: TAP TO JOIN': 'ZWEITER SPIELER: TIPPEN ZUM MITSPIELEN', 'TAP TO HOP · SWIPE TO TURN': 'TIPPEN ZUM HÜPFEN · WISCHEN ZUM DREHEN',
+  '{a} VS {b}': '{a} GEGEN {b}', 'OTHER PLAYER: TAP TO JOIN': 'ZWEITER SPIELER: TIPPEN ZUM MITSPIELEN', 'TAP TO HOP · SWIPE TO TURN': 'TIPPEN ZUM HÜPFEN · WISCHEN ZUM DREHEN',
   'Tap the game to hop forward.\nSwipe to move left, right or back.\nCollect coins to unlock animals.\nStand still too long and the eagle gets you!':
     'Tippe auf das Spiel, um zu hüpfen.\nWische nach links, rechts oder zurück.\nSammle Münzen für neue Tiere.\nStehst du zu lange still, holt dich der Adler!',
   'Player 1: W A S D.  Player 2: arrow keys.\nCollect coins to unlock animals.\nStand still too long and the eagle gets you!':
@@ -115,6 +115,5 @@ function applyLang() {
 }
 pickLang();
 applyLang();
-const getLang = () => lang;
 
-export { DE, ES, LANGS, LANG_KEY, applyLang, getLang, nextLang, pickLang, setLang, t };
+export { DE, ES, nextLang, setLang, t };

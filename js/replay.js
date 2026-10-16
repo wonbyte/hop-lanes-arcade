@@ -1,10 +1,10 @@
 // Replays: a run is its seed, mode, characters, handicap, the world tick play began on, and every hop
 // with the tick it happened on. The game steps at a fixed rate (app.js STEP) and traffic and trains are a
 // function of the world tick, so the same hops on the same ticks give the same run. Pure: no DOM, tested by node.
-import { MODES } from './rules.js';
+import { MAX_RUN_TICKS, MODES } from './rules.js';
 
 const REPLAY_VERSION = 2;
-const MAX_TICK = 120 * 60 * 60;   // an hour of play: anything later in a link is junk
+const MAX_TICK = MAX_RUN_TICKS;   // anything later in a link is junk
 const DIRS = { '0,1': 'U', '0,-1': 'D', '-1,0': 'L', '1,0': 'R' };
 const DIR_MOVE = { U: [0, 1], D: [0, -1], L: [-1, 0], R: [1, 0] };
 // run = { seed, mode, chars: [key, key], joined: [bool, bool], handicap: 0..2, startTick, events: [[tick, player, dx, dr], ...] }
@@ -24,6 +24,8 @@ function decodeReplay(code) {
     if (!/^[123]$/.test(joined)) return null;   // at least one player
     const keys = chars.split(',');
     if (keys.length !== 2 || !keys.every(k => /^[a-z]+$/.test(k))) return null;
+    // the shape first, anchored and bounded: the scan below backtracks (slow) on long junk such as digits only
+    if (!/^(\d{1,6}[ab][UDLR])*$/.test(ev)) return null;
     const events = [];
     let t = 0;
     for (const m of ev.matchAll(/(\d+)([ab])([UDLR])/g)) {
@@ -32,7 +34,6 @@ function decodeReplay(code) {
       const [dx, dr] = DIR_MOVE[m[3]];
       events.push([t, m[2] === 'b' ? 1 : 0, dx, dr]);
     }
-    if (events.length * 6 < ev.length - 2) return null;   // junk in the event text
     const mask = Number(joined);
     return { seed: Number(seed) >>> 0, mode, chars: keys, joined: [!!(mask & 1), !!(mask & 2)], handicap: Number(handicap), startTick: Number(startTick), events };
   } catch (e) { return null; }

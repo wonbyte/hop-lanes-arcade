@@ -2,10 +2,9 @@
 // No DOM, no Three.js. players.js plays these rules in the browser (makeRules with effect hooks that move meshes and
 // make sounds); simulate() plays a replay with no effects, so the score server can check a posted score.
 // Everything here is step-driven (fixed STEP), so the browser and simulate() give the same run tick for tick.
-import { BEHIND_LIMIT, BOMB_TICKS, COMBO_EVERY, COUNTDOWN, COMBO_GAP, EAGLE_IDLE, EAGLE_SWOOP, EAGLE_WARN, EDGE_DEATH, HIT_PAD, HOP_TIME, LEAD_FROM, LEAD_GAP, LEAD_SLOW, MAGNET_REACH, MAGNET_TIME, NEAR_MISS, PLAY_HALF, SHIELD_TIME, SLIDE_TIME, SPRING_HOP, STEP, PLANK_BACK, PLANK_BREAK, TAG_BOOST, hopTarget, hopTime, isBombPower, isWater, plankState, traitOf } from './rules.js';
+import { BEHIND_LIMIT, BOMB_TICKS, CAM_CATCH_RATE, CAM_CATCH_ROWS, CAM_CREEP, CAM_CREEP_GAIN, CAM_CREEP_MAX, COMBO_EVERY, HOP_MID, LOG_SLACK, MAX_RUN_TICKS, RESCUE_HOP, START_X, COUNTDOWN, COMBO_GAP, EAGLE_IDLE, EAGLE_SWOOP, EAGLE_WARN, EDGE_DEATH, HIT_PAD, HOP_TIME, LEAD_FROM, LEAD_GAP, LEAD_SLOW, MAGNET_REACH, MAGNET_TIME, NEAR_MISS, PLAY_HALF, SHIELD_TIME, SLIDE_TIME, SPRING_HOP, STEP, PLANK_BACK, PLANK_BREAK, TAG_BOOST, hopTarget, hopTime, isBombPower, isWater, plankState, traitOf } from './rules.js';
 import { createWorldGen, railStep, trafficX } from './gen.js';
 
-const START_X = [-2, 2];   // the columns the two players start on
 const RULE_HOOKS = ['hop', 'combo', 'kill', 'rescue', 'shield', 'power', 'coin', 'land', 'hopPose', 'stand', 'warn', 'eagle', 'swoop', 'label', 'near', 'lives', 'teleport', 'bomb', 'unbomb'];
 // a player's run state, as it is when the animal appears on row 0. p.trait (rules.js traitOf) is set by the caller first.
 function resetPlayer(p) {
@@ -19,8 +18,8 @@ function resetPlayer(p) {
 // the camera's scroll line: it creeps forward on its own, and catches up fast to a player who runs ahead.
 // (app.js updateCamera does the same in the browser; smoke test 5c checks the two agree.)
 function creepCamera(camRow, playT, lead, dt) {
-  camRow += Math.min(1.1, 0.3 + playT * 0.006) * dt;
-  if (lead - 2 > camRow) camRow += (lead - 2 - camRow) * Math.min(1, dt * 3);
+  camRow += Math.min(CAM_CREEP_MAX, CAM_CREEP + playT * CAM_CREEP_GAIN) * dt;
+  if (lead - CAM_CATCH_ROWS > camRow) camRow += (lead - CAM_CATCH_ROWS - camRow) * Math.min(1, dt * CAM_CATCH_RATE);
   return camRow;
 }
 // the rows whose lanes a player can touch this step (collisions and landings read cars, logs and trains only there)
@@ -119,7 +118,7 @@ function makeRules(W) {
     p.shield = false;
     p.safeT = SHIELD_TIME;
     const tx = Math.max(-PLAY_HALF, Math.min(PLAY_HALF, Math.round(p.x)));
-    p.hop = { t: 0, dur: HOP_TIME * 2, fromRow: p.row, fx: p.x, fz: -p.row, tx, tz: -r, carry: null, carryX0: 0, span: 0 };
+    p.hop = { t: 0, dur: HOP_TIME * RESCUE_HOP, fromRow: p.row, fx: p.x, fz: -p.row, tx, tz: -r, carry: null, carryX0: 0, span: 0 };
     fx.rescue(p);   // before the row changes: the effect starts where the animal was
     p.queue = null; p.log = null; p.row = r;
     return true;
@@ -150,7 +149,8 @@ function makeRules(W) {
     if (leading(p)) dur *= LEAD_SLOW;
     p.hop = {
       t: 0, dur, fromRow: p.row, fx: p.x, fz: -p.row, tx, tz: -(p.row + dr),
-      carry: p.log, carryX0: p.log ? p.log.x : 0, span: p.log ? from.span : 0, dx, dr, high: spring
+      carry: p.log, carryX0: p.log ? p.log.x : 0, span: p.log ? from.span : 0, dx, dr, high: spring,
+      mud: !!from && from.kind === 'mud'   // for the sound: a slow hop is not always a muddy one (the leader is slowed too)
     };
     p.row += dr;
     p.idleT = 0; p.warned = false;
@@ -191,7 +191,7 @@ function makeRules(W) {
     p.hop = null;
     p.log = null;
     if (lane && lane.kind === 'river') {
-      const log = lane.objs.find(o => Math.abs(o.x - p.x) < o.len / 2 + 0.05);
+      const log = lane.objs.find(o => Math.abs(o.x - p.x) < o.len / 2 + LOG_SLACK);
       if (!log) { kill(p, 'splash'); return p.alive; }
       // snap to the centre of the nearest log segment so standing feels solid
       const k = (log.len - 1) / 2;
@@ -251,8 +251,8 @@ function makeRules(W) {
   }
   function checkHazards(p, lane) {
     // until mid-hop the player is still over the row they left
-    const hz = p.hop && p.hop.t < 0.5 ? W.lane(p.hop.fromRow) : lane;
-    if (hz && (hz.kind === 'bridge' || hz.kind === 'cliff') && (!p.hop || p.hop.t < 0.5) && plankState(hz, Math.round(p.x), G.worldTick) === 'down') { kill(p, hz.kind === 'cliff' ? 'fall' : 'splash'); return; }
+    const hz = p.hop && p.hop.t < HOP_MID ? W.lane(p.hop.fromRow) : lane;
+    if (hz && (hz.kind === 'bridge' || hz.kind === 'cliff') && (!p.hop || p.hop.t < HOP_MID) && plankState(hz, Math.round(p.x), G.worldTick) === 'down') { kill(p, hz.kind === 'cliff' ? 'fall' : 'splash'); return; }
     if (hz && hz.r !== p.nearRow) { p.nearRow = hz.r; p.nearSeen.clear(); }   // a new row under the player: its cars can each count once
     if (hz && (hz.kind === 'road' || hz.kind === 'rocks' || hz.twister)) {   // cars, boulders, or the twister crossing a grass row
       for (const o of hz.objs) {
@@ -318,7 +318,7 @@ function createSim(rp) {
     return l;
   };
   // forget the rows nobody can reach any more (a long ghost run would keep every row it saw)
-  const prune = () => { for (const r of lanes.keys()) if (r < S.camRow - BEHIND_LIMIT - 2) lanes.delete(r); };
+  const prune = () => { for (const r of lanes.keys()) if (r < S.camRow - BEHIND_LIMIT - 3) lanes.delete(r); };   // -3: the turtle stands one row further back
   // the browser starts the world clock so the countdown ends on the recorded tick (startPlay then sets it exactly)
   const S = { state: 'countdown', countdown: COUNTDOWN, mode: rp.mode, camRow: 0, playT: 0, run: null, worldTick: Math.max(0, rp.startTick - Math.ceil(COUNTDOWN / STEP)) };
   let playTick = 0, end = null;
@@ -368,7 +368,7 @@ function createSim(rp) {
 // (play ticks), row, cause (of the first joined player), over, players: [{ joined, row, x, score, alive, cause }] },
 // or null when the run does not end within maxTicks play ticks or takes longer than maxMs of wall-clock time.
 // until: stop at that play tick if the run is still on (over: false).
-function simulate(rp, { maxTicks = 120 * 60 * 61, maxMs = Infinity, until = Infinity } = {}) {
+function simulate(rp, { maxTicks = MAX_RUN_TICKS, maxMs = Infinity, until = Infinity } = {}) {
   const sim = createSim(rp);
   const t0 = maxMs < Infinity ? Date.now() : 0;
   let res;

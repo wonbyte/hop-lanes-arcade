@@ -34,6 +34,17 @@ const EAGLE_SWOOP = 0.9;      // seconds the eagle takes to reach the player
 const EAGLE_WARN = 1.5;       // seconds before the swoop a warning sounds
 const COIN_CHANCE = { grass: 0.28, road: 0.18, lily: 0.4, mud: 0.3, ice: 0.25, bridge: 0.35, rocks: 0.2, spring: 0.3, portal: 0.3, cliff: 0.25 };   // chance of a coin on a lane
 const STEP = 1 / 120;         // the game steps at a fixed rate, so a replay plays back the same run
+const TICKS_PER_S = Math.round(1 / STEP);
+const START_X = [-2, 2];      // the columns the two players start on
+const CAM_CREEP = 0.3, CAM_CREEP_GAIN = 0.006, CAM_CREEP_MAX = 1.1;   // rows/s the scroll line creeps, faster with time
+const CAM_CATCH_ROWS = 2, CAM_CATCH_RATE = 3;   // it catches up fast to a player more than CAM_CATCH_ROWS ahead
+const RESCUE_HOP = 2;         // a rescue hop (an extra life in water) takes this many hop times
+const LOG_SLACK = 0.05;       // how far past a log's end a landing still counts as on it
+const HOP_MID = 0.5;          // until this part of a hop the player is still over the row they left
+const MAX_RUN_TICKS = TICKS_PER_S * 60 * 61;   // an hour of play (plus a minute): a replay or a run past this is junk
+// the daily world: one seed per local day, the same on every device and on the score server (VERIFY)
+const DAY_PREFIX = 'hoplanes.day.';
+const dailySeedFor = day => hashString(DAY_PREFIX + day);
 const POWER_CHANCE = 0.05;    // chance of a power-up (shield or magnet) on a lane past row 10
 const COMBO_GAP = 0.45;       // seconds between hops that keep a combo alive
 const COMBO_EVERY = 5;        // hops of combo per bonus coin
@@ -152,7 +163,7 @@ const pad2 = n => String(n).padStart(2, '0');
 const isoDay = (d = new Date()) => d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
 const dayBefore = (d = new Date()) => { const y = new Date(d); y.setDate(y.getDate() - 1); return isoDay(y); };
 
-export { BOMB_TICKS, BRIDGE_FROM, CLIFF_FROM, FLOOD_SPEED, HATS, ICE_FROM, LEAD_FROM, LEAD_GAP, LEAD_SLOW, NEAR_MISS, PORTAL_FROM, SPRING_FROM, SPRING_HOP, TAG_BOOST, TWISTER_LEN, isBombPower, isBombRow, TRAITS, dayBefore, hatFor, isoWeek, streakAfter, streakCount, traitOf, PLANK_BACK, PLANK_BREAK, ROCKS_FROM, SLIDE_TIME, isWater, plankState,
+export { CAM_CATCH_RATE, CAM_CATCH_ROWS, CAM_CREEP, CAM_CREEP_GAIN, CAM_CREEP_MAX, HOP_MID, LOG_SLACK, RESCUE_HOP, START_X, DAY_PREFIX, MAX_RUN_TICKS, TICKS_PER_S, dailySeedFor, BOMB_TICKS, BRIDGE_FROM, CLIFF_FROM, FLOOD_SPEED, HATS, ICE_FROM, LEAD_FROM, LEAD_GAP, LEAD_SLOW, NEAR_MISS, PORTAL_FROM, SPRING_FROM, SPRING_HOP, TAG_BOOST, TWISTER_LEN, isBombPower, isBombRow, TRAITS, dayBefore, hatFor, isoWeek, streakAfter, streakCount, traitOf, PLANK_BACK, PLANK_BREAK, ROCKS_FROM, SLIDE_TIME, isWater, plankState,
   BEHIND_LIMIT, COIN_CHANCE, COMBO_EVERY, COMBO_GAP, COUNTDOWN, DIFF_ROWS, EAGLE_IDLE, EAGLE_SWOOP, EAGLE_WARN, EDGE_DEATH, FIRST_ROW, HIT_PAD, HOP_TIME,
   LANE_KINDS, MAGNET_REACH, MAGNET_TIME, MODES, MUD_SLOW, PLAY_HALF, POWER_CHANCE, SHIELD_TIME, STEP, STREAK_MAX, TRAIN_SPEED, TRAIN_WARN, WRAP,
   difficulty, difficultyAt, hashString, hopTarget, hopTime, isoDay, mulberry32, nextLaneKind };

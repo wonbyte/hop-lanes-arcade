@@ -9,7 +9,7 @@ import { CAM_OFF, SUN_OFF, camera, focus, getPixelRatio, reduceMotion, renderer,
 import { announceFrame } from './panels.js';   // also sets up the settings, pause and top-10 panels
 import { keepAwake } from './device.js';
 import { flushBank } from './storage.js';
-import { applyMoves, blobGeo, blobMat, bubbleGeo, bubbleMat, giveShield, kill, players, dressPlayer, updateParts, updatePlayer } from './players.js';
+import { applyMoves, blobGeo, blobMat, bubbleGeo, bubbleMat, charOf, giveShield, kill, players, dressPlayer, updateParts, updatePlayer } from './players.js';
 import { join, resultsEl, setBanner, setModeLabel, showHowto, startPlay, toAttract } from './screens.js';
 import { HINT_KEY, HOWTO_KEY, dailySeed, loadText, owned, save } from './storage.js';
 import { biomeAt, biomeIndex, ensureLanes, getSeed, laneCoins, laneKinds, lanes, showLane, spinAll, updateFarLanes, updateLanes, weatherAt } from './world.js';
@@ -27,7 +27,7 @@ function updateCountdown(dt) {
   const both = players[0].joined && players[1].joined, key = n + '|' + both;
   if (key === G.countKey) return;
   G.countKey = key;
-  setBanner(String(n), (G.replay ? t('REPLAY') : both ? t('FROG VS FOX') : t('OTHER PLAYER: TAP TO JOIN'))
+  setBanner(String(n), (G.replay ? t('REPLAY') : both ? t('{a} VS {b}', { a: t(charOf(players[0]).name), b: t(charOf(players[1]).name) }) : t('OTHER PLAYER: TAP TO JOIN'))
     + (touchQuery.matches && !G.replay ? '\n' + t('TAP TO HOP · SWIPE TO TURN') : ''));
 }
 function updateCamera(dt) {
@@ -56,8 +56,9 @@ function placeCamera() {
 
 // first run: a floating hint follows the first player. On the tutorial world (TUTORIAL_SEED) it is a short guided
 // walk, one line per lane ahead, until row HINT_ROWS; on any other world a plain TAP (or key) hint until row 5.
-const hintEl = $('hint');
+const hintEl = $('hint'), hintSpan = hintEl.firstElementChild;
 const hintPos = new THREE.Vector3();
+let hintX = -1, hintY = -1;
 const HINT_ROWS = 12;
 const LANE_HINT = { road: 'WAIT FOR A GAP', river: 'HOP ON A LOG', rail: 'MIND THE TRAIN', lily: 'PADS ONLY' };
 function hintText(p) {
@@ -74,10 +75,10 @@ function placeHint() {
   if (G.state !== 'play' || !p || !p.mesh) { hintEl.hidden = true; return; }
   if (p.score >= (getSeed() === TUTORIAL_SEED ? HINT_ROWS : 5)) { G.hint = false; save(HINT_KEY, 1); hintEl.hidden = true; return; }
   hintPos.set(p.x, 1.5, p.mesh.position.z).project(camera);
-  hintEl.style.left = (hintPos.x + 1) / 2 * viewSize.w + 'px';
-  hintEl.style.top = (1 - hintPos.y) / 2 * viewSize.h + 'px';
+  const x = Math.round((hintPos.x + 1) / 2 * viewSize.w), y = Math.round((1 - hintPos.y) / 2 * viewSize.h);
+  if (x !== hintX || y !== hintY) { hintX = x; hintY = y; hintEl.style.transform = 'translate(' + x + 'px,' + y + 'px)'; }   // transform only: no layout
   const text = hintText(p);
-  if (hintEl.textContent !== text) hintEl.textContent = text;
+  if (hintSpan.textContent !== text) hintSpan.textContent = text;
   hintEl.hidden = false;
 }
 // game over: the world slows for a moment and the view closes in on the fallen player; the title puts it back

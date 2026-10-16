@@ -128,3 +128,15 @@ test('isoWeek, streaks and hats', async () => {
   assert.deepEqual(traitOf('nobody'), {});
   assert.equal(traitOf('bunny').hop, 0.8);
 });
+
+test('dailySeedFor: one seed per day, stable, and hashString of DAY_PREFIX + day (what the score server verifies)', async () => {
+  const { DAY_PREFIX, dailySeedFor } = await import('../js/rules.js');
+  assert.equal(DAY_PREFIX, 'hoplanes.day.');
+  assert.equal(dailySeedFor('2026-10-16'), dailySeedFor('2026-10-16'));
+  assert.equal(dailySeedFor('2026-10-16'), hashString('hoplanes.day.2026-10-16'));
+  assert.equal(dailySeedFor('2026-10-16'), hashString(DAY_PREFIX + '2026-10-16'));
+  assert.notEqual(dailySeedFor('2026-10-16'), dailySeedFor('2026-10-17'));
+  assert.notEqual(dailySeedFor('2026-10-16'), hashString('2026-10-16'), 'not the bare day');
+  const s = dailySeedFor('2026-10-16');
+  assert.ok(Number.isInteger(s) && s >= 0 && s < 4294967296, 'a 32-bit seed');
+});

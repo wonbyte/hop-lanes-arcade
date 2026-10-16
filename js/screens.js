@@ -197,9 +197,11 @@ function shareOut(b, text, sheet) {
   let copied;
   try { copied = navigator.clipboard.writeText(text).then(() => true, () => false); }
   catch (e) { copied = Promise.resolve(false); }
+  const n = overN;   // a restart during the wait: the label belongs to the old results, so leave the new button alone
   const finish = async shared => {
-    if (shared) { b.textContent = t('SHARED!'); return; }
-    if (await copied) { b.textContent = t(sheet ? 'COPIED!' : 'REPLAY LINK COPIED!'); return; }
+    if (shared) { if (n === overN) b.textContent = t('SHARED!'); return; }
+    if (await copied) { if (n === overN) b.textContent = t(sheet ? 'COPIED!' : 'REPLAY LINK COPIED!'); return; }
+    if (n !== overN) return;
     const box = $('shareText');                     // nothing automatic works here: let the player copy by hand
     box.value = text; box.hidden = false; box.focus(); box.select();
     b.textContent = t('SELECT AND COPY');
@@ -303,12 +305,39 @@ function startPlay() {
 }
 // this run as a replay code: the seed, the mode, the animals, the handicap, the start tick and every hop
 const runCode = () => encodeReplay({ seed: getSeed(), mode: G.mode, chars: players.map(q => charOf(q).key), joined: players.map(q => q.joined), handicap: G.handicap, startTick: G.startTick, events: G.record });
+let overN = 0;   // which game over this is: a server answer that comes late must not label the next game's results
+// the records this run set: the all-time best, today's best, the daily challenge best, the streak; returns the note
+function saveRecords(top) {
+  let note = '';
+  {
+    if (top > G.bestAll) { G.bestAll = top; save(BEST_KEY, top); note = 'NEW ALL TIME BEST!'; }
+    if (G.mode === 'daily') save(STREAK_KEY, streakAfter(loadText(STREAK_KEY), today(), dayBefore()));
+    if (top > load(dayKey())) { save(dayKey(), top); note = note || 'NEW BEST TODAY!'; }
+    if (G.mode === 'daily') {
+      const k = DAILY_KEY + dayKey();
+      if (top > load(k)) { save(k, top); if (!note.includes('ALL TIME')) note = 'NEW DAILY CHALLENGE BEST!'; }   // an all-time best keeps its confetti
+      else note = t('DAILY CHALLENGE BEST {n}.', { n: load(k) }) + ' ' + note;
+    }
+  }
+  refreshBests();
+  return note;
+}
+// the share text and the replay link for this run (the link only where a page can carry a hash)
+function shareTexts(hero, top, replay) {
+  const page = location.origin + location.pathname;
+  shareText = t('I scored {n} in Hop Lanes as {name}!', { n: top, name: t(charOf(hero).name) }) + (G.mode === 'room' ? ' ' + t('Room {code}', { code: G.room }) + '.' : '') + ' ' + page;
+  const code = !replay && G.record.length ? runCode() : '';
+  const canReplay = !!code && location.protocol !== 'file:';
+  replayText = canReplay ? page + '#replay-' + code : '';
+  $('replayBtn').hidden = !canReplay;
+  return code;
+}
 function checkOver() {
   if (G.state !== 'play') return;
   const [p1, p2] = players;
   const both = p1.joined && p2.joined, race = G.mode === 'race';
   if (!runOver(players, G.mode)) return;   // sim.js: a race ends at the first death, otherwise when nobody is left
-  G.state = 'over'; G.stateT = 0;
+  G.state = 'over'; G.stateT = 0; overN++;
   flushBank();
   stopPlayLoop();
   G.hint = false;
@@ -316,34 +345,17 @@ function checkOver() {
   keepAwake(false);
   setBanner('');
   const top = topScore(players);
-  let note = '';
   const replay = !!G.replay;   // a replay changes no records and pays nothing
   const hatBefore = hatFor(G.bestAll);
-  if (!replay) {
-    if (top > G.bestAll) { G.bestAll = top; save(BEST_KEY, top); note = 'NEW ALL TIME BEST!'; }
-    if (G.mode === 'daily') save(STREAK_KEY, streakAfter(loadText(STREAK_KEY), today(), dayBefore()));
-    if (top > load(dayKey())) { save(dayKey(), top); note = note || 'NEW BEST TODAY!'; }
-    if (G.mode === 'daily') {
-      const k = DAILY_KEY + dayKey();
-      if (top > load(k)) { save(k, top); note = 'NEW DAILY CHALLENGE BEST!'; }
-      else note = t('DAILY CHALLENGE BEST {n}.', { n: load(k) }) + ' ' + note;
-    }
-  }
-  refreshBests();
+  let note = replay ? '' : saveRecords(top);
   // who wins: in a race the one still standing (or the higher score), otherwise the higher score
   const winner = winnerOf(players, G.mode);   // sim.js: race, coin war or the higher score
   if (both && G.mode === 'coinwar') note = t('COINS {a} - {b}.', { a: p1.coins, b: p2.coins }) + ' ' + note;
   $('resTitle').textContent = replay ? t('REPLAY OVER') : !both ? t('GAME OVER') : !winner ? t('TIE GAME!') : t('{name} WINS!', { name: t(charOf(winner).name) });
   if (race && winner) note = t('BY {n} ROWS.', { n: Math.abs(p1.score - p2.score) }) + ' ' + note;
   const hero = winner || (p1.joined ? p1 : p2);
-  const page = location.origin + location.pathname;
-  shareText = t('I scored {n} in Hop Lanes as {name}!', { n: top, name: t(charOf(hero).name) }) + (G.mode === 'room' ? ' ' + t('Room {code}', { code: G.room }) + '.' : '') + ' ' + page;
-  // the replay link: the seed, the animals and every hop of this run
-  const code = !replay && G.record.length ? runCode() : '';
-  const canReplay = !!code && location.protocol !== 'file:';
-  if (canReplay) replayText = page + '#replay-' + code;
+  const code = shareTexts(hero, top, replay);   // the replay code: the seed, the animals and every hop of this run
   saveGhost(code, top, hero.id);   // daily and room worlds: the best run comes back as a ghost
-  $('replayBtn').hidden = !canReplay;
   // a new best gets its own big line, a jingle and (all time) confetti
   const best = top >= 1 && /^NEW .*BEST!/.exec(note.replace(/^.*\. /, ''));
   $('resBest').hidden = !best;
@@ -360,14 +372,14 @@ function checkOver() {
   $('res1').querySelector('span').textContent = t(charOf(p1).name);
   $('res2').querySelector('span').textContent = t(charOf(p2).name);
   $('world').hidden = true;
-  if (!replay) postScore(charOf(hero).name + ' ' + deviceTag, top);   // the server keeps one entry per name
+  if (!replay) postScore(charOf(hero).name + ' ' + deviceTag, top, code || runCode(), overN);   // the server keeps one entry per name
   $('res1').querySelector('b').textContent = p1.score;
   $('res2').querySelector('b').textContent = p2.score;
   $('resNote').textContent = (note ? note + ' ' : '') + t('PRESS TAP TO PLAY AGAIN');
 }
 
 // optional online score list: silent when no server is set or it can not be reached
-async function postScore(name, score) {
+async function postScore(name, score, code, gameN) {
   if (!SCORES_URL || !window.fetch) return;
   try {
     const ctrl = new AbortController();
@@ -376,7 +388,7 @@ async function postScore(name, score) {
     const res = await fetch(SCORES_URL, {
       method: 'POST', headers: { 'Content-Type': 'application/json', ...(SCORES_TOKEN ? { 'X-Hop-Token': SCORES_TOKEN } : {}) },
       // the run's replay code (the one in the replay link): a server with VERIFY=1 plays it again to check the score
-      body: JSON.stringify({ name, score, day: today(), mode: G.mode, replay: runCode() }), signal: ctrl.signal
+      body: JSON.stringify({ name, score, day: today(), mode: G.mode, replay: code }), signal: ctrl.signal
     });
     if (!res.ok) return;
     let top = (await res.json()).top;
@@ -386,7 +398,7 @@ async function postScore(name, score) {
       u.searchParams.set('day', today()); u.searchParams.set('mode', 'daily');
       top = (await (await fetch(u, { signal: ctrl.signal })).json()).top;
     }
-    if (Array.isArray(top) && top.length && G.state === 'over') {
+    if (Array.isArray(top) && top.length && G.state === 'over' && gameN === overN) {   // still the game that posted
       $('world').textContent = t(daily ? 'TODAY TOP {n} · {name}' : 'WORLD BEST {n} · {name}', { n: top[0].score, name: top[0].name });
       $('world').hidden = false;
     }
@@ -454,4 +466,4 @@ function hideHowto() {
 }
 $('gotit').addEventListener('click', hideHowto);
 
-export { setLook, setModeLabel, askRoom, enterLocal, payDaily, showDailyMissions, banner, bannerH, bannerKey, bannerP, checkOver, confetti, cycleChar, cycleMode, hideHowto, howto, join, joinText, menu, pads, pauseGame, pausedFrom, payMissions, postScore, prizeMachine, refreshTexts, restart, resultsEl, resumeGame, setBanner, setCard, setCards, setHandicap, setMode, shakeCard, shareOut, shareScore, showHowto, showMissions, startPlay, toAttract, updatePrize, wipe };
+export { setLook, setModeLabel, banner, checkOver, confetti, cycleChar, hideHowto, howto, join, menu, pads, pauseGame, restart, resultsEl, resumeGame, setBanner, showHowto, startPlay, toAttract, wipe };

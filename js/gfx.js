@@ -204,4 +204,4 @@ function shadowCadence(idle) {
 // test hook: how the view was fitted
 const viewInfo = () => { const sc = sun.shadow.camera; return { shadowW: sc.right - sc.left, shadowH: sc.top - sc.bottom, fogNear: scene.fog.near, fogFar: scene.fog.far, mapSize: sun.shadow.mapSize.x, shadowHalf }; };
 
-export { BAD_FRAME, BLINK_STEPS, CAM_OFF, SUN_OFF, LADDER, ONE, camera, focus, getPixelRatio, hemi, lowGpu, marquee, perf, reduceMotion, renderer, resetFrameWatch, resize, scene, setNight, setRatio, setZoom, setShadowMapSize, shadowCadence, stage, sun, touchQuery, viewInfo, viewSize, watchFrameTime };
+export { BLINK_STEPS, CAM_OFF, SUN_OFF, ONE, camera, focus, getPixelRatio, marquee, reduceMotion, renderer, resetFrameWatch, resize, scene, setNight, setZoom, shadowCadence, stage, sun, touchQuery, viewInfo, viewSize, watchFrameTime };

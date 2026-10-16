@@ -64,4 +64,4 @@ function voxelMesh(geo, cast = true) {
 const geoCache = new Map();
 const cachedGeo = (key, build) => geoCache.get(key) || geoCache.set(key, mergeBoxes(build())).get(key);
 
-export { AO_BOTTOM, cachedGeo, glowU, mergeBoxes, voxelMat, voxelMesh };
+export { cachedGeo, glowU, mergeBoxes, voxelMat, voxelMesh };

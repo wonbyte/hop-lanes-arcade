@@ -1,4 +1,4 @@
-import { BEHIND_LIMIT, COIN_CHANCE, COMBO_EVERY, COMBO_GAP, COUNTDOWN, DIFF_ROWS, EAGLE_IDLE, EAGLE_SWOOP, EAGLE_WARN, EDGE_DEATH, FIRST_ROW, HIT_PAD, HOP_TIME, MAGNET_REACH, MAGNET_TIME, MODES, PLAY_HALF, POWER_CHANCE, SHIELD_TIME, STEP, TRAIN_SPEED, TRAIN_WARN, WRAP, difficulty } from './rules.js';
+import { COUNTDOWN, FIRST_ROW, HOP_TIME, MODES, PLAY_HALF, STEP, TRAIN_SPEED, WRAP } from './rules.js';
 
 // Shared constants, the game state object and the one "can not load" screen.
 // ---------- tuning ----------
@@ -26,7 +26,7 @@ const G = {
   visRows: 14,         // lanes further than this from the camera focus are not drawn
   frameN: 0,
   restarting: false,
-  mode: 'classic',     // classic | race (first to die loses) | daily (one shared seed per day)
+  mode: 'classic',     // one of MODES (rules.js): classic, race, coinwar, tag, daily, room
   bank: 0,             // coins collected over all games (set by storage.js)
   bestAll: 0,          // all-time best score (set by storage.js)
   tick: 0,             // fixed steps since boot
@@ -76,4 +76,4 @@ function fail(why) {
   b.querySelector('p').textContent = why;
 }
 
-export { $, BEHIND_LIMIT, BIOME_ROWS, LAND_DIP, LOOKS, OVER_SLOW, OVER_SLOW_T, OVER_ZOOM, TUTORIAL_SEED, COIN_CHANCE, COMBO_EVERY, COMBO_GAP, COUNTDOWN, DEBUG, DIFF_ROWS, EAGLE_IDLE, EAGLE_SWOOP, EAGLE_WARN, EDGE_DEATH, FIRST_ROW, FIXED_SEED, G, GO_TIME, HIT_PAD, HOP_TIME, LANES_AHEAD, LANES_BEHIND, MAGNET_REACH, MAGNET_TIME, MODES, POWER_CHANCE, REPLAY_CODE, NIGHT_FULL, NIGHT_START, PLAY_HALF, PRIZE_COST, RESULTS_DELAY, SCORES_TOKEN, SCORES_URL, SHIELD_TIME, STEP, TAU, TRAIN_SPEED, TRAIN_WARN, WIPE_MS, WRAP, difficulty, fail };
+export { $, BIOME_ROWS, LAND_DIP, LOOKS, OVER_SLOW, OVER_SLOW_T, OVER_ZOOM, TUTORIAL_SEED, COUNTDOWN, DEBUG, FIRST_ROW, FIXED_SEED, G, GO_TIME, HOP_TIME, LANES_AHEAD, LANES_BEHIND, MODES, REPLAY_CODE, NIGHT_FULL, NIGHT_START, PLAY_HALF, PRIZE_COST, RESULTS_DELAY, SCORES_TOKEN, SCORES_URL, STEP, TAU, TRAIN_SPEED, WIPE_MS, WRAP, fail };

@@ -184,7 +184,7 @@ const playRules = makeRules({
       popScore(p);
       setLabel(p);
       if (p.hop.dx) G.hintTurn = true;   // the first-run TURN hint is done
-      if (p.hop.high) sfx.bounce(); else if (p.hop.dur > HOP_TIME) sfx.mud(); else sfx.hop(p.id);
+      if (p.hop.high) sfx.bounce(); else if (p.hop.mud) sfx.mud(); else sfx.hop(p.id);
       buzz(8);
     },
     teleport(p, lane, fromX) {   // in one ring, out of the other

@@ -1,7 +1,7 @@
 import { sfx } from './audio.js';
 import { BIOME_ROWS, FIRST_ROW, FIXED_SEED, G, LANES_AHEAD, LANES_BEHIND, PLAY_HALF, STEP, TUTORIAL_SEED, WRAP } from './core.js';
 import { hashString, isBombPower, isBombRow, plankState } from './rules.js';
-import { createWorldGen, railStep, trafficX, wetAt, standGroups } from './gen.js';
+import { createWorldGen, railStep, trafficX, wetAt, wetChunk, standGroups } from './gen.js';
 import { touchRows } from './sim.js';
 import { BLINK_STEPS, scene } from './gfx.js';
 import { LIGHT_TINT, blockBoxes, bombBoxes, boulderBoxes, coinBoxes, lightBoxes, logBoxes, magnetBoxes, plankBoxes, policeBoxes, shieldBoxes, tileBoxes, trainBoxes, twisterBoxes, vehicleBoxes } from './models.js';
@@ -58,6 +58,7 @@ class Inst {
     this.i = f.top++;
     f.handles[this.i] = this;
     f.mesh.count = f.top;
+    f.mesh.visible = true;   // an empty fleet is hidden: no setup in the color and shadow passes for nothing
     this.paint(color);
     this.set(0, 0, 0, 0, false);
   }
@@ -92,6 +93,7 @@ class Inst {
     }
     f.handles[last] = undefined;
     m.count = f.top;
+    if (!f.top) m.visible = false;
     this.i = -1;
   }
 }
@@ -166,8 +168,8 @@ const biomeAt = r => BIOMES[biomeIndex(r)];
 let snowSeason = new Date().getMonth() === 11;
 const weatherCache = new Map();   // 40-row chunk -> weather (asked every drawn frame; cleared with the world)
 function weatherAt(r) {
-  if (r < 20) return '';
-  const chunk = Math.floor(r / 40);
+  const chunk = wetChunk(r);   // gen.js owns the thresholds (the rule that makes traffic faster)
+  if (chunk < 0) return '';
   let w = weatherCache.get(chunk);
   if (w === undefined) weatherCache.set(chunk, w = wetAt(worldSeed, r) ? (snowSeason ? 'snow' : 'rain') : '');
   return w;
@@ -351,7 +353,8 @@ function mergeChunk(k) {
     m.matrixAutoUpdate = false; m.updateMatrix();
     worldGroup.add(m); meshes.push(m);
   }
-  for (const l of rows) { l.group.remove(l.ground); l.chunk = k; }
+  // the chunk holds a copy: the row's own geometry (and its empty group, which the per-draw walk would still visit) can go
+  for (const l of rows) { l.group.remove(l.ground); l.ground.geometry.dispose(); worldGroup.remove(l.group); l.chunk = k; }
   chunks.set(k, { meshes, rows });
   showChunk(k);
 }
@@ -421,7 +424,8 @@ function updateRail(lane, w, draw = true) {
     lane.timer = lane.nextStart - w;
     const blink = Math.floor(lane.timer * BLINK_STEPS);
     on = lane.timer < lane.warn && blink % 2 === 0;
-    if (lane.timer < lane.warn && !lane.warned) { lane.warned = true; if (near(lane.r)) { sfx.horn(); if (lane.boss) { sfx.boss(); setTimeout(sfx.horn, 600); } } }
+    if (lane.timer < lane.warn && !lane.warned) { lane.warned = true; if (near(lane.r)) { sfx.horn(); if (lane.boss) { sfx.boss(); lane.horn2 = lane.timer - 0.6; } } }
+    if (lane.horn2 !== undefined && lane.timer < lane.horn2) { lane.horn2 = undefined; if (near(lane.r)) sfx.horn(); }   // the boss's second horn, from the schedule (no timer to outlive a pause)
     if (on && blink !== lane.lastBell && near(lane.r)) { lane.lastBell = blink; sfx.bell(); }
   } else {
     on = Math.floor(w * BLINK_STEPS) % 2 === 1;
@@ -523,4 +527,4 @@ function laneKinds() {   // lane types for rows 0..30 (builds missing rows ahead
   return out;
 }
 
-export { BIOMES, CHUNK, Inst, biomeAt, biomeIndex, blockColumn, refreshPowerLooks, unblockColumn, LANE_BUILDERS, addLane, chunks, dropLane, dropSpinner, ensureLanes, firstNeededRow, fleet, fxRand, getSeed, laneCoins, laneKinds, lanes, lastNeededRow, moveTraffic, near, resetWorld, showLane, spinAll, spinners, updateFarLanes, updateLanes, updateRail, weatherAt, worldGroup };
+export { Inst, biomeAt, biomeIndex, blockColumn, refreshPowerLooks, unblockColumn, chunks, dropSpinner, ensureLanes, fleet, fxRand, getSeed, laneCoins, laneKinds, lanes, near, resetWorld, showLane, spinAll, updateFarLanes, updateLanes, weatherAt };

@@ -147,4 +147,4 @@ function pollGamepads() {
 }
 $('app').addEventListener('contextmenu', e => e.preventDefault());
 
-export { KEYS, SWIPE_MIN, canRestart, endTouch, fieldPlayer, pointers, pollGamepads, press, pressStart, touchRing };
+export { pollGamepads, press };

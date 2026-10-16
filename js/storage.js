@@ -1,9 +1,9 @@
 import { $, G, LOOKS } from './core.js';
-import { MODES, dayBefore, hashString, isoDay, streakCount } from './rules.js';
+import { DAY_PREFIX, MODES, dailySeedFor, dayBefore, isoDay, streakCount } from './rules.js';
 
 // Saved data: best scores, coins, owned characters. Everything is best effort (private mode, blocked storage).
 // ---------- storage (best effort) ----------
-const BEST_KEY = 'hoplanes.best', DAY_PREFIX = 'hoplanes.day.';
+const BEST_KEY = 'hoplanes.best';
 const today = isoDay;                            // local YYYY-MM-DD (what the score server expects as `day`)
 const dayKey = () => DAY_PREFIX + today();
 // stored scores are only ever whole, non-negative numbers; anything else reads as 0
@@ -88,7 +88,7 @@ if (deviceTag.length !== 4) {
   try { localStorage.setItem(TAG_KEY, deviceTag); } catch (e) {}
 }
 // the daily challenge: one seed for everyone, made from today's date
-const dailySeed = () => hashString(dayKey());
+const dailySeed = () => dailySeedFor(today());
 let bestDay = 0, shownDay = '';
 function refreshBests() {
   shownDay = dayKey();
@@ -104,4 +104,4 @@ setBank(G.bank);
 // a game left open past midnight starts a new "today"
 setInterval(() => { if (dayKey() !== shownDay) { dropOldDays(); refreshBests(); } }, 60000);
 
-export { BEST_KEY, COINS_KEY, LOOK_KEY, DAILY_KEY, DAILYDONE_KEY, DAY_PREFIX, HANDICAP_KEY, HINT_KEY, HOWTO_KEY, INITIALS_KEY, LOCAL_KEY, LOCAL_MAX, STREAK_KEY, INSTALL_KEY, MISSIONS_KEY, MOTION_KEY, ROOM_KEY, MODE_KEY, MUTE_KEY, OWNED_KEY, PICK_KEY, cleanInitials, dailySeed, dayKey, deviceTag, dropOldDays, entersLocal, flushBank, load, loadText, localTop, owned, parseLocal, refreshBests, save, savedMode, setBank, today };
+export { BEST_KEY, LOOK_KEY, DAILY_KEY, DAILYDONE_KEY, DAY_PREFIX, HANDICAP_KEY, HINT_KEY, HOWTO_KEY, INITIALS_KEY, LOCAL_KEY, STREAK_KEY, INSTALL_KEY, MISSIONS_KEY, MOTION_KEY, ROOM_KEY, MODE_KEY, MUTE_KEY, OWNED_KEY, PICK_KEY, cleanInitials, dailySeed, dayKey, deviceTag, entersLocal, flushBank, load, loadText, localTop, owned, parseLocal, refreshBests, save, savedMode, setBank, today };

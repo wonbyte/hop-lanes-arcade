@@ -1,66 +1,21 @@
 // Smoke tests for Hop Lanes. Run: npm test
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-import { chromium } from 'playwright';
+import { pathToFileURL } from 'node:url';
 import { serve } from './serve.mjs';
+import { ROOT, T, launch, open as openPage, waitState, settle, hopKey } from './browser.mjs';
 import { decodeReplay, encodeReplay } from '../js/replay.js';
 import { simulate } from '../js/sim.js';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let INDEX = '';   // served over http (set in before): module scripts do not load from file://
 const STANDALONE = pathToFileURL(path.join(ROOT, 'hop-lanes-standalone.html')).href;
-const ARGS = ['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist'];
-const T = 60000; // generous per-wait timeout
 
 let browser, site;
 
-async function launch() {
-  try {
-    return await chromium.launch({ args: ARGS });
-  } catch (err) {
-    // Installed playwright may not match the preinstalled browser build: look for one.
-    const base = process.env.PLAYWRIGHT_BROWSERS_PATH || '/opt/pw-browsers';
-    const found = [];
-    const walk = (d, depth) => {
-      if (depth > 4 || !fs.existsSync(d)) return;
-      for (const e of fs.readdirSync(d, { withFileTypes: true })) {
-        const p = path.join(d, e.name);
-        if (e.isDirectory()) walk(p, depth + 1);
-        else if (/^(chrome|headless_shell)$/.test(e.name)) found.push(p);
-      }
-    };
-    walk(base, 0);
-    if (!found.length) throw err;
-    return chromium.launch({ args: ARGS, executablePath: found[0] });
-  }
-}
-
 // New page with CDN three.js served locally and fonts blocked; collects errors.
-async function open(ctxOpts, url, { network = 'cdn', fresh = false } = {}) {
-  const context = await browser.newContext(ctxOpts);
-  // the first-run help overlay would swallow the first tap; tests that want it pass fresh: true
-  if (!fresh) await context.addInitScript(() => { try { localStorage.setItem('hoplanes.howto', '1'); } catch (e) {} });
-  const page = await context.newPage();
-  const errors = [];
-  const requests = [];
-  page.on('pageerror', e => errors.push(String(e)));
-  // blocked fonts/CDN requests log "Failed to load resource"; that is expected
-  page.on('console', m => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push('console: ' + m.text()); });
-  if (network === 'cdn') {
-    await page.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
-  } else {
-    await page.route(/^https?:/, r => { requests.push(r.request().url()); return r.abort(); });
-  }
-  await page.goto(url);
-  return { context, page, errors, requests };
-}
-
+const open = (ctxOpts, url, opts = {}) => openPage(browser, url, { context: ctxOpts, ...opts });
 const state = page => page.evaluate(() => window.hopLanes.state);
-const waitState = (page, s) =>
-  page.waitForFunction(x => window.hopLanes && window.hopLanes.state === x, s, { timeout: T });
 
 test.before(async () => { browser = await launch(); site = await serve(ROOT); INDEX = site.url + '/index.html'; });
 test.after(async () => { await browser?.close(); await site?.close(); });
@@ -230,13 +185,13 @@ test('5c. a replay link plays the same run again, across traffic, on another scr
   let first, code, bank;
   try {
     await waitState(page, 'attract');
-    await page.waitForTimeout(1500);   // traffic runs on the title screen: the replay must not depend on how long
+    await settle(page, 1500);   // traffic runs on the title screen: the replay must not depend on how long
     await page.keyboard.press('KeyW');
     await waitState(page, 'play');
     // run forward into roads, rivers and rails until something ends the run
+    // (each hop is waited to land before the next, so no hop is queued behind another)
     for (let i = 0; i < 40 && (await page.evaluate(() => window.hopLanes.state)) === 'play'; i++) {
-      await page.keyboard.press(i % 7 === 3 ? 'KeyD' : i % 7 === 6 ? 'KeyA' : 'KeyW');
-      await page.waitForTimeout(220);
+      await hopKey(page, i % 7 === 3 ? 'KeyD' : i % 7 === 6 ? 'KeyA' : 'KeyW');
     }
     await page.waitForFunction(() => window.hopLanes.state === 'over', null, { timeout: 90000 });
     first = await snap();

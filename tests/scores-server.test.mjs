@@ -8,7 +8,8 @@ import { spawn } from 'node:child_process';
 import net from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { decodeReplay, encodeReplay } from '../js/replay.js';
-import { hashString } from '../js/rules.js';
+import { dailySeedFor, hashString } from '../js/rules.js';
+import { simulate } from '../js/sim.js';
 import { isoWeek } from '../server/scores.mjs';
 
 const SERVER = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../server/scores.mjs');
@@ -245,6 +246,80 @@ test('an entry pushed past rank 10 loses its replay', async () => {
   for (let i = 0; i < 10; i++) await sp({ name: 'P' + i, score: 10 + i, mode: 'classic' });
   const stored = JSON.parse(fs.readFileSync(srv.file, 'utf8'));
   assert.equal(stored.find(e => e.name === 'Low').replay, null, 'rank 11 has no replay');
+});
+
+test('VERIFY: a daily run is accepted on its day\'s seed (dailySeedFor) and rejected on another day\'s', async () => {
+  const srv = await start({ RATE_MAX: '1000', VERIFY: '1' });
+  const send = body => fetch(srv.base + '/scores', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const day = '2026-10-10', other = '2026-10-11';   // past days: a future day is refused on POST
+  const rp = { ...decodeReplay(DAILY_RUN), seed: dailySeedFor(day) };   // the recorded hops on another day's world: some run, whatever it scores
+  const run = simulate(rp);
+  assert.ok(run && run.over, 'the moved run ends');
+  const code = encodeReplay(rp);
+  assert.equal((await send({ name: 'Day', score: run.score, mode: 'daily', day, replay: code })).status, 200, 'on its day');
+  const wrong = await send({ name: 'Off', score: run.score, mode: 'daily', day: other, replay: code });
+  assert.equal(wrong.status, 400, 'the same run claimed for another day');
+  assert.equal((await wrong.json()).error, 'replay mismatch');
+  const otherRun = simulate({ ...rp, seed: dailySeedFor(other) });
+  const otherCode = encodeReplay({ ...rp, seed: dailySeedFor(other) });
+  assert.equal((await send({ name: 'Off', score: otherRun.score, mode: 'daily', day, replay: otherCode })).status, 400, 'another day\'s seed for this day');
+  assert.equal((await send({ name: 'Off', score: otherRun.score, mode: 'daily', day: other, replay: otherCode })).status, 200, 'that seed on its own day');
+  const { top } = await (await fetch(srv.base + '/scores?mode=daily')).json();
+  assert.deepEqual(top.map(e => [e.name, e.day]).sort(), [['Day', day], ['Off', other]]);
+});
+
+test('VERIFY budget: past the simulation time allowed per minute a POST gets 503 with Retry-After', async () => {
+  const srv = await start({ RATE_MAX: '1000', VERIFY: '1', VERIFY_BUDGET_MS: '0' });   // 0: one replay per minute, then busy
+  const send = body => fetch(srv.base + '/scores', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  assert.equal((await send({ name: 'Ann', score: 17, mode: 'classic', replay: CLASSIC_RUN })).status, 200, 'the first replay is simulated');
+  const busy = await send({ name: 'Bob', score: 17, mode: 'classic', replay: CLASSIC_RUN });
+  assert.equal(busy.status, 503);
+  assert.deepEqual(await busy.json(), { error: 'busy' });
+  const retry = Number(busy.headers.get('retry-after'));
+  assert.ok(retry >= 1 && retry <= 60, 'Retry-After in seconds: ' + retry);
+  assert.equal((await send({ name: 'Bad', score: 1, mode: 'classic', replay: 'no spaces!' })).status, 400, 'validation still comes first');
+  assert.equal((await fetch(srv.base + '/scores')).status, 200, 'GET is not budgeted');
+  const { top } = await (await fetch(srv.base + '/scores')).json();
+  assert.deepEqual(top.map(e => e.name), ['Ann']);
+});
+
+test('GET cache: a POST invalidates it, so no GET returns stale data', async () => {
+  const srv = await start({ RATE_MAX: '1000' });
+  const sp = b => fetch(srv.base + '/scores', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
+  const names = async q => (await (await fetch(srv.base + '/scores' + q)).json()).top.map(e => [e.name, e.score]);
+  assert.deepEqual(await names(''), []);
+  assert.deepEqual(await names('?mode=race'), []);
+  assert.equal((await sp({ name: 'A', score: 10, mode: 'race', day: '2026-10-05' })).status, 200);
+  assert.deepEqual(await names(''), [['A', 10]]);
+  assert.deepEqual(await names('?mode=race'), [['A', 10]]);
+  assert.deepEqual(await names('?mode=race'), [['A', 10]], 'served from the cache');
+  assert.equal((await sp({ name: 'B', score: 20, mode: 'race', day: '2026-10-05' })).status, 200);
+  assert.deepEqual(await names('?mode=race'), [['B', 20], ['A', 10]], 'the cache was dropped');
+  assert.deepEqual(await names('?week=2026-W41'), [['B', 20], ['A', 10]]);
+  assert.equal((await sp({ name: 'A', score: 30, mode: 'race', day: '2026-10-05' })).status, 200, 'a higher score replaces');
+  assert.deepEqual(await names('?week=2026-W41'), [['A', 30], ['B', 20]]);
+  assert.deepEqual(await names('?day=2026-10-05&mode=race'), [['A', 30], ['B', 20]]);
+  assert.deepEqual(await names('?day=2026-10-06'), []);
+  assert.equal((await sp({ name: 'A', score: 5, mode: 'race', day: '2026-10-05' })).status, 200, 'a lower score is ignored');
+  assert.deepEqual(await names(''), [['A', 30], ['B', 20]]);
+});
+
+test('GET is rate limited too, with its own higher cap', async () => {
+  const srv = await start({ RATE_MAX: '1', GET_RATE_MAX: '3' });
+  const codes = [];
+  for (let i = 0; i < 5; i++) codes.push((await fetch(srv.base + '/scores')).status);
+  assert.deepEqual(codes, [200, 200, 200, 429, 429]);
+  assert.equal((await fetch(srv.base + '/scores', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'G', score: 1 }) })).status, 200, 'POST has its own budget');
+});
+
+test('TRUST_PROXY: an X-Forwarded-For that is not an IP falls back to the socket address', async () => {
+  const srv = await start({ RATE_MAX: '1', TRUST_PROXY: '1' });
+  const sp = (fwd, b) => fetch(srv.base + '/scores', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': fwd }, body: JSON.stringify(b) });
+  assert.equal((await sp('not an ip', { name: 'A', score: 1 })).status, 200);
+  assert.equal((await sp('another junk value', { name: 'B', score: 1 })).status, 429, 'both key on the socket');
+  assert.equal((await sp('1.2.3.4, <script>', { name: 'C', score: 1 })).status, 429, 'the last hop is junk: the socket again');
+  assert.equal((await sp('10.0.0.9', { name: 'D', score: 1 })).status, 200, 'a real address is its own client');
+  assert.equal((await sp('2001:db8::1', { name: 'E', score: 1 })).status, 200, 'IPv6 too');
 });
 
 test('isoWeek: edges', () => {

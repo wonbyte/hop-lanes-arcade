@@ -2,10 +2,10 @@
 // Run: node tests/sim.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createWorldGen, railStep, standColumns, standGroups, trafficX } from '../js/gen.js';
+import { createWorldGen, railStep, standColumns, standGroups, trafficX, wetAt } from '../js/gen.js';
 import { createSim, makeRules, resetPlayer, simulate, winnerOf } from '../js/sim.js';
 import { decodeReplay, encodeReplay } from '../js/replay.js';
-import { BOMB_TICKS, BRIDGE_FROM, CLIFF_FROM, HOP_TIME, ICE_FROM, LEAD_FROM, LEAD_GAP, LEAD_SLOW, PLANK_BACK, PLANK_BREAK, PORTAL_FROM, ROCKS_FROM, SPRING_FROM, SPRING_HOP, STEP, plankState, traitOf } from '../js/rules.js';
+import { BOMB_TICKS, BRIDGE_FROM, CLIFF_FROM, COMBO_GAP, EAGLE_IDLE, EAGLE_SWOOP, EAGLE_WARN, HOP_TIME, ICE_FROM, LEAD_FROM, LEAD_GAP, LEAD_SLOW, MAGNET_REACH, MAGNET_TIME, PLANK_BACK, PLANK_BREAK, PORTAL_FROM, ROCKS_FROM, SPRING_FROM, SPRING_HOP, STEP, TRAITS, dailySeedFor, hashString, plankState, traitOf } from '../js/rules.js';
 
 // what the browser built for seed 42 (window.hopLanes.laneKinds()) before world generation moved to gen.js
 const KINDS_42 = ['grass', 'grass', 'grass', 'grass', 'river', 'river', 'river', 'road', 'road', 'road', 'road', 'river', 'river', 'grass',
@@ -528,4 +528,115 @@ test('bomb: with two players a magnet on a bomb row blocks the column ahead of t
   assert.ok(h.lanes.get(11).trees.has(0), 'still blocked: the second bomb set a new end');
   hr.reset();
   assert.deepEqual([hl[2], h.lanes.get(11).trees.has(0)], ['unbomb11:0', false], 'a new game lifts the bomb');
+});
+
+test('traits: the fox keeps a combo over a longer gap than the frog; the pig\'s magnet lasts 1.5x', () => {
+  const b = benchWith(grassRows(8), ['frog', 'fox']);
+  const [frog, fox] = b.players;
+  assert.equal(TRAITS.fox.comboGap, 1.5);
+  for (const p of b.players) { p.x = 0; b.rules.tryMove(p, 0, 1); }
+  b.landTicks();
+  assert.deepEqual([frog.combo, fox.combo], [1, 1]);
+  // a gap between COMBO_GAP and 1.5 x COMBO_GAP: the frog starts over, the fox counts on
+  b.run(Math.round(COMBO_GAP * 1.2 / STEP));
+  for (const p of b.players) b.rules.tryMove(p, 0, 1);
+  b.landTicks();
+  assert.deepEqual([frog.combo, fox.combo], [1, 2], 'the fox keeps the combo');
+  // past the fox's gap too, both start over
+  b.run(Math.round(COMBO_GAP * 1.6 / STEP));
+  for (const p of b.players) b.rules.tryMove(p, 0, 1);
+  b.landTicks();
+  assert.deepEqual([frog.combo, fox.combo], [1, 1]);
+  assert.equal(TRAITS.pig.magnet, 1.5);
+  const magnetFor = key => {
+    const m = benchWith([{ kind: 'grass' }, { kind: 'grass', power: { x: 0, kind: 'magnet' } }], [key]);
+    const p = m.players[0];
+    p.x = 0; m.rules.tryMove(p, 0, 1); m.hopTicks(p);
+    return p.magnetT;
+  };
+  assert.ok(Math.abs(magnetFor('frog') - MAGNET_TIME) < 0.02, 'frog: MAGNET_TIME');
+  assert.ok(Math.abs(magnetFor('pig') - MAGNET_TIME * 1.5) < 0.02, 'pig: 1.5 x MAGNET_TIME');
+});
+
+test('gen: rain or snow (wetAt) makes roads, rivers and rocks faster than the dry formula allows', () => {
+  // the dry speed ranges of gen.js, and the wet factor each kind gets
+  const DRY = { road: (d, l) => [1.6 + d * 2.4, 2.8 + d * 2.4 + (l.police ? 1.6 : 0)], river: d => [1.0 + d, 1.9 + d], rocks: d => [0.8 + d * 1.2, 1.5 + d * 1.2] };
+  const WET = { road: 1.1, river: 1.2, rocks: 1.1 };
+  const faster = new Set();
+  for (let seed = 1; seed <= 20; seed++) {
+    const g = createWorldGen(seed);
+    for (let r = 0; r < 100; r++) {   // below 100: no flood (a flood is 1.5x on top)
+      const l = g.lane(r);
+      assert.equal(l.wet, wetAt(seed, r), `seed ${seed} row ${r}: lane.wet is wetAt`);
+      if (r < 20) assert.equal(l.wet, false, 'dry until row 20');
+      if (!DRY[l.kind]) continue;
+      const [lo, hi] = DRY[l.kind](l.diff, l), f = l.wet ? WET[l.kind] : 1;
+      assert.ok(l.speed >= lo * f - 1e-9 && l.speed <= hi * f + 1e-9, `seed ${seed} row ${r} ${l.kind} wet=${l.wet}: ${l.speed} in [${lo * f}, ${hi * f}]`);
+      if (l.wet && l.speed > hi + 1e-9) faster.add(l.kind);   // faster than any dry lane of this kind could be
+    }
+  }
+  for (const kind of ['road', 'river', 'rocks']) assert.ok(faster.has(kind), `some wet ${kind} lane is faster than the dry formula allows`);
+  assert.equal(wetAt(1, 89), true);
+  assert.equal(createWorldGen(1).lane(89).speed > 2.8 + createWorldGen(1).lane(89).diff * 2.4, true, 'seed 1 row 89: a wet road past the dry maximum');
+});
+
+test('room mode: the seed is hashString("room:" + code), so two phones on one code build one world', () => {
+  const kinds = seed => { const g = createWorldGen(seed); return Array.from({ length: 60 }, (_, r) => g.lane(r).kind); };
+  const a = kinds(hashString('room:ABCD')), b = kinds(hashString('room:ABCD')), c = kinds(hashString('room:ABCE'));
+  assert.deepEqual(a, b, 'the same code gives the same lanes');
+  assert.notDeepEqual(a, c, 'another code gives another world');
+  assert.notEqual(hashString('room:ABCD'), hashString('ABCD'), 'a room seed is not a plain hash of the code');
+  assert.notEqual(hashString('room:2026-10-16'), dailySeedFor('2026-10-16'), 'nor the daily seed of a day-shaped code');
+});
+
+test('eagle: the warning sounds EAGLE_WARN seconds before the swoop on a player standing still', () => {
+  const G = { state: 'play', camRow: 0, playT: 0, worldTick: 1000, run: null };
+  const lanes = new Map(grassRows(4).map((l, r) => [r, { r, coins: new Map(), trees: new Set(), objs: [], span: 34, secret: null, power: null, ...l }]));
+  const seen = {};
+  let tick = 0;
+  const rules = makeRules({ G, lane: r => lanes.get(r), coins() {}, over() {}, fx: { warn: () => { seen.warn = tick; }, eagle: () => { seen.eagle = tick; }, kill: (p, c) => { seen.kill = [tick, c]; } } });
+  const p = { id: 0, joined: true };
+  resetPlayer(p);
+  while (p.alive && tick < 2000) { tick++; G.worldTick++; G.playT += STEP; rules.stepPlayer(p, STEP); }
+  assert.ok(seen.warn && seen.eagle, 'the warning and the swoop both came');
+  const near = (a, b, what) => assert.ok(Math.abs(a - b) <= 1, `${what}: ${a} ~ ${b}`);   // idleT adds up dt: one step of float slack
+  near(seen.eagle - seen.warn, Math.round(EAGLE_WARN / STEP), 'EAGLE_WARN seconds apart');
+  near(seen.warn, Math.round((EAGLE_IDLE - EAGLE_SWOOP - EAGLE_WARN) / STEP) + 1, 'the warning on the first step past the idle limit');
+  near(seen.kill[0] - seen.eagle, Math.round(EAGLE_SWOOP / STEP), 'the swoop takes EAGLE_SWOOP seconds (its first step is the one it starts on)');
+  near(seen.kill[0], Math.round(EAGLE_IDLE / STEP), 'taken EAGLE_IDLE seconds in');
+  assert.equal(seen.kill[1], 'eagle');
+  // a hop before the warning resets the idle time: no warning yet
+  const q = { id: 0, joined: true };
+  resetPlayer(q);
+  let warned = 0;
+  const r2 = makeRules({ G, lane: r => lanes.get(r), coins() {}, over() {}, fx: { warn: () => warned++ } });
+  for (let i = 0; i < Math.round(3 / STEP); i++) { G.worldTick++; G.playT += STEP; r2.stepPlayer(q, STEP); }
+  r2.tryMove(q, 0, 1);
+  for (let i = 0; i < Math.round(3 / STEP); i++) { G.worldTick++; G.playT += STEP; r2.stepPlayer(q, STEP); }
+  assert.equal(warned, 0, 'a hop puts the eagle off');
+  assert.equal(q.warned, false);
+});
+
+test('magnet: a coin within MAGNET_REACH on the rows around the player is collected without landing on it', () => {
+  const coin = () => ({});
+  const rows = [
+    { kind: 'grass', coins: new Map([[1, coin()]]) },               // row 0: one column away, behind
+    { kind: 'grass', coins: new Map([[1, coin()], [3, coin()]]) },  // row 1: the player's row; 3 is out of reach
+    { kind: 'road', coins: new Map([[-1, coin()]]) },               // row 2: ahead
+    { kind: 'grass', coins: new Map([[0, coin()]]) }                // row 3: two rows ahead, never pulled
+  ];
+  const b = benchWith(rows, ['frog']);
+  const p = b.players[0];
+  const got = [];
+  const rules = makeRules({ G: b.G, lane: r => b.lanes.get(r), coins() {}, over() {}, players: b.players, fx: { coin: (q, lane, x) => got.push([lane.r, x]) } });
+  p.row = 1; p.x = 0;
+  b.G.worldTick++; rules.stepPlayer(p, STEP);
+  assert.deepEqual([got, p.coins], [[], 0], 'no magnet, no pull');
+  p.magnetT = MAGNET_TIME;
+  b.G.worldTick++; rules.stepPlayer(p, STEP);
+  assert.deepEqual(got.sort(), [[0, 1], [1, 1], [2, -1]], 'the coins within reach on rows 0..2');
+  assert.equal(p.coins, 3);
+  assert.deepEqual([b.lanes.get(1).coins.has(3), b.lanes.get(3).coins.has(0)], [true, true], 'out of reach or too far ahead: still there');
+  assert.ok(Math.abs(1 - p.x) <= MAGNET_REACH && 3 - p.x > MAGNET_REACH);
+  assert.equal(p.hop, null, 'the player never hopped');
 });

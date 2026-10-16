@@ -116,8 +116,10 @@ const boardRow = (name, score) => {
   li.append(a, b);
   return li;
 };
+let boardReq = 0;   // the newest request wins: a scope change while a fetch is in flight must not show the old list
 async function openBoard() {
   audio(); sfx.tick();
+  const req = ++boardReq;
   const daily = G.mode === 'daily';
   if (!scope) scope = !SCORES_URL ? 'local' : daily ? 'day' : 'all';
   $('boardBox').querySelector('h2').textContent = t(SCOPE_TITLE[scope]);
@@ -143,6 +145,7 @@ async function openBoard() {
     const ctrl = new AbortController();
     setTimeout(() => ctrl.abort(), 4000);
     const top = (await (await fetch(u, { signal: ctrl.signal })).json()).top;
+    if (req !== boardReq) return;   // a newer request (another scope, a reopen) owns the list now
     if (!Array.isArray(top)) throw new Error('bad list');
     list.textContent = '';
     for (const e of top.slice(0, 10)) {
@@ -157,7 +160,7 @@ async function openBoard() {
     }
     note.hidden = top.length > 0;
     note.textContent = t('NO SCORES YET');
-  } catch (e) { note.textContent = t('COULD NOT LOAD THE LIST'); note.hidden = false; }
+  } catch (e) { if (req !== boardReq) return; note.textContent = t('COULD NOT LOAD THE LIST'); note.hidden = false; }
 }
 boardBtn.addEventListener('click', openBoard);
 $('boardScope').addEventListener('click', () => { scope = SCOPES[(SCOPES.indexOf(scope) + 1) % SCOPES.length]; openBoard(); });
@@ -191,4 +194,4 @@ function announceFrame() {
   }
 }
 
-export { announce, announceFrame, closeDialog, dialogOpen, labelSettings, openBoard, openDialog };
+export { announceFrame, closeDialog, dialogOpen };

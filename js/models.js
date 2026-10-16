@@ -387,4 +387,4 @@ const LIGHT_TINT = { off: 0x331111, on: 0xff2222, red: 0xff2a2a, blue: 0x3a7bff 
 const LIGHT_OFF = new THREE.MeshLambertMaterial({ color: 0x331111 });
 const lightGeo = new THREE.BoxGeometry(0.38, 0.2, 0.14);
 
-export { CHARACTERS, COLORS, blockBoxes, bombBoxes, hatBoxes, tileBoxes, twisterBoxes, LIGHT_OFF, LIGHT_TINT, PIX, PRIZES, boulderBoxes, bunnyBoxes, catBoxes, coinBoxes, drawPix, eagleBoxes, foxBoxes, frogBoxes, isOwned, lightBoxes, lightGeo, logBoxes, magnetBoxes, makeCharacter, penguinBoxes, pigBoxes, plankBoxes, policeBoxes, robotBoxes, shieldBoxes, trainBoxes, turtleBoxes, vehicleBoxes };
+export { CHARACTERS, COLORS, blockBoxes, bombBoxes, tileBoxes, twisterBoxes, LIGHT_OFF, LIGHT_TINT, PIX, PRIZES, boulderBoxes, coinBoxes, drawPix, eagleBoxes, isOwned, lightBoxes, lightGeo, logBoxes, magnetBoxes, makeCharacter, plankBoxes, policeBoxes, shieldBoxes, trainBoxes, vehicleBoxes };

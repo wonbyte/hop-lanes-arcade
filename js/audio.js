@@ -128,4 +128,4 @@ const isMuted = () => muted;
 // let the audio device sleep on long idle screens; audio() wakes it on the next input
 function idleAudio() { if (actx && actx.state === 'running') actx.suspend().catch(() => {}); }
 
-export { actx, audio, beep, idleAudio, isMuted, muted, playLayers, playLoopOn, setMuted, sfx, startPlayLoop, startTune, stopPlayLoop, stopTune, tuneOn };
+export { audio, idleAudio, isMuted, muted, playLayers, playLoopOn, setMuted, sfx, startPlayLoop, startTune, stopPlayLoop, stopTune, tuneOn };

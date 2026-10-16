@@ -29,7 +29,7 @@ account, no tracking. One file plays the whole game offline.
   on this device, with your initials, with or without a server.
 - **Feel.** Squash on every landing, a score that pops, slow motion and a zoom when you fall, music that adds layers
   as you go deeper, a guided first run.
-- **Coins, shop and prize machine.** Buy five original animals (Frog, Fox, Bunny, Cat, Robot). Combos, hidden coins,
+- **Coins, shop and prize machine.** Frog and Fox are free; buy Bunny, Cat and Robot, and win Pig, Penguin and Turtle at the prize machine. Combos, hidden coins,
   shield and magnet power-ups, three missions at a time, a boss train every 100 rows.
 - **Replays.** Every run is deterministic. Share a link and it plays back the exact same run.
 - **Optional online top 10.** All time, today or this week. A tiny dependency-free score server verifies posted
@@ -111,8 +111,8 @@ Testing hooks: open `index.html#debug` for `window.hopLanes` and an FPS counter,
 ### Score server
 
 The score server in [`server/`](server/README.md) is optional. Run it, then point the game at it with a
-`<meta name="hop-lanes-scores">` tag in `index.html`. The title then shows a TOP 10 button and the results show the
-world best. Set `VERIFY=1` so every posted score is checked by replaying the run.
+`<meta name="hop-lanes-scores">` tag in `index.html`. The TOP 10 button then adds the all-time, today and this-week lists
+to the local one, and the results show the world best. Set `VERIFY=1` so every posted score is checked by replaying the run.
 
 ### Deploy
 
