@@ -62,7 +62,7 @@ priority changed nothing measurable (the network is bandwidth-bound), so it was 
 
 The heap budget as written was missed before the work, and the heap snapshots showed the cause: 381 more `code`
 objects (V8 optimizing more functions as the game runs), not the game's objects. `docs/budgets.md` now also has the
-row without compiled code, and the nightly soak gates on it. The heap after each run of the second soak (KB):
+row without compiled code, and the soak (started by hand) gates on it. The heap after each run of the second soak (KB):
 5160, 5315, 5472, 5512 ... 5733 at run 15 ... 5770 at run 27: it climbs while V8 warms up and is flat from about run 20.
 The first run of each soak is slower because the ladder is still stepping down during it (it ended at pixel ratio 1,
 shadow map 256, shadows every other frame).

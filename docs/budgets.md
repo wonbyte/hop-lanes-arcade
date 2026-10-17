@@ -25,8 +25,8 @@ bug, also when every test passes. A number from the headless browser in CI is a 
 
 Note, added after the first soak (16 Oct 2026). The first 30-minute soak missed the heap budget: +10.4%. Two heap
 snapshots showed why: the compiled code grew 21.2% (381 more `code` objects: V8 optimizes more functions the longer the
-game runs), while everything else grew 0.6%. A leak shows in the game's objects, so that row was added, and the nightly
-soak gates on it. The original heap row stays, and the summary keeps reporting it.
+game runs), while everything else grew 0.6%. A leak shows in the game's objects, so that row was added, and the soak
+(now started by hand) gates on it. The original heap row stays, and the summary keeps reporting it.
 
 ## The standard test load
 

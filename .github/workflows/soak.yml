@@ -1,9 +1,8 @@
 name: Soak
 # The 30-minute budgets of docs/budgets.md on the headless proxy: the bench replay played again and again in one page;
 # the game's objects (heap without compiled code), the GPU objects and the frame times must not drift.
+# Started by hand only (Actions -> Soak -> Run workflow); the nightly schedule was turned off on 17 Oct 2026.
 on:
-  schedule:
-    - cron: '17 3 * * *'
   workflow_dispatch:
 
 permissions:
