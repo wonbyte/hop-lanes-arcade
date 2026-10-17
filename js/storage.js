@@ -34,6 +34,9 @@ const HINT_KEY = 'hoplanes.hint';       // '1' once the floating TAP hint has do
 const DAILYDONE_KEY = 'hoplanes.dailydone';   // 'YYYY-MM-DD|bitmask': the daily missions paid today (missions.js)
 const LOCAL_KEY = 'hoplanes.local';     // JSON list of { name, score, day, mode }: the best 10 runs on this device
 const INITIALS_KEY = 'hoplanes.initials';   // the 3 letters in front of the animal's name on the local list
+const MCOINS_KEY = 'hoplanes.mcoins';   // 'i:n,...': the coins each active coin mission has collected in earlier runs
+const MDONE_KEY = 'hoplanes.mdone';     // 'YYYY-MM-DD|n': missions done today (the title's mission chip)
+const TIPS_KEY = 'hoplanes.tips';       // JSON { cause: n }: how many results have shown the tip for that cause
 // ---------- the local top 10 (pure: tests/replay.test.mjs) ----------
 const LOCAL_MAX = 10, LOCAL_MAX_SCORE = 100000;   // a tampered list can not freeze the board with absurd scores
 const cleanInitials = s => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 3);
@@ -111,4 +114,4 @@ function checkDay() {
 }
 setInterval(checkDay, 60000);
 
-export { BEST_KEY, LOOK_KEY, DAILY_KEY, DAILYDONE_KEY, DAY_PREFIX, HANDICAP_KEY, HINT_KEY, HOWTO_KEY, INITIALS_KEY, LOCAL_KEY, STREAK_KEY, INSTALL_KEY, MISSIONS_KEY, MOTION_KEY, ROOM_KEY, MODE_KEY, MUTE_KEY, OWNED_KEY, PICK_KEY, cleanInitials, dailySeed, dayKey, deviceTag, entersLocal, flushBank, load, loadText, localTop, owned, parseLocal, refreshBests, save, savedMode, setBank, today };
+export { BEST_KEY, LOOK_KEY, DAILY_KEY, DAILYDONE_KEY, DAY_PREFIX, HANDICAP_KEY, HINT_KEY, HOWTO_KEY, INITIALS_KEY, LOCAL_KEY, MCOINS_KEY, MDONE_KEY, STREAK_KEY, TIPS_KEY, INSTALL_KEY, MISSIONS_KEY, MOTION_KEY, ROOM_KEY, MODE_KEY, MUTE_KEY, OWNED_KEY, PICK_KEY, cleanInitials, dailySeed, dayKey, deviceTag, entersLocal, flushBank, load, loadText, localTop, owned, parseLocal, refreshBests, save, savedMode, setBank, today };

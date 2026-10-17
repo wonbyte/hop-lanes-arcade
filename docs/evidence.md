@@ -95,6 +95,35 @@ shadow map 256, shadows every other frame).
 The fresh code of the applied hops played the same, every field, on 16000 random runs and every saved run.
 `tools/fuzz-server.mjs` 60 s (seed 42): 0 findings. `tools/load-server.mjs --short`: 200 seeded, 0 failed.
 
+## The design review of 17 Oct 2026 (rules 4)
+
+A principal game designer and a principal UX designer reviewed the game (screenshots at 8 sizes in 3 languages, and a
+look-ahead bot on the real rules at 5 skill levels: it plans one hop ahead, so it is weaker than a person: read the
+shape, not the exact numbers). Rules 4 and the screen changes came from it. Bot runs, 300 per skill, rules 3 -> 4:
+
+| Skill | Median score | Reach row 25 | Reach row 50 | Kinds seen per run |
+|---|---|---|---|---|
+| novice | 14 -> 14 | 20% -> 25% | 3.7% -> 2.7% | 3.8 -> 3.9 |
+| casual | 19 -> 23 | 41% -> 48% | 12% -> 16% | 4.5 -> 4.9 |
+| good | 35 -> 34 | 65% -> 64% | 29% -> 27% | 5.3 -> 5.6 |
+| expert | 41 -> 44 | 70% -> 72% | 33% -> 39% | 5.6 -> 6.1 |
+
+| Measure | Rules 3 | Rules 4 |
+|---|---|---|
+| Distinct lane kinds by row 100 (300 worlds) | 8.6 | 10.1 |
+| Boss moments by row 100 | 0.37 | 3.37 |
+| Longest stretch without still ground | 38 rows | 6 rows |
+| Two players: deaths at the scroll line (good+novice / expert+casual / good+good) | 30 / 39 / 35% | 22 / 31 / 33% |
+| ... the first to die waits (median; p90) | 18-22 s; 43-52 s | 5 s (hops back in, once); 7-8 s |
+| ... top score (median) | 30 / 42 / 38 | 44 / 52 / 52 |
+| Car hits that overlap the body by less than 0.1 (bots) | 935 of 1424 (min 0.03) | 0 (min 0.11) |
+| The tutorial world: novice runs that reach row 12 / 25 (500 runs) | 56% / 9% (seed 197) | 80% / 58% (seed 21216) |
+| ... early train deaths of novice runs | 30 | 0 |
+
+The rules 2 and 3 worlds and runs are bit-identical to before (600 random replays, 8 worlds of 400 rows, 12 000 two-player
+spawns over 30 worlds, and the audit output byte for byte). The black rows behind the start line (`B.grass[r % 2]` with
+r < 0) are fixed; `mergeBoxes` now logs any box without a color, and the browser tests fail on it.
+
 ## Hazards and fairness (rules 3)
 
 A player reported an animal that fell into the water while riding a wooden board. `tools/hazard-audit.mjs` (random

@@ -1,6 +1,6 @@
 import { sfx } from './audio.js';
 import { BIOME_ROWS, FIRST_ROW, FIXED_SEED, G, LANES_AHEAD, LANES_BEHIND, PLAY_HALF, STEP, TUTORIAL_SEED } from './core.js';
-import { EDGE_DEATH, PLANK_BREAK, hashString, isBombPower, isBombRow, plankState } from './rules.js';
+import { EDGE_DEATH, PLANK_BREAK, RULES, hashString, isBombPower, isBombRow, plankState } from './rules.js';
 import { createWorldGen, railStep, trafficX, wetAt, wetChunk, standGroups } from './gen.js';
 import { touchRows } from './sim.js';
 import { BLINK_STEPS, scene } from './gfx.js';
@@ -128,14 +128,14 @@ function placeCoins(lane, z) {
 }
 // the power-up's look: with two players a magnet on a bomb row is a bomb (rules.js isBombPower, the rule sim.js plays)
 function placePower(lane) {
-  const pw = lane.power, bomb = isBombPower(pw.kind, lane.r, G.twoUp);
+  const pw = lane.power, bomb = isBombPower(pw.kind, lane.r, G.twoUp, worldGen.version);
   if (pw.s) dropSpinner(pw.s);
   pw.s = spinner(lane, bomb ? 'bomb' : pw.kind, bomb ? bombBoxes : pw.kind === 'shield' ? shieldBoxes : magnetBoxes, pw.x, -lane.r);   // turns like a coin
   pw.s.bomb = bomb;
 }
 // the second player joined during the countdown: bomb rows already built show their magnets as bombs now
 function refreshPowerLooks() {
-  for (const lane of lanes.values()) if (lane.power && isBombRow(lane.r) && lane.power.s.bomb !== isBombPower(lane.power.kind, lane.r, G.twoUp)) placePower(lane);
+  for (const lane of lanes.values()) if (lane.power && isBombRow(lane.r, worldGen.version) && lane.power.s.bomb !== isBombPower(lane.power.kind, lane.r, G.twoUp, worldGen.version)) placePower(lane);
 }
 // the rock a bomb drops: one column blocked for BOMB_TICKS (sim.js calls block/unblock through players.js)
 function blockColumn(lane, x) {
@@ -532,7 +532,7 @@ function resetWorld() {
   G.worldTick = 0;
   snowSeason = new Date().getMonth() === 11;
   weatherCache.clear();
-  worldGen = createWorldGen(worldSeed);
+  worldGen = createWorldGen(worldSeed, G.replay ? G.replay.version : RULES);   // a replay's world is built by its own rules (G.rules is set later, in startPlay)
   maxRow = Math.min(FIRST_ROW, firstNeededRow()) - 1;
   while (maxRow < lastNeededRow()) addLane(maxRow + 1);
   mergePending(true);   // a new world: join what is built now

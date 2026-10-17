@@ -22,16 +22,48 @@ const MISSIONS = [
   { key: 'combo20', stat: 'combo', goal: 20 },
   { key: 'nears3', stat: 'nears', goal: 3 }
 ];
+// easy ones for a new player only: they come after the list (index MISSIONS.length + k), so the indexes saved before
+// stay valid, and they are never drawn again once done (next only walks MISSIONS)
+const STARTER = [
+  { key: 'row15', stat: 'row', goal: 15 },
+  { key: 'logs2', stat: 'logs', goal: 2 },
+  { key: 'nears1', stat: 'nears', goal: 1 }
+];
+const missionAt = i => (i < MISSIONS.length ? MISSIONS[i] : STARTER[i - MISSIONS.length]);
 const ACTIVE = 3;
 // saved as "next,a,b,c": the index the next new mission comes from, then the active indexes
 function parseMissions(text) {
   const n = String(text || '').split(',').map(Number);
-  if (n.length === ACTIVE + 1 && n.every(x => Number.isInteger(x) && x >= 0 && x < MISSIONS.length)) return { next: n[0], active: n.slice(1) };
+  const ok = (x, max) => Number.isInteger(x) && x >= 0 && x < max;
+  if (n.length === ACTIVE + 1 && ok(n[0], MISSIONS.length) && n.slice(1).every(x => ok(x, MISSIONS.length + STARTER.length))) return { next: n[0], active: n.slice(1) };
   return { next: ACTIVE % MISSIONS.length, active: [0, 1, 2] };
 }
+// a player with no saved missions starts with the easy three, then the list from its start
+const newMissions = () => ({ next: 0, active: STARTER.map((_, k) => MISSIONS.length + k) });
 const missionsText = m => [m.next, ...m.active].join(',');
 // the stats of a run: which active missions are now done
-const doneMissions = (m, stats) => m.active.filter(i => (stats[MISSIONS[i].stat] || 0) >= MISSIONS[i].goal);
+const doneMissions = (m, stats) => m.active.filter(i => (stats[missionAt(i).stat] || 0) >= missionAt(i).goal);
+// coin missions add up over runs: carried[i] holds the coins mission i collected in earlier runs. The value of mission
+// i after a run with these stats (for the progress line and the done check)
+const missionValue = (i, stats, carried = {}) => (stats[missionAt(i).stat] || 0) + (missionAt(i).stat === 'coins' ? carried[i] || 0 : 0);
+// the active missions done by this run, counting the coins carried from earlier runs
+const doneCarried = (m, stats, carried) => m.active.filter(i => missionValue(i, stats, carried) >= missionAt(i).goal);
+// the carried coins after a run: each active coin mission keeps its total, a done or no longer active one is dropped
+function carryCoins(m, stats, carried) {
+  const out = {};
+  for (const i of m.active) if (missionAt(i).stat === 'coins' && missionValue(i, stats, carried) < missionAt(i).goal) out[i] = missionValue(i, stats, carried);
+  return out;
+}
+// the saved carried coins ("i:n,i:n"), checked field by field
+function parseCarried(text) {
+  const out = {};
+  for (const part of String(text || '').split(',')) {
+    const [i, n] = part.split(':').map(Number);
+    if (Number.isInteger(i) && i >= 0 && i < MISSIONS.length + STARTER.length && Number.isInteger(n) && n > 0 && n < 1e6) out[i] = n;
+  }
+  return out;
+}
+const carriedText = c => Object.entries(c).map(([i, n]) => i + ':' + n).join(',');
 // replace the done ones with the next ones in the list (it wraps, so missions never run out)
 function advanceMissions(m, done) {
   const active = m.active.slice();
@@ -75,4 +107,4 @@ const dailyDoneText = (day, mask) => day + '|' + mask;
 // the stats of a run: which slots (0..2) of the day's missions are done now and were not paid before
 const doneDaily = (picks, mask, stats) => [...picks.keys()].filter(k => !(mask & (1 << k)) && (stats[DAILY[picks[k]].stat] || 0) >= DAILY[picks[k]].goal);
 
-export { DAILY, DAILY_COUNT, DAILY_REWARD, MISSIONS, MISSION_REWARD, advanceMissions, dailyDoneText, dailyMissions, doneDaily, doneMissions, emptyStats, missionsText, parseDailyDone, parseMissions };
+export { DAILY, DAILY_COUNT, DAILY_REWARD, MISSIONS, MISSION_REWARD, advanceMissions, carriedText, carryCoins, doneCarried, missionAt, missionValue, newMissions, parseCarried, dailyDoneText, dailyMissions, doneDaily, doneMissions, emptyStats, missionsText, parseDailyDone, parseMissions };

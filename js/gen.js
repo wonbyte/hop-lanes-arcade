@@ -2,7 +2,7 @@
 // that decides a run (kind, direction, speed, cars, logs, pads, trees, coins, power-ups, the train schedule) plus the
 // looks that use the same generator (tree heights, puddles, car paint), so the rng draws stay in one order.
 // world.js turns this data into meshes; sim.js (and the score server) play a run on it without a browser.
-import { COIN_CHANCE, FLOOD_SPEED, PLAY_HALF, POWER_CHANCE, TRAIN_SPEED, TRAIN_WARN, TWISTER_LEN, WRAP, difficulty, mulberry32, nextLaneKind } from './rules.js';
+import { BOMB_POWER_BOOST, COIN_CHANCE, FLOOD_SPEED, PLAY_HALF, POWER_CHANCE, RULES, TRAIN_SPEED, TRAIN_WARN, TWISTER_LEN, WRAP, bossRows, difficulty, isBombRow, isStill, mulberry32, nextLaneKind } from './rules.js';
 
 const CAR_COLORS = [0xe8513a, 0x3a8ee8, 0xf2c33a, 0x8f5ae0, 0x3ac27a, 0xf27fb0];
 const TRAIN_CARS = 4, TRAIN_CAR_LEN = 3, TRAIN_GAP = 0.15;
@@ -29,9 +29,11 @@ function placeCoin(rng, lane, cols) {
   if (!cols.length) return;
   lane.coins.set(genPick(rng, cols), true);
 }
-// a power-up (shield or magnet) on a free column, now and then past row 10
-function placePower(rng, lane, cols) {
-  if (lane.r <= 10 || !cols.length || rng() >= POWER_CHANCE) return;
+// a power-up (shield or magnet) on a free column, now and then past row 10; rules 4: more often on a bomb row (the
+// same one draw, so a world's draws stay in order)
+function placePower(rng, lane, cols, version) {
+  const chance = version >= 4 && isBombRow(lane.r, version) ? POWER_CHANCE * BOMB_POWER_BOOST : POWER_CHANCE;
+  if (lane.r <= 10 || !cols.length || rng() >= chance) return;
   const kind = rng() < 0.5 ? 'shield' : 'magnet';
   const x = genPick(rng, cols.filter(c => !lane.coins.has(c)));
   if (x === undefined) return;
@@ -51,7 +53,7 @@ function fillObjs(rng, lane, count, make) {
 // One builder per lane kind. The order of the rng draws here IS the world: never reorder or add a draw before
 // another one, or every seed (and every saved replay) changes.
 const ROW_BUILDERS = {
-  grass(rng, lane) {
+  grass(rng, lane, seed, version) {
     const { r, diff } = lane;
     // now and then a hidden column just past the edge holds a coin worth three
     lane.secret = r > 5 && rng() < 0.12 ? (rng() < 0.5 ? -1 : 1) * (PLAY_HALF + 1) : null;
@@ -70,9 +72,9 @@ const ROW_BUILDERS = {
     const free = playColumns().filter(x => !lane.trees.has(x));
     if (r >= 1 && rng() < COIN_CHANCE.grass) placeCoin(rng, lane, free);
     if (lane.secret !== null) placeCoin(rng, lane, [lane.secret]);
-    placePower(rng, lane, free);
+    placePower(rng, lane, free, version);
   },
-  road(rng, lane) {
+  road(rng, lane, seed, version) {
     const diff = lane.diff;
     lane.speed = (genRand(rng, 1.6, 2.8) + diff * 2.4) * (lane.wet ? 1.1 : 1);   // rain or snow: drivers hurry
     // further out, some roads are police chases: faster, with flashing lights
@@ -86,7 +88,7 @@ const ROW_BUILDERS = {
       return { rot, len, color, jitter: genRand(rng, 0, spacing * 0.35) };
     });
     if (rng() < COIN_CHANCE.road) placeCoin(rng, lane, playColumns());
-    placePower(rng, lane, playColumns());
+    placePower(rng, lane, playColumns(), version);
   },
   river(rng, lane) {   // a river after a river flows the other way (the chain sets lane.dir)
     const diff = lane.diff;
@@ -105,17 +107,17 @@ const ROW_BUILDERS = {
     if (rng() < COIN_CHANCE.lily) placeCoin(rng, lane, [...lane.pads]);
   },
   // mud: safe, but a hop out of it is slow (rules.js hopTime). Puddles and reeds are looks, drawn from the same rng.
-  mud(rng, lane) {
+  mud(rng, lane, seed, version) {
     lane.mudLooks = [];   // in draw order: { w, x, dz } a puddle, { reed: height, x } a reed
     for (let x = -12; x <= 12; x++) {
       if (rng() < 0.35) { const w = genPick(rng, [0.5, 0.7, 0.9]), dx = genRand(rng, -0.3, 0.3); lane.mudLooks.push({ w, x: x + dx, dz: genRand(rng, -0.25, 0.25) }); }
       if (Math.abs(x) > PLAY_HALF && rng() < 0.5) lane.mudLooks.push({ reed: genPick(rng, [0.3, 0.5]), x });
     }
     if (rng() < COIN_CHANCE.mud) placeCoin(rng, lane, playColumns());
-    placePower(rng, lane, playColumns());
+    placePower(rng, lane, playColumns(), version);
   },
   // ice (from rules.js ICE_FROM): like grass, fewer (snowy) trees; a sideways hop that lands here slides one more column
-  ice(rng, lane) {
+  ice(rng, lane, seed, version) {
     const diff = lane.diff;
     lane.treeH = [];
     let inPlay = 0;
@@ -129,7 +131,7 @@ const ROW_BUILDERS = {
     }
     const free = playColumns().filter(x => !lane.trees.has(x));
     if (rng() < COIN_CHANCE.ice) placeCoin(rng, lane, free);
-    placePower(rng, lane, free);
+    placePower(rng, lane, free, version);
   },
   // a bridge (from BRIDGE_FROM) over water: a run of planks, the only safe columns. A plank breaks PLANK_BREAK steps
   // after a player lands on it and is back PLANK_BACK steps later (rules.js plankState; breakAt/backAt in world ticks)
@@ -141,26 +143,26 @@ const ROW_BUILDERS = {
     if (rng() < COIN_CHANCE.bridge) placeCoin(rng, lane, [...lane.planks.keys()]);
   },
   // rocks (from ROCKS_FROM): no cars, but a few slow boulders roll across; a hit squashes like a car
-  rocks(rng, lane) {
+  rocks(rng, lane, seed, version) {
     const diff = lane.diff;
     lane.speed = (genRand(rng, 0.8, 1.5) + diff * 1.2) * (lane.wet ? 1.1 : 1);
     fillObjs(rng, lane, Math.floor(genRand(rng, 1, 3) + diff), spacing => ({ len: 0.9, jitter: genRand(rng, 0, spacing * 0.4) }));
     if (rng() < COIN_CHANCE.rocks) placeCoin(rng, lane, playColumns());
-    placePower(rng, lane, playColumns());
+    placePower(rng, lane, playColumns(), version);
   },
   // a spring (from SPRING_FROM): a trampoline row; a forward hop out of it lands two rows on (sim.js). Still ground.
-  spring(rng, lane) {
+  spring(rng, lane, seed, version) {
     if (rng() < COIN_CHANCE.spring) placeCoin(rng, lane, playColumns());
-    placePower(rng, lane, playColumns());
+    placePower(rng, lane, playColumns(), version);
   },
   // a portal (from PORTAL_FROM): still ground with two linked columns; landing on one puts you on the other (sim.js)
-  portal(rng, lane) {
+  portal(rng, lane, seed, version) {
     const cols = playColumns();
     const a = genPick(rng, cols), b = genPick(rng, cols.filter(x => x !== a));
     lane.portals = [a, b];
     const free = cols.filter(x => x !== a && x !== b);
     if (rng() < COIN_CHANCE.portal) placeCoin(rng, lane, free);
-    placePower(rng, lane, free);
+    placePower(rng, lane, free, version);
   },
   // a cliff (from CLIFF_FROM): a ledge of stone tiles over a chasm, one per play column. A tile breaks PLANK_BREAK
   // steps after a landing like a plank (rules.js plankState) and never comes back (sim.js sets backAt to Infinity)
@@ -221,46 +223,51 @@ function connectRow(rng, lane, prevStand) {
 // The rows of one world. A row depends on the row before it (runs of one kind, rivers that alternate, one boss train
 // per 100 rows, the columns a player can stand on), so the chain is walked from row 1 and remembered.
 // lane(r) returns a new data object every call: the caller owns its moving state (o.x, coins, the train schedule).
-function createWorldGen(seed) {
-  const heads = [];   // heads[r - 1]: { kind, streak, dir, bossChunk, twisterChunk, floodChunk, stand } after row r
-  const GRASS = { kind: 'grass', streak: 1, dir: 1, bossChunk: 0, twisterChunk: 0, floodChunk: 0, stand: null };
+// version: the rules version of the run (rules.js RULES when left out): rules 4 builds other worlds (the late kinds
+// sooner, a boss moment every 50 rows, a still row at least every BARE_MAX + 1 rows, more bomb rows with power-ups);
+// a world of an older version is built with exactly the old draws.
+function createWorldGen(seed, version = RULES) {
+  const heads = [];   // heads[r - 1]: { kind, streak, dir, bossChunk, twisterChunk, floodChunk, stand, bare } after row r
+  const GRASS = { kind: 'grass', streak: 1, dir: 1, bossChunk: 0, twisterChunk: 0, floodChunk: 0, stand: null, bare: 0 };
+  const BOSS_ROWS = bossRows(version);
   const headOf = r => {
     if (r < 1) return GRASS;
     while (heads.length < r) {
-      const lane = build(heads.length + 1, heads.length ? heads[heads.length - 1] : GRASS);
-      heads.push({ kind: lane.kind, streak: lane.streak, dir: lane.dir, bossChunk: lane.bossChunk, twisterChunk: lane.twisterChunk, floodChunk: lane.floodChunk, stand: standColumns(lane) });
+      const prev = heads.length ? heads[heads.length - 1] : GRASS, lane = build(heads.length + 1, prev);
+      heads.push({ kind: lane.kind, streak: lane.streak, dir: lane.dir, bossChunk: lane.bossChunk, twisterChunk: lane.twisterChunk, floodChunk: lane.floodChunk, stand: standColumns(lane),
+        bare: isStill(lane.kind) ? 0 : prev.bare + 1 });   // rows in a row without still ground (rules 4 caps it)
     }
     return heads[r - 1];
   };
   function build(r, prev) {
     const rng = rowRng(seed, r);
     const diff = difficulty(r);
-    const kind = nextLaneKind(r, diff, prev, rng);
+    const kind = nextLaneKind(r, diff, prev, rng, version);
     let dir = rng() < 0.5 ? 1 : -1;
     if (kind === 'river' && prev.kind === 'river') dir = -prev.dir;
-    // boss moments, decided by the chain (no draw): past each 100 rows the first rail carries the boss train, the first
-    // grass row a twister (one slow thing crossing like traffic) and the first river a flood (faster water)
-    const chunk = Math.floor(r / 100);
-    const boss = kind === 'rail' && r >= 100 && chunk > prev.bossChunk;
-    const twister = kind === 'grass' && r >= 100 && chunk > prev.twisterChunk;
-    const flood = kind === 'river' && r >= 100 && chunk > prev.floodChunk;
+    // boss moments, decided by the chain (no draw): past each BOSS_ROWS rows (100; rules 4: 50) the first rail carries
+    // the boss train, the first grass row a twister (one slow thing crossing like traffic) and the first river a flood
+    const chunk = Math.floor(r / BOSS_ROWS);
+    const boss = kind === 'rail' && r >= BOSS_ROWS && chunk > prev.bossChunk;
+    const twister = kind === 'grass' && r >= BOSS_ROWS && chunk > prev.twisterChunk;
+    const flood = kind === 'river' && r >= BOSS_ROWS && chunk > prev.floodChunk;
     const lane = {
       r, kind, diff, dir, speed: 0, span: LANE_SPAN, wet: wetAt(seed, r), prevKind: prev.kind, boss, twister, flood,
       streak: kind === prev.kind ? prev.streak + 1 : 1, bossChunk: boss ? chunk : prev.bossChunk,
       twisterChunk: twister ? chunk : prev.twisterChunk, floodChunk: flood ? chunk : prev.floodChunk,
       objs: [], trees: new Set(), coins: new Map(), secret: null, power: null
     };
-    ROW_BUILDERS[kind](rng, lane, seed);   // nosemgrep: unsafe-dynamic-method -- kind comes from nextLaneKind, a fixed set of lane names
+    ROW_BUILDERS[kind](rng, lane, seed, version);   // nosemgrep: unsafe-dynamic-method -- kind comes from nextLaneKind, a fixed set of lane names
     if (flood) lane.speed *= FLOOD_SPEED;   // no draw: the river's logs are where they always were, only faster
     if (r >= 1) connectRow(rng, lane, prev.stand);   // the draws come after the row's own, so rows before stay as they were
-    if (twister) {   // after every other draw of the row (rows below 100 never get here)
+    if (twister) {   // after every other draw of the row (rows below BOSS_ROWS never get here)
       lane.speed = 1.4 + diff;
       fillObjs(rng, lane, 1, () => ({ len: TWISTER_LEN, twister: true }));
     }
     return lane;
   }
   return {
-    seed,
+    seed, version,
     lane: r => build(r, headOf(r - 1)),
     kind: r => headOf(r).kind
   };

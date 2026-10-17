@@ -1,7 +1,7 @@
 // Fast tests for js/rules.js (no browser). Run: node tests/rules.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BRIDGE_FROM, CLIFF_FROM, ICE_FROM, PORTAL_FROM, ROCKS_FROM, SPRING_FROM, LANE_KINDS, MUD_SLOW, STREAK_MAX, difficultyAt, hashString, hopTarget, hopTime, isBombRow, isWater, mulberry32, nextLaneKind } from '../js/rules.js';
+import { BARE_MAX, KIND_FROM, isStill, kindFrom, BRIDGE_FROM, CLIFF_FROM, ICE_FROM, PORTAL_FROM, ROCKS_FROM, SPRING_FROM, LANE_KINDS, MUD_SLOW, STREAK_MAX, difficultyAt, hashString, hopTarget, hopTime, isBombRow, isWater, mulberry32, nextLaneKind } from '../js/rules.js';
 
 test('mulberry32: same seed, same numbers, all in [0, 1)', () => {
   const a = mulberry32(42), b = mulberry32(42), c = mulberry32(7);
@@ -25,13 +25,14 @@ test('difficultyAt ramps from 0 to 1', () => {
   assert.equal(difficultyAt(1000, 140), 1);
 });
 
-function world(seed, rows) {
+// the kinds of a world of rules `version` (3: the tables every saved run was played on)
+function world(seed, rows, version = 3) {
   const rng = mulberry32(seed);
   const out = [];
-  let prev = { kind: 'grass', streak: 0 };
+  let prev = { kind: 'grass', streak: 0, bare: 0 };
   for (let r = 0; r <= rows; r++) {
-    const k = nextLaneKind(r, difficultyAt(r, 140), prev, rng);
-    prev = { kind: k, streak: k === prev.kind ? prev.streak + 1 : 1 };
+    const k = nextLaneKind(r, difficultyAt(r, 140), prev, rng, version);
+    prev = { kind: k, streak: k === prev.kind ? prev.streak + 1 : 1, bare: isStill(k) ? 0 : prev.bare + 1 };
     out.push(k);
   }
   return out;
@@ -67,8 +68,8 @@ test('nextLaneKind: no two grass rows after the start, runs stay short, late kin
 test('nextLaneKind: a run is kept on purpose only up to its cap', () => {
   const always = () => 0.1;   // below 0.55: keep the run while allowed; then the weighted pick lands on grass
   for (const kind of ['road', 'river', 'lily', 'mud', 'rail', 'ice', 'bridge', 'rocks', 'spring', 'portal', 'cliff']) {
-    for (let streak = 1; streak < STREAK_MAX[kind]; streak++) assert.equal(nextLaneKind(50, 0.3, { kind, streak }, always), kind);
-    assert.equal(nextLaneKind(50, 0.3, { kind, streak: STREAK_MAX[kind] }, always), 'grass', `${kind} stops at ${STREAK_MAX[kind]}`);
+    for (let streak = 1; streak < STREAK_MAX[kind]; streak++) assert.equal(nextLaneKind(50, 0.3, { kind, streak }, always, 3), kind);
+    assert.equal(nextLaneKind(50, 0.3, { kind, streak: STREAK_MAX[kind] }, always, 3), 'grass', `${kind} stops at ${STREAK_MAX[kind]}`);
   }
 });
 
@@ -76,13 +77,13 @@ test('the latest kinds weigh nothing below their first row, so the kinds below S
   assert.ok(SPRING_FROM >= 95 && PORTAL_FROM > SPRING_FROM && CLIFF_FROM > PORTAL_FROM);
   // every draw at the row before a first row gives an old kind; at the first row some draw gives the new one
   const prev = { kind: 'road', streak: 4 };
-  const kindsAt = r => new Set(Array.from({ length: 1000 }, (_, i) => nextLaneKind(r, difficultyAt(r, 140), prev, () => i / 1000)));
+  const kindsAt = r => new Set(Array.from({ length: 1000 }, (_, i) => nextLaneKind(r, difficultyAt(r, 140), prev, () => i / 1000, 3)));
   for (const [kind, from] of [['spring', SPRING_FROM], ['portal', PORTAL_FROM], ['cliff', CLIFF_FROM]]) {
     assert.ok(!kindsAt(from - 1).has(kind), `no ${kind} at row ${from - 1}`);
     assert.ok(kindsAt(from).has(kind), `${kind} at row ${from}`);
   }
   assert.ok(isWater('cliff') && !isWater('spring') && !isWater('portal'), 'a rescue never goes back onto a cliff');
-  assert.deepEqual([isBombRow(20), isBombRow(24), isBombRow(26), isBombRow(100)], [false, true, false, true]);
+  assert.deepEqual([isBombRow(20, 3), isBombRow(24, 3), isBombRow(26, 3), isBombRow(100, 3)], [false, true, false, true]);
 });
 
 test('hopTarget: edges, trees, lily pads and river half steps', () => {
@@ -118,10 +119,10 @@ test('isoWeek, streaks and hats', async () => {
   assert.equal(streakAfter('2026-10-01|9', '2026-10-14', '2026-10-13'), '2026-10-14|1', 'a gap starts over');
   assert.equal(streakCount('2026-10-13|2', '2026-10-14', '2026-10-13'), 2, 'yesterday still counts until today is played');
   assert.equal(streakCount('2026-10-01|9', '2026-10-14', '2026-10-13'), 0);
-  assert.equal(hatFor(99), null);
-  assert.equal(hatFor(100).key, 'cap');
-  assert.equal(hatFor(499).key, 'crown');
-  assert.equal(hatFor(500).key, 'halo');
+  assert.equal(hatFor(49), null);
+  assert.equal(hatFor(50).key, 'cap');
+  assert.equal(hatFor(299).key, 'crown');
+  assert.equal(hatFor(300).key, 'halo');
   assert.ok(HATS.every((h, i) => !i || h.at < HATS[i - 1].at), 'hats are listed from the top');
   assert.deepEqual(traitOf('frog'), { text: 'BALANCED' });
   assert.deepEqual(traitOf('constructor'), {}, 'nothing from Object.prototype');
@@ -190,17 +191,26 @@ test('the tuning constants that decide a run are what the saved runs were played
   assert.deepEqual(Object.keys(R.TRAITS), ['frog', 'fox', 'bunny', 'cat', 'robot', 'pig', 'penguin', 'turtle']);
   assert.ok(R.TRAITS.cat.lives === 1 && R.TRAITS.robot.idle === 3 && R.TRAITS.penguin.noSlide === true && R.TRAITS.turtle.behind === 1);
   assert.ok(Object.values(R.TRAITS).every(t => typeof t.text === 'string' && t.text), 'every animal has a join card text');
-  assert.deepEqual(R.HATS.map(h => [h.key, h.name, h.at]), [['halo', 'HALO', 500], ['crown', 'CROWN', 250], ['cap', 'CAP', 100]]);
+  assert.deepEqual(R.HATS.map(h => [h.key, h.name, h.at]), [['halo', 'HALO', 300], ['crown', 'CROWN', 150], ['cap', 'CAP', 50]]);
+  // rules 4
+  assert.equal(R.RULES, 4);
+  assert.deepEqual([R.HIT_PAD, R.HIT_PAD_BODY, R.NEAR_MISS_BODY, R.LEASH_CAM, R.LEASH_ROWS, R.REJOIN_TICKS, R.BARE_MAX, R.BOMB_POWER_BOOST], [0.28, 0.2, 0.58, 4, 9, 600, 6, 3]);
+  assert.ok(Math.abs(R.NEAR_MISS + R.HIT_PAD - R.HIT_PAD_BODY - R.NEAR_MISS_BODY) < 1e-12, 'the near-miss band ends where it did');
+  assert.deepEqual(KIND_FROM[4], { ice: 20, bridge: 30, rocks: 40, spring: 50, portal: 60, cliff: 75 });
+  assert.deepEqual([R.bossRows(2), R.bossRows(3), R.bossRows(4)], [100, 100, 50]);
+  assert.ok(R.TRAITS.robot.shake === true);
   assert.deepEqual([R.TWISTER_LEN, R.FLOOD_SPEED, R.SPRING_HOP, R.SLIDE_TIME, R.TAG_BOOST, R.NEAR_MISS], [0.9, 1.5, 1.6, 0.12, 0.7, 0.5]);
 });
 
 test('isBombRow and isBombPower: past row 20, every 4th row, a magnet, only with two players', async () => {
   const { isBombPower } = await import('../js/rules.js');
-  assert.deepEqual([isBombRow(16), isBombRow(21), isBombRow(22), isBombRow(23), isBombRow(24), isBombRow(28), isBombRow(-4)], [false, false, false, false, true, true, false]);
-  assert.equal(isBombPower('magnet', 24, true), true);
-  assert.equal(isBombPower('magnet', 24, false), false, 'alone a magnet is a magnet');
-  assert.equal(isBombPower('shield', 24, true), false, 'a shield is never a bomb');
-  assert.equal(isBombPower('magnet', 23, true), false, 'not a bomb row');
+  assert.deepEqual([isBombRow(16, 3), isBombRow(21, 3), isBombRow(22, 3), isBombRow(23, 3), isBombRow(24, 3), isBombRow(28, 3), isBombRow(-4, 3)], [false, false, false, false, true, true, false]);
+  assert.deepEqual([2, 3].map(v => isBombRow(12, v)), [false, false], 'rules 2 and 3: past row 20 only');
+  assert.equal(isBombPower('magnet', 24, true, 3), true);
+  assert.equal(isBombPower('magnet', 24, false, 3), false, 'alone a magnet is a magnet');
+  assert.equal(isBombPower('shield', 24, true, 3), false, 'a shield is never a bomb');
+  assert.equal(isBombPower('magnet', 23, true, 3), false, 'not a bomb row');
+  assert.equal(isBombPower('magnet', 16, true, 3), false, 'rules 3: row 16 is no bomb row');
 });
 
 test('hopTarget: the hidden column past the edge, rounding, and the river bank', () => {
@@ -240,7 +250,7 @@ test('plankState: cracking until breakAt, down until backAt, up after; no plank 
 
 test('nextLaneKind: the weights of the kinds, row by row (the chance of each at a fixed draw)', () => {
   const prev = { kind: 'road', streak: 4 };   // the run is at its cap: the weighted pick decides
-  const share = (r, kind) => { let n = 0; for (let i = 0; i < 2000; i++) if (nextLaneKind(r, difficultyAt(r, 140), prev, () => i / 2000) === kind) n++; return n / 2000; };
+  const share = (r, kind) => { let n = 0; for (let i = 0; i < 2000; i++) if (nextLaneKind(r, difficultyAt(r, 140), prev, () => i / 2000, 3) === kind) n++; return n / 2000; };
   // row 4: grass 0.32, road 0.36, river 0.2, rail 0.12 (diff about 0.03)
   const d4 = difficultyAt(4, 140), sum4 = 0.32 - d4 * 0.12 + 0.36 + 0.2 + d4 * 0.06 + 0.12 + d4 * 0.06;
   assert.ok(Math.abs(share(4, 'grass') - (0.32 - d4 * 0.12) / sum4) < 0.01, 'grass ' + share(4, 'grass'));
@@ -301,8 +311,8 @@ test('isoWeek: Sundays belong to the week before, bad months and days are null; 
 test('hatFor: the first hat from the top whose score is reached; hopTime only slows a hop out of mud', async () => {
   const { hatFor } = await import('../js/rules.js');
   assert.equal(hatFor(0), null);
-  assert.equal(hatFor(249).key, 'cap');
-  assert.equal(hatFor(250).key, 'crown');
+  assert.equal(hatFor(149).key, 'cap');
+  assert.equal(hatFor(150).key, 'crown');
   assert.equal(hatFor(9999).key, 'halo');
   assert.equal(hopTime('river', 0.12), 0.12);
   assert.equal(hopTime(undefined, 0.12), 0.12, 'no lane: a plain hop');
@@ -313,11 +323,59 @@ test('the first rows of ice, bridges and rocks, and odd inputs to isoWeek', asyn
   const { FIRST_ROW, isoWeek } = await import('../js/rules.js');
   assert.equal(FIRST_ROW, -8, 'eight rows of scenery behind the start');
   const prev = { kind: 'road', streak: 4 };
-  const kindsAt = r => new Set(Array.from({ length: 1000 }, (_, i) => nextLaneKind(r, difficultyAt(r, 140), prev, () => i / 1000)));
+  const kindsAt = r => new Set(Array.from({ length: 1000 }, (_, i) => nextLaneKind(r, difficultyAt(r, 140), prev, () => i / 1000, 3)));
   for (const [kind, from] of [['ice', ICE_FROM], ['bridge', BRIDGE_FROM], ['rocks', ROCKS_FROM]]) {
     assert.ok(!kindsAt(from - 1).has(kind), `no ${kind} at row ${from - 1}`);
     assert.ok(kindsAt(from).has(kind), `${kind} at row ${from}`);
   }
   assert.equal(isoWeek('2026-10-14x'), null, 'nothing after the day');
   assert.equal(isoWeek('x2026-10-14'), null);
+});
+
+// ---------- rules 4 ----------
+test('rules 4: the late kinds come sooner (ice 20, bridge 30, rocks 40, spring 50, portal 60, cliff 75); rules 3 keeps its rows', () => {
+  const prev = { kind: 'road', streak: 4, bare: 0 };
+  const kindsAt = (r, v) => new Set(Array.from({ length: 1000 }, (_, i) => nextLaneKind(r, difficultyAt(r, 140), prev, () => i / 1000, v)));
+  for (const [kind, from] of Object.entries(kindFrom(4))) {
+    assert.ok(!kindsAt(from - 1, 4).has(kind), `rules 4: no ${kind} at row ${from - 1}`);
+    assert.ok(kindsAt(from, 4).has(kind), `rules 4: ${kind} at row ${from}`);
+    if (from < KIND_FROM[3][kind]) assert.ok(!kindsAt(from, 3).has(kind), `rules 3: still no ${kind} at row ${from}`);
+  }
+  assert.deepEqual(kindFrom(2), kindFrom(3));
+  assert.deepEqual(kindFrom(3), { ice: ICE_FROM, bridge: BRIDGE_FROM, rocks: ROCKS_FROM, spring: SPRING_FROM, portal: PORTAL_FROM, cliff: CLIFF_FROM });
+  for (let seed = 1; seed <= 30; seed++) {
+    const ks = world(seed, 300, 4);
+    for (const [kind, from] of Object.entries(kindFrom(4))) assert.ok(ks.indexOf(kind) < 0 || ks.indexOf(kind) >= from, `seed ${seed}: ${kind} from row ${from}`);
+  }
+  const all = new Set(Array.from({ length: 20 }, (_, i) => world(i + 1, 120, 4)).flat());
+  for (const k of LANE_KINDS) assert.ok(all.has(k), `${k} by row 120 in some rules 4 world`);
+});
+
+test('rules 4: never more than BARE_MAX rows in a row without still ground (a forced grass row, no draw); rules 3 can go longer', () => {
+  assert.equal(nextLaneKind(50, 0.3, { kind: 'road', streak: 2, bare: BARE_MAX }, () => { throw new Error('no draw'); }, 4), 'grass');
+  assert.equal(nextLaneKind(50, 0.3, { kind: 'road', streak: 2, bare: BARE_MAX - 1 }, () => 0.1, 4), 'road', 'one short of the cap: the run goes on');
+  assert.equal(nextLaneKind(50, 0.3, { kind: 'road', streak: 2, bare: BARE_MAX }, () => 0.1, 3), 'road', 'rules 3 never forces');
+  assert.deepEqual(['grass', 'mud', 'ice', 'spring', 'portal'].map(isStill), [true, true, true, true, true]);
+  assert.deepEqual(['road', 'river', 'lily', 'rail', 'bridge', 'rocks', 'cliff'].map(isStill), [false, false, false, false, false, false, false]);
+  let longest3 = 0;
+  for (let seed = 1; seed <= 60; seed++) {
+    for (const [v, ks] of [[4, world(seed, 400, 4)], [3, world(seed, 400, 3)]]) {
+      let bare = 0;
+      for (const k of ks) {
+        bare = isStill(k) ? 0 : bare + 1;
+        if (v === 4) assert.ok(bare <= BARE_MAX, `seed ${seed}: ${bare} rows without still ground`);
+        else longest3 = Math.max(longest3, bare);
+      }
+    }
+  }
+  assert.ok(longest3 > BARE_MAX, 'rules 3 worlds had longer stretches: ' + longest3);
+});
+
+test('rules 4: a bomb row from row 10 (every 4th: 12, 16, 20...)', async () => {
+  const { isBombPower } = await import('../js/rules.js');
+  assert.deepEqual([8, 10, 12, 14, 16, 20, 24].map(r => isBombRow(r, 4)), [false, false, true, false, true, true, true]);
+  assert.deepEqual([8, 10, 12, 14, 16, 20, 24].map(r => isBombRow(r)), [false, false, true, false, true, true, true], 'the current rules by default');
+  assert.equal(isBombPower('magnet', 16, true, 4), true);
+  assert.equal(isBombPower('magnet', 16, false, 4), false);
+  assert.equal(isBombPower('shield', 16, true, 4), false);
 });

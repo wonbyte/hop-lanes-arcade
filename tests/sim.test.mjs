@@ -6,6 +6,8 @@ import fs from 'node:fs';
 import { createWorldGen, railStep, standColumns, standGroups, trafficX, wetAt } from '../js/gen.js';
 import { createSim, makeRules, resetPlayer, simulate, winnerOf } from '../js/sim.js';
 import { decodeReplay, encodeReplay } from '../js/replay.js';
+import { camLead, runOver as isRunOver } from '../js/sim.js';
+import { HIT_PAD as PAD3, HIT_PAD_BODY, LEASH_ROWS, NEAR_MISS, NEAR_MISS_BODY, REJOIN_TICKS } from '../js/rules.js';
 import { LOG_SLACK_BODY, PLAY_HALF, BOMB_TICKS, BRIDGE_FROM, CLIFF_FROM, COMBO_GAP, EAGLE_IDLE, EAGLE_SWOOP, EAGLE_WARN, HOP_TIME, ICE_FROM, LEAD_FROM, LEAD_GAP, LEAD_SLOW, MAGNET_REACH, MAGNET_TIME, PLANK_BACK, PLANK_BREAK, PORTAL_FROM, ROCKS_FROM, SPRING_FROM, SPRING_HOP, STEP, TRAITS, dailySeedFor, hashString, plankState, traitOf } from '../js/rules.js';
 
 // what the browser built for seed 42 (window.hopLanes.laneKinds()) before world generation moved to gen.js
@@ -44,7 +46,7 @@ test('sim: the last saved browser run is a rules 3 run that rules 2 would end at
 });
 
 test('gen: seed 42 gives the lane kinds the browser built', () => {
-  const g = createWorldGen(42);
+  const g = createWorldGen(42, 3);
   assert.deepEqual(Array.from({ length: 31 }, (_, r) => g.lane(r).kind), KINDS_42);
   assert.deepEqual(Array.from({ length: 31 }, (_, r) => g.kind(r)), KINDS_42, 'the chain alone agrees');
 });
@@ -61,7 +63,7 @@ test('gen: a row is the same whatever was asked before it, and fresh each time',
 });
 
 test('gen: rows below 4 are grass, one boss train per 100 rows, traffic wraps inside the span', () => {
-  const g = createWorldGen(3);
+  const g = createWorldGen(3, 3);
   for (let r = -12; r < 4; r++) assert.equal(g.lane(r).kind, 'grass');
   const bosses = [];
   for (let r = 0; r < 600; r++) { const l = g.lane(r); if (l.boss) bosses.push(Math.floor(r / 100)); }
@@ -198,7 +200,7 @@ test('rocks: a boulder squashes like a car; a shield rescues', () => {
 test('gen: the late kinds start where rules.js says and keep their data', () => {
   const first = {};
   for (let seed = 1; seed <= 30; seed++) {
-    const g = createWorldGen(seed);
+    const g = createWorldGen(seed, 3);
     for (let r = 0; r < 300; r++) {
       const l = g.lane(r);
       if (!(l.kind in first) || r < first[l.kind]) first[l.kind] = r;
@@ -217,7 +219,7 @@ test('gen: the late kinds start where rules.js says and keep their data', () => 
 
 test('gen: boss moments: one twister (grass) and one flood (river) per 100 rows past row 100, by the chain', () => {
   for (let seed = 1; seed <= 30; seed++) {
-    const g = createWorldGen(seed), tw = [], fl = [];
+    const g = createWorldGen(seed, 3), tw = [], fl = [];
     let plainRiver = null;
     for (let r = 0; r < 400; r++) {
       const l = g.lane(r);
@@ -239,7 +241,7 @@ test('gen: boss moments: one twister (grass) and one flood (river) per 100 rows 
     for (const l of firstRiver) if (l) assert.ok(l.flood, 'first river row of the block: ' + l.r);
   }
   // a flood is the same river, 1.5 times faster: no draw moved
-  const g = createWorldGen(5);
+  const g = createWorldGen(5, 3);
   let flood = null;
   for (let r = 100; r < 300 && !flood; r++) { const l = g.lane(r); if (l.flood) flood = l; }
   assert.ok(flood && flood.objs.length >= 3 && flood.speed > 1.5, 'a flood holds its logs and is fast');
@@ -248,11 +250,12 @@ test('gen: boss moments: one twister (grass) and one flood (river) per 100 rows 
 });
 
 // the animals' edges (rules.js TRAITS) and the versus modes, on hand-made lanes
-function benchWith(rows, chars, mode = 'classic') {
-  const G = { state: 'play', mode, camRow: 0, playT: 0, worldTick: 1000, run: null };
+// version: the rules version (rules.js RULES when left out); fx: effect hooks
+function benchWith(rows, chars, mode = 'classic', version, fx) {
+  const G = { state: 'play', mode, camRow: 0, playT: 0, worldTick: 1000, run: null, rules: version };
   const lanes = new Map(rows.map((l, r) => [r, { r, coins: new Map(), trees: new Set(), objs: [], span: 34, secret: null, power: null, ...l }]));
   const players = chars.map((key, id) => ({ id, joined: true, trait: traitOf(key) }));
-  const rules = makeRules({ G, lane: r => lanes.get(r), coins() {}, over() {}, players });
+  const rules = makeRules({ G, lane: r => lanes.get(r), coins() {}, over() {}, players, fx });
   players.forEach(resetPlayer);
   const run = (n = 1) => { for (let i = 0; i < n; i++) { G.worldTick++; G.playT += STEP; for (const p of players) if (p.alive) rules.stepPlayer(p, STEP); } };
   const hopTicks = p => { let n = 0; while (p.hop && n < 500) { run(); n++; } return n; };
@@ -304,18 +307,18 @@ test('a row dropped under a hop (the browser frees far rows) does not break the 
 });
 
 test('traits: the bunny hops faster, the robot waits longer for the eagle, the penguin does not slide', () => {
-  const b = benchWith(grassRows(6), ['frog', 'bunny']);
+  const b = benchWith(grassRows(6), ['frog', 'bunny'], 'classic', 3);
   const [frog, bunny] = b.players;
   b.rules.tryMove(frog, 0, 1); b.rules.tryMove(bunny, 0, 1);
   const [tf, tb] = b.landTicks();
   assert.ok(tb < tf, `bunny ${tb} ticks < frog ${tf}`);
   assert.ok(Math.abs(tb / tf - 0.8) < 0.1, 'about 0.8 of a frog hop');
-  const r = benchWith(grassRows(6), ['frog', 'robot']);
+  const r = benchWith(grassRows(6), ['frog', 'robot'], 'classic', 3);
   r.run(Math.round(6 / STEP) + 5);   // the frog's eagle has arrived; the robot's has not
   assert.ok(r.players[0].eagle && !r.players[1].eagle, 'the robot has 3 s more');
   r.run(Math.round(3 / STEP) + 5);
   assert.ok(r.players[1].eagle, 'then the eagle comes for the robot too');
-  const ice = benchWith([{ kind: 'grass' }, { kind: 'ice' }], ['penguin', 'frog']);
+  const ice = benchWith([{ kind: 'grass' }, { kind: 'ice' }], ['penguin', 'frog'], 'classic', 3);
   for (const p of ice.players) { p.x = 0; ice.rules.tryMove(p, 0, 1); ice.hopTicks(p); ice.rules.tryMove(p, 1, 0); ice.hopTicks(p); }
   assert.deepEqual(ice.players.map(p => p.x), [1, 2], 'penguin stops at 1, frog slides to 2');
 });
@@ -369,9 +372,9 @@ test('near miss: a car that passes just short of a hit adds one combo, once per 
   assert.ok(p.alive);
 });
 
-test('gen: every world has a way forward (pads over pads, planks reachable, no tree wall after a lily row)', () => {
-  for (let seed = 1; seed <= 200; seed++) {
-    const g = createWorldGen(seed);
+test('gen: every world has a way forward (pads over pads, planks reachable, no tree wall after a lily row), rules 3 and 4', () => {
+  for (let seed = 1; seed <= 400; seed++) {
+    const g = createWorldGen(seed >> 1, seed & 1 ? 4 : 3);
     let prev = null;
     for (let r = 1; r <= 220; r++) {
       const lane = g.lane(r), stand = standColumns(lane), here = stand && new Set(stand);
@@ -490,7 +493,7 @@ test('twister: the thing crossing a boss grass row kills like a car (no near mis
 
 test('leader: two players, the one 5 rows ahead past row 30 hops slower, not in race or tag; p.lead says so', () => {
   const rows = Array.from({ length: 60 }, () => ({ kind: 'grass' }));
-  const b = benchWith(rows, ['frog', 'frog']);
+  const b = benchWith(rows, ['frog', 'frog'], 'classic', 3);
   const [a, c] = b.players;
   const labels = [];
   const rules = makeRules({ G: b.G, lane: r => b.lanes.get(r), coins() {}, over() {}, players: b.players, fx: { label: p => labels.push(p.id) } });
@@ -503,7 +506,7 @@ test('leader: two players, the one 5 rows ahead past row 30 hops slower, not in 
   assert.deepEqual(labels, [0], 'no change, no new label');
   // below the gap, below LEAD_FROM, in race or tag, or alone: no slowdown
   const check = (rowA, rowC, mode, alive = true, expect = false) => {
-    const w = benchWith(rows, ['frog', 'frog'], mode);
+    const w = benchWith(rows, ['frog', 'frog'], mode, 3);
     const [x, y] = w.players;
     x.row = rowA; y.row = rowC; y.alive = alive;
     w.run(); assert.equal(x.lead, expect, `lead: ${rowA} vs ${rowC} ${mode} alive=${alive}`);
@@ -517,7 +520,7 @@ test('leader: two players, the one 5 rows ahead past row 30 hops slower, not in 
   check(LEAD_FROM, LEAD_FROM - LEAD_GAP, 'classic', false);
   check(LEAD_FROM, LEAD_FROM - LEAD_GAP, 'coinwar', true, true);
   check(LEAD_FROM + 20, 0, 'daily', true, true);
-  const solo = benchWith(rows, ['frog']);
+  const solo = benchWith(rows, ['frog'], 'classic', 3);
   solo.players[0].row = 50; solo.rules.tryMove(solo.players[0], 0, 1);
   assert.equal(solo.players[0].hop.dur, HOP_TIME, 'alone: nobody to wait for');
 });
@@ -526,7 +529,7 @@ test('bomb: with two players a magnet on a bomb row blocks the column ahead of t
   const rows = Array.from({ length: 30 }, () => ({ kind: 'grass' }));
   rows[24] = { kind: 'grass', power: { x: 0, kind: 'magnet' } };   // row 24: a bomb row
   rows[23] = { kind: 'grass', power: { x: 0, kind: 'magnet' } };   // row 23: a plain magnet
-  const b = benchWith(rows, ['frog', 'fox']);
+  const b = benchWith(rows, ['frog', 'fox'], 'classic', 3);
   const [a, c] = b.players;
   const log = [];
   const rules = makeRules({ G: b.G, lane: r => b.lanes.get(r), coins() {}, over() {}, players: b.players,
@@ -549,27 +552,27 @@ test('bomb: with two players a magnet on a bomb row blocks the column ahead of t
   assert.ok(!b.lanes.get(11).trees.has(3), 'freed after BOMB_TICKS');
   assert.deepEqual(log[log.length - 1], ['unbomb', 11, 3]);
   // the other player gone: the bomb is a shield for the picker. Alone: a magnet is a magnet
-  const d = benchWith(rows, ['frog', 'fox']);
+  const d = benchWith(rows, ['frog', 'fox'], 'classic', 3);
   d.players[1].alive = false;
   d.players[0].row = 23; d.players[0].x = 0; d.rules.tryMove(d.players[0], 0, 1); d.hopTicks(d.players[0]);
   assert.deepEqual([d.players[0].shield, d.players[0].magnetT], [true, 0]);
-  const e = benchWith(rows, ['frog']);
+  const e = benchWith(rows, ['frog'], 'classic', 3);
   e.players[0].row = 23; e.players[0].x = 0; e.rules.tryMove(e.players[0], 0, 1); e.hopTicks(e.players[0]);
   assert.ok(e.players[0].magnetT > 0 && !e.players[0].shield);
   // a bomb at the edge is clamped to the play columns; a tree already there stays after the bomb
-  const f = benchWith(rows, ['frog', 'fox']);
+  const f = benchWith(rows, ['frog', 'fox'], 'classic', 3);
   f.lanes.get(11).trees.add(4);
   f.players[1].row = 10; f.players[1].x = 4; f.players[0].row = 23; f.players[0].x = 0;
   f.rules.tryMove(f.players[0], 0, 1); f.hopTicks(f.players[0]); f.run(BOMB_TICKS + 5);
   assert.ok(f.lanes.get(11).trees.has(4), 'the tree stays');
   // water ahead of the other player blocks nothing (logs decide there): the picker gets a shield instead
-  const g = benchWith(rows, ['frog', 'fox']);
+  const g = benchWith(rows, ['frog', 'fox'], 'classic', 3);
   g.lanes.get(11).kind = 'river'; g.lanes.get(11).objs = [];
   g.players[1].row = 10; g.players[1].x = 0; g.players[0].row = 23; g.players[0].x = 0;
   g.rules.tryMove(g.players[0], 0, 1); g.hopTicks(g.players[0]);
   assert.ok(g.players[0].shield && !g.lanes.get(11).trees.size, 'no rock on water, a shield for the picker');
   // a second bomb on the same column keeps the rock longer instead of doubling it; reset() lifts what is left
-  const h = benchWith(rows, ['frog', 'fox']);
+  const h = benchWith(rows, ['frog', 'fox'], 'classic', 3);
   const hl = [];
   const hr = makeRules({ G: h.G, lane: r => h.lanes.get(r), coins() {}, over() {}, players: h.players, fx: { bomb: () => hl.push('bomb'), unbomb: (lane, x) => hl.push('unbomb' + lane.r + ':' + x) } });
   const hstep = n => { for (let i = 0; i < n; i++) { h.G.worldTick++; h.G.playT += STEP; for (const p of h.players) if (p.alive) hr.stepPlayer(p, STEP); } };
@@ -617,7 +620,7 @@ test('gen: rain or snow (wetAt) makes roads, rivers and rocks faster than the dr
   const WET = { road: 1.1, river: 1.2, rocks: 1.1 };
   const faster = new Set();
   for (let seed = 1; seed <= 20; seed++) {
-    const g = createWorldGen(seed);
+    const g = createWorldGen(seed, 3);
     for (let r = 0; r < 100; r++) {   // below 100: no flood (a flood is 1.5x on top)
       const l = g.lane(r);
       assert.equal(l.wet, wetAt(seed, r), `seed ${seed} row ${r}: lane.wet is wetAt`);
@@ -630,7 +633,7 @@ test('gen: rain or snow (wetAt) makes roads, rivers and rocks faster than the dr
   }
   for (const kind of ['road', 'river', 'rocks']) assert.ok(faster.has(kind), `some wet ${kind} lane is faster than the dry formula allows`);
   assert.equal(wetAt(1, 89), true);
-  assert.equal(createWorldGen(1).lane(89).speed > 2.8 + createWorldGen(1).lane(89).diff * 2.4, true, 'seed 1 row 89: a wet road past the dry maximum');
+  assert.equal(createWorldGen(1, 3).lane(89).speed > 2.8 + createWorldGen(1, 3).lane(89).diff * 2.4, true, 'seed 1 row 89: a wet road past the dry maximum');
 });
 
 test('room mode: the seed is hashString("room:" + code), so two phones on one code build one world', () => {
@@ -879,7 +882,7 @@ test('hops: mid-hop the animal is between the columns; a hop from mud is MUD_SLO
 
 test('combos: every COMBO_EVERY quick hops pay a coin; a pause of COMBO_GAP + 0.2 s ends the combo; a near miss on a cold combo gives 2', () => {
   const paid = [];
-  const b = benchWith(grassRows(30), ['frog']);
+  const b = benchWith(grassRows(30), ['frog'], 'classic', 3);
   const p = b.players[0];
   const rules = makeRules({ G: b.G, lane: r => b.lanes.get(r), coins: n => paid.push(n), over() {}, players: b.players });
   const hop = () => { rules.tryMove(p, 0, 1); while (p.hop) b.run(); };
@@ -896,7 +899,7 @@ test('combos: every COMBO_EVERY quick hops pay a coin; a pause of COMBO_GAP + 0.
   b.run(3);
   assert.equal(p.combo, 0, 'gone just after');
   // a near miss on a cold combo counts from 1: it makes 2
-  const c = benchWith([{ kind: 'grass' }, { kind: 'road', objs: [{ x: 3, len: 1.4 }] }], ['frog']);
+  const c = benchWith([{ kind: 'grass' }, { kind: 'road', objs: [{ x: 3, len: 1.4 }] }], ['frog'], 'classic', 3);
   const q = c.players[0];
   q.x = 0; q.row = 1; q.combo = 0;
   c.lanes.get(1).objs[0].x = 0.7 + HIT_PAD + 0.3;
@@ -904,13 +907,13 @@ test('combos: every COMBO_EVERY quick hops pay a coin; a pause of COMBO_GAP + 0.
   assert.equal(q.combo, 2);
   assert.equal(q.lastHop, c.G.playT, 'a near miss keeps the combo warm');
   // a near miss at the edge of NEAR_MISS counts, one at the edge of a hit kills
-  const d = benchWith([{ kind: 'grass' }, { kind: 'road', objs: [{ x: 0.7 + HIT_PAD + 0.49, len: 1.4 }] }], ['frog']);
+  const d = benchWith([{ kind: 'grass' }, { kind: 'road', objs: [{ x: 0.7 + HIT_PAD + 0.49, len: 1.4 }] }], ['frog'], 'classic', 3);
   d.players[0].x = 0; d.players[0].row = 1; d.run();
   assert.deepEqual([d.players[0].alive, d.players[0].combo], [true, 2]);
-  const e = benchWith([{ kind: 'grass' }, { kind: 'road', objs: [{ x: 0.7 + HIT_PAD + 0.51, len: 1.4 }] }], ['frog']);
+  const e = benchWith([{ kind: 'grass' }, { kind: 'road', objs: [{ x: 0.7 + HIT_PAD + 0.51, len: 1.4 }] }], ['frog'], 'classic', 3);
   e.players[0].x = 0; e.players[0].row = 1; e.run();
   assert.deepEqual([e.players[0].alive, e.players[0].combo], [true, 0], 'just too far: nothing');
-  const f = benchWith([{ kind: 'grass' }, { kind: 'road', objs: [{ x: 0.7 + HIT_PAD - 0.01, len: 1.4 }] }], ['frog']);
+  const f = benchWith([{ kind: 'grass' }, { kind: 'road', objs: [{ x: 0.7 + HIT_PAD - 0.01, len: 1.4 }] }], ['frog'], 'classic', 3);
   f.players[0].x = 0; f.players[0].row = 1; f.run();
   assert.deepEqual([f.players[0].alive, f.players[0].cause], [false, 'squash'], 'inside HIT_PAD: a hit');
 });
@@ -959,31 +962,31 @@ test('logs: a landing within LOG_SLACK of a log end rides it (rules 2), snapped 
 test('hazards: until mid-hop the row left still counts; after it the row landed on; a train hit sets trainDir', () => {
   const car = x => ({ x, len: 1.4 });
   // a car on the row left kills in the first half of the hop
-  const a = bench([{ kind: 'road', objs: [car(5)] }, { kind: 'grass' }]);
+  const a = bench([{ kind: 'road', objs: [car(5)] }, { kind: 'grass' }], 3);
   a.p.x = 0; a.p.row = 0; a.rules.tryMove(a.p, 0, 1);
   a.run(2); assert.ok(a.p.alive);
   a.lanes.get(0).objs[0].x = 0; a.run();
   assert.deepEqual([a.p.alive, a.p.cause], [false, 'squash'], 'hit from behind in the first half');
   // the same car does nothing once the hop is past its middle
-  const b = bench([{ kind: 'road', objs: [car(5)] }, { kind: 'grass' }]);
+  const b = bench([{ kind: 'road', objs: [car(5)] }, { kind: 'grass' }], 3);
   b.p.x = 0; b.rules.tryMove(b.p, 0, 1);
   while (b.p.hop.t < HOP_MID) b.run();
   b.lanes.get(0).objs[0].x = 0; b.run();
   assert.ok(b.p.alive, 'safe: already over the next row');
   // a car on the row ahead does nothing in the first half, and kills in the second
-  const c = bench([{ kind: 'grass' }, { kind: 'road', objs: [car(0)] }]);
+  const c = bench([{ kind: 'grass' }, { kind: 'road', objs: [car(0)] }], 3);
   c.p.x = 0; c.rules.tryMove(c.p, 0, 1); c.run();
   assert.ok(c.p.alive && c.p.hop.t < HOP_MID);
   while (c.p.alive && c.p.hop) c.run();
   assert.deepEqual([c.p.alive, c.p.cause], [false, 'squash']);
   // trains: a hit within len / 2 + HIT_PAD; the direction is kept for the effect
   const train = { len: 12, x: 0, active: true };
-  const d = bench([{ kind: 'grass' }, { kind: 'rail', dir: -1, train }]);
+  const d = bench([{ kind: 'grass' }, { kind: 'rail', dir: -1, train }], 3);
   d.p.x = 0; d.p.row = 1; train.x = 6 + HIT_PAD + 0.01; d.run();
   assert.ok(d.p.alive, 'just clear');
   train.x = 6 + HIT_PAD - 0.01; d.run();
   assert.deepEqual([d.p.alive, d.p.cause, d.p.trainDir], [false, 'train', -1]);
-  const e = bench([{ kind: 'grass' }, { kind: 'rail', dir: 1, train: { len: 12, x: 0, active: false } }]);
+  const e = bench([{ kind: 'grass' }, { kind: 'rail', dir: 1, train: { len: 12, x: 0, active: false } }], 3);
   e.p.x = 0; e.p.row = 1; e.run(5);
   assert.ok(e.p.alive, 'no train on the track');
   // rules 2: a plank that drops under a hop that has not reached its middle drops the player too
@@ -994,18 +997,18 @@ test('hazards: until mid-hop the row left still counts; after it the row landed 
   assert.deepEqual([f.p.alive, f.p.cause], [false, 'splash']);
   // rules 3: the player has hopped off it and is in the air: the hop goes on; a cliff tile the same
   for (const kind of ['bridge', 'cliff']) {
-    const f3 = bench([{ kind: 'grass' }, { kind, planks: planks() }, { kind: 'grass' }]);
+    const f3 = bench([{ kind: 'grass' }, { kind, planks: planks() }, { kind: 'grass' }], 3);
     f3.p.x = 0; f3.p.row = 1; f3.G.worldTick = 995; f3.rules.tryMove(f3.p, 0, 1);
     f3.run(5);
     assert.ok(f3.p.alive && f3.p.hop && f3.p.hop.t < HOP_MID, kind + ': in the air over the gone plank');
     f3.settle();
     assert.deepEqual([f3.p.alive, f3.p.row], [true, 2], kind + ': landed on the row ahead');
     // but one who stands on it still falls
-    const s3 = bench([{ kind: 'grass' }, { kind, planks: planks() }]);
+    const s3 = bench([{ kind: 'grass' }, { kind, planks: planks() }], 3);
     s3.p.x = 0; s3.p.row = 1; s3.G.worldTick = 998; s3.run(); assert.ok(s3.p.alive, 'tick 999: still cracking');
     s3.run(); assert.deepEqual([s3.p.alive, s3.p.cause], [false, kind === 'cliff' ? 'fall' : 'splash'], 'tick 1000: gone under a player who stands on it');
   }
-  const g = bench([{ kind: 'grass' }, { kind: 'bridge', planks: new Map([[0, { breakAt: 1000, backAt: 2000 }]]) }, { kind: 'grass' }]);
+  const g = bench([{ kind: 'grass' }, { kind: 'bridge', planks: new Map([[0, { breakAt: 1000, backAt: 2000 }]]) }, { kind: 'grass' }], 3);
   g.p.x = 0; g.p.row = 1; g.G.worldTick = 980; g.rules.tryMove(g.p, 0, 1);
   while (g.p.hop && g.p.hop.t < HOP_MID) g.run();
   g.G.worldTick = 1000; g.run();
@@ -1245,14 +1248,14 @@ test('the edge warning: once per ride, when a log carries the rider past the las
 
 test('leader and tag with the other player ahead or level; two bombs on two rows; a bomb whose row is gone', () => {
   const rows = Array.from({ length: 60 }, () => ({ kind: 'grass' }));
-  const b = benchWith(rows, ['frog', 'frog']);
+  const b = benchWith(rows, ['frog', 'frog'], 'classic', 3);
   const [a, c] = b.players;
   c.row = LEAD_FROM + 10; a.row = LEAD_FROM;   // player 2 leads
   b.run();
   assert.deepEqual([a.lead, c.lead], [false, true], 'player 2 can lead too');
   b.rules.tryMove(c, 0, 1);
   assert.ok(Math.abs(c.hop.dur / HOP_TIME - LEAD_SLOW) < 1e-9);
-  const t = benchWith(grassRows(8), ['frog', 'frog'], 'tag');
+  const t = benchWith(grassRows(8), ['frog', 'frog'], 'tag', 3);
   t.players[0].row = 3; t.players[1].row = 3;
   t.rules.tryMove(t.players[0], 0, 1);
   assert.equal(t.players[0].hop.dur, HOP_TIME, 'level: nobody is behind');
@@ -1262,7 +1265,7 @@ test('leader and tag with the other player ahead or level; two bombs on two rows
   const br = Array.from({ length: 30 }, () => ({ kind: 'grass' }));
   br[24] = { kind: 'grass', power: { x: 0, kind: 'magnet' } };
   br[28] = { kind: 'grass', power: { x: 0, kind: 'magnet' } };
-  const w = benchWith(br, ['frog', 'fox']);
+  const w = benchWith(br, ['frog', 'fox'], 'classic', 3);
   const kinds = [];
   const rules = makeRules({ G: w.G, lane: r => w.lanes.get(r), coins() {}, over() {}, players: w.players, fx: { power: (p, lane, pw) => kinds.push(pw.kind) } });
   const step = n => { for (let i = 0; i < n; i++) { w.G.worldTick++; w.G.playT += STEP; for (const p of w.players) if (p.alive) rules.stepPlayer(p, STEP); } };
@@ -1276,7 +1279,7 @@ test('leader and tag with the other player ahead or level; two bombs on two rows
   step(BOMB_TICKS);
   assert.ok(!w.lanes.get(11).trees.has(0) && !w.lanes.get(16).trees.has(0), 'both lifted');
   // a bomb on a row that has since been dropped: lifting it is no trouble
-  const z = benchWith(br, ['frog', 'fox']);
+  const z = benchWith(br, ['frog', 'fox'], 'classic', 3);
   z.players[1].row = 10; z.players[1].x = 0; z.players[0].row = 23; z.players[0].x = 0;
   z.rules.tryMove(z.players[0], 0, 1); z.hopTicks(z.players[0]);
   assert.ok(z.lanes.get(11).trees.has(0));
@@ -1389,4 +1392,217 @@ test('onHop: the hops the rules started; their fresh code plays the very same ru
   while (sim.step() | withHook.step());   // both to the end, step for step
   assert.equal(withHook.end.endTick, sim.end.endTick);
   assert.ok(seen.length > 100);
+});
+
+// ---------- rules 4 ----------
+// two players on hand-made rows, rules 4 unless said; fx: the hooks seen, in order
+function couch(rows, chars = ['frog', 'fox'], mode = 'classic', version = 4, more = {}) {
+  const seen = [];
+  const fx = { leashed: (p, q) => seen.push(['leashed', p.id, q.id]), rejoin: (p, eagle) => seen.push(['rejoin', p.id, p.row, p.x, eagle ? 'eagle' : null]), trait: (p, key) => seen.push(['trait', p.id, key]), kill: (p, c) => seen.push(['kill', p.id, c]), ...more };
+  return { ...benchWith(rows, chars, mode, version, fx), seen };
+}
+
+test('rules 4 couch leash: the camera follows min(leader - 2, trailing + 4); rules 3, race, one alive or alone: the leader', () => {
+  const P = (row, alive = true, joined = true) => ({ row, alive, joined });
+  assert.equal(camLead([P(20), P(0)], 'classic', 4), 6, 'creepCamera aims 2 rows short of the lead: trailing + 4');
+  assert.equal(camLead([P(3), P(1)], 'classic', 4), 3, 'close together: the leader');
+  assert.equal(camLead([P(0), P(20)], 'tag', 4), 6, 'tag and coin war too');
+  assert.equal(camLead([P(0), P(20)], 'coinwar', 4), 6);
+  assert.equal(camLead([P(20), P(0)], 'race', 4), 20, 'not in a race');
+  assert.equal(camLead([P(20), P(0)], 'classic', 3), 20, 'rules 3: the leader');
+  assert.equal(camLead([P(20), P(0, false)], 'classic', 4), 20, 'the other one dead: the leader');
+  assert.equal(camLead([P(20), P(0, false, false)], 'classic', 4), 20, 'alone');
+  assert.equal(camLead([P(0, false), P(0, false)], 'classic', 4), -Infinity, 'nobody alive: nothing pulls');
+  // createSim follows it: seed 4, the frog hops ten rows up while the fox stays; rules 4 stops it at 9 rows and the view at the fox
+  const ev = Array.from({ length: 10 }, (_, i) => [30 + i * 20, 0, 0, 1]);
+  const at3s = version => {
+    const sim = createSim({ version, seed: 4, mode: 'classic', chars: ['frog', 'frog'], joined: [true, true], handicap: 0, startTick: 600, events: ev });
+    while (!(sim.state === 'play' && sim.tick >= 360)) sim.step();
+    return [sim.players[0].row, +sim.camRow.toFixed(3)];
+  };
+  assert.deepEqual(at3s(3), [10, 8.067]);
+  assert.deepEqual(at3s(4), [9, 4.289], 'the tenth hop is refused; the view stays with the fox');
+});
+
+test('rules 4 couch leash: a forward hop more than LEASH_ROWS past the trailing player is refused, with fx.leashed(p, other)', () => {
+  const rows = [...grassRows(12), { kind: 'spring' }, ...grassRows(8)];
+  const b = couch(rows);
+  const [a, c] = b.players;
+  a.row = LEASH_ROWS; a.x = 0;
+  b.rules.tryMove(a, 0, 1);
+  assert.deepEqual([a.hop, b.seen], [null, [['leashed', 0, 1]]], 'row 10 would be 10 past the fox at row 0');
+  b.rules.tryMove(a, 1, 0); assert.ok(a.hop, 'sideways is fine'); b.hopTicks(a);
+  b.rules.tryMove(a, 0, -1); assert.ok(a.hop, 'and back'); b.hopTicks(a);
+  b.rules.tryMove(a, 0, 1); assert.ok(a.hop && a.row === LEASH_ROWS, 'at 9 past: one more is fine'); b.hopTicks(a);
+  c.row = 3; b.rules.tryMove(a, 0, 1); assert.ok(a.hop, 'the fox came up: on you go'); b.hopTicks(a);
+  // a spring throws two rows: that counts too
+  a.row = 12; c.row = 4; a.hop = null;
+  b.rules.tryMove(a, 0, 1);
+  assert.deepEqual([a.hop, b.seen.length], [null, 2], 'the spring hop to row 14 is 10 past');
+  c.row = 5; b.rules.tryMove(a, 0, 1); assert.ok(a.hop && a.hop.high, 'from 5: 9 past');
+  // no leash for a race, with the other one dead, for rules 3, or alone
+  for (const [mode, version, alive, chars] of [['race', 4, true, ['frog', 'fox']], ['classic', 4, false, ['frog', 'fox']], ['classic', 3, true, ['frog', 'fox']], ['classic', 4, true, ['frog']]]) {
+    const w = couch(grassRows(20), chars, mode, version);
+    w.players[0].row = 15; if (w.players[1]) w.players[1].alive = alive;
+    w.rules.tryMove(w.players[0], 0, 1);
+    assert.ok(w.players[0].hop && !w.seen.length, `${mode} rules ${version} alive=${alive} ${chars.length}`);
+  }
+});
+
+test('rules 4 hop back in: REJOIN_TICKS after a death, once, on still ground next to the partner, with SHIELD_TIME of grace', () => {
+  const rows = grassRows(30);
+  const b = couch(rows);
+  const [a, c] = b.players;
+  c.row = 5; c.x = 0;
+  b.rules.kill(a, 'splash');
+  assert.deepEqual([a.alive, a.rejoinT, isRunOver(b.players, 'classic')], [false, REJOIN_TICKS, false], 'the run goes on');
+  b.run(REJOIN_TICKS - 1);
+  assert.equal(a.alive, false, 'not yet');
+  b.run();
+  assert.deepEqual([a.alive, a.row, a.x, a.safeT, a.rejoined, a.cause], [true, 5, 1, SHIELD_TIME, true, ''], 'beside the fox, on the next free column');
+  assert.deepEqual(b.seen, [['kill', 0, 'splash'], ['rejoin', 0, 5, 1, null]]);
+  a.score = 2; b.rules.tryMove(a, 0, 1); b.hopTicks(a);
+  assert.equal(a.score, 6, 'the score goes on from the row');
+  // the second death is for good
+  b.rules.kill(a, 'squash');
+  assert.ok(a.alive, 'still in its grace: a car passes through');
+  b.rules.kill(a, 'splash');
+  assert.ok(!a.alive && !a.rejoinT);
+  b.run(REJOIN_TICKS + 10);
+  assert.equal(a.alive, false);
+  b.rules.kill(c, 'squash');
+  assert.ok(isRunOver(b.players, 'classic'), 'nobody left');
+});
+
+test('rules 4 hop back in: the partner dead first, a race, rules 3: no rejoin; the place is still ground near the partner', () => {
+  const lost = couch(grassRows(20));
+  lost.rules.kill(lost.players[0], 'eagle');
+  lost.run(100);
+  lost.rules.kill(lost.players[1], 'squash');
+  assert.ok(isRunOver(lost.players, 'classic'), 'the partner died before the rejoin: over');
+  lost.run(REJOIN_TICKS);
+  assert.equal(lost.players[0].alive, false, 'and nobody comes back');
+  for (const [mode, version] of [['race', 4], ['classic', 3], ['coinwar', 3]]) {
+    const w = couch(grassRows(20), ['frog', 'fox'], mode, version);
+    w.rules.kill(w.players[0], 'splash');
+    w.run(REJOIN_TICKS + 5);
+    assert.deepEqual([w.players[0].alive, w.players[0].rejoinT], [false, 0], `${mode} rules ${version}`);
+  }
+  // the partner on a road between a tree-lined grass row and a river: the grass row ahead, by the nearest free column
+  const rows = grassRows(12);
+  rows[5] = { kind: 'road' }; rows[4] = { kind: 'river' }; rows[6] = { kind: 'grass', trees: new Set([0, 1]) };
+  const b = couch(rows);
+  const [a, c] = b.players;
+  c.row = 5; c.x = 1;
+  b.rules.kill(a, 'splash'); b.run(REJOIN_TICKS);
+  assert.deepEqual([a.alive, a.row, a.x], [true, 6, 2]);
+  // nowhere still yet (roads all round): it waits, then comes back once the partner is on grass
+  const roads = grassRows(12);
+  for (const r of [4, 5, 6]) roads[r] = { kind: 'road' };
+  const w = couch(roads);
+  w.players[1].row = 5;
+  w.rules.kill(w.players[0], 'splash'); w.run(REJOIN_TICKS + 50);
+  assert.equal(w.players[0].alive, false, 'no still row at or next to the partner');
+  w.players[1].row = 7; w.run();
+  assert.deepEqual([w.players[0].alive, w.players[0].row], [true, 7], 'the next step it can');
+  // the row behind is not offered when it is past the scroll line; a portal column and the partner's column are never offered
+  const pr = grassRows(12);
+  pr[8] = { kind: 'portal', portals: [-1, 1] }; pr[9] = { kind: 'road' }; pr[7] = { kind: 'road' };
+  const v = couch(pr);
+  v.players[1].row = 8; v.players[1].x = 0;
+  v.rules.kill(v.players[0], 'splash'); v.run(REJOIN_TICKS);
+  assert.deepEqual([v.players[0].row, v.players[0].x], [8, 2], 'not 0 (the fox), not -1 or 1 (portals)');
+  const back = couch([{ kind: 'grass' }, { kind: 'grass' }, { kind: 'road' }, { kind: 'road' }, { kind: 'grass' }]);
+  back.players[1].row = 3; back.G.camRow = 6.5;   // row 2 is 4.5 behind: out of reach
+  back.rules.kill(back.players[0], 'splash'); back.run(REJOIN_TICKS);
+  assert.deepEqual([back.players[0].alive, back.players[0].row], [true, 4], 'the row ahead');
+});
+
+test('rules 4 hop back in: coin war keeps the coins, the eagle that took the player goes with fx.rejoin; simulate plays it the same twice', () => {
+  const b = couch(grassRows(20), ['frog', 'fox'], 'coinwar');
+  const [a, c] = b.players;
+  a.coins = 4; c.coins = 2;
+  a.idleT = 99; b.run(Math.round(EAGLE_SWOOP / STEP) + 2);   // the eagle takes the frog
+  assert.equal(a.cause, 'eagle');
+  b.run(REJOIN_TICKS);
+  assert.deepEqual(b.seen.filter(e => e[0] === 'rejoin').map(e => e[4]), ['eagle'], 'the eagle is handed over');
+  assert.deepEqual([a.alive, a.eagle, a.coins], [true, null, 4], 'back, without the eagle, with its coins');
+  a.alive = false; c.alive = false;
+  assert.equal(winnerOf(b.players, 'coinwar'), a, 'coins decide');
+  // simulate: the fox stays and is taken at 6 s, the frog hops sideways on row 0; rules 4 brings the fox back at about 11 s
+  const ev = [];
+  for (let t = 30; t < 120 * 14; t += 60) ev.push([t, 0, (t / 60) & 1 ? 1 : -1, 0]);
+  const rp = { seed: 1, mode: 'classic', chars: ['frog', 'fox'], joined: [true, true], handicap: 0, startTick: 600, events: ev };
+  const alive = version => {
+    const sim = createSim({ ...rp, version }), out = [];
+    while (sim.step()) if (sim.state === 'play' && sim.tick % 120 === 0) out.push(sim.players[1].alive ? 1 : 0);
+    return out.join('');
+  };
+  assert.equal(alive(3), '11111100000000', 'rules 3: the fox is gone for good (each digit a second)');
+  assert.equal(alive(4), '1111110000011111', 'rules 4: back 5 s later');
+  assert.deepEqual(simulate({ ...rp, version: 4 }), simulate({ ...rp, version: 4 }));
+  const v3 = simulate({ ...rp, version: 3 }), v4 = simulate({ ...rp, version: 4 });
+  assert.deepEqual([v3.endTick, v4.endTick, v4.players[1].row, v4.players[1].cause], [1590, 1900, 1, 'slow'], 'the fox came back on row 1 (row 0 is near the scroll line) and outlived the frog');
+});
+
+test('rules 4 fair car hits: HIT_PAD_BODY (0.2) instead of 0.28; the near-miss band still ends NEAR_MISS + HIT_PAD past the car', () => {
+  assert.ok(0.31 - HIT_PAD_BODY >= 0.1, 'a hit overlaps the body (half 0.31) by 0.11');
+  const at = (x, version) => {
+    const b = benchWith([{ kind: 'grass' }, { kind: 'road', objs: [{ x, len: 1.4 }] }], ['frog'], 'classic', version);
+    const p = b.players[0];
+    p.x = 0; p.row = 1; b.run();
+    return [p.alive, p.combo];
+  };
+  assert.deepEqual(at(0.7 + HIT_PAD_BODY + 0.01, 4), [true, 2], 'rules 4: just past the body pad: alive, a near miss');
+  assert.deepEqual(at(0.7 + HIT_PAD_BODY + 0.01, 3), [false, 0], 'rules 3: a hit');
+  assert.deepEqual(at(0.7 + HIT_PAD_BODY - 0.01, 4), [false, 0], 'rules 4: inside it: a hit');
+  assert.deepEqual(at(0.7 + PAD3 + NEAR_MISS - 0.01, 4), [true, 2], 'the band ends where it did');
+  assert.deepEqual(at(0.7 + PAD3 + NEAR_MISS + 0.01, 4), [true, 0]);
+  assert.deepEqual(at(0.7 + HIT_PAD_BODY + NEAR_MISS_BODY + 0.01, 3), [true, 0], 'rules 3 the same');
+  // the train too
+  const train = version => {
+    const b = bench([{ kind: 'grass' }, { kind: 'rail', dir: 1, train: { len: 12, x: 6 + HIT_PAD_BODY + 0.04, active: true } }], version);
+    b.p.row = 1; b.p.x = 0; b.run();
+    return b.p.alive;
+  };
+  assert.deepEqual([train(4), train(3)], [true, false]);
+});
+
+test('rules 4 robot: the first eagle is shaken off (fx.trait(p, "robot"), the eagle still in p.eagle), the second takes it; rules 3 and the frog: taken', () => {
+  let eagleAtShake;
+  const b = couch(grassRows(4), ['robot', 'frog'], 'classic', 4, { kill() {}, trait: (p, key) => { eagleAtShake = !!p.eagle; b.seen.push(['trait', p.id, key]); } });
+  const [robot, frog] = b.players;
+  const idle = EAGLE_IDLE + 3;   // the robot's patience
+  b.run(Math.round(idle / STEP) + 5);
+  assert.deepEqual([robot.alive, robot.eagle, robot.shook, robot.idleT < 1, eagleAtShake], [true, null, true, true, true], 'shaken off, and the wait starts over');
+  assert.deepEqual(b.seen, [['trait', 0, 'robot']]);
+  assert.equal(frog.alive, false, 'the frog had no such luck');
+  b.run(Math.round(idle / STEP) + 5);
+  assert.equal(robot.alive, false, 'once per run');
+  const r3 = benchWith(grassRows(4), ['robot'], 'classic', 3);
+  r3.run(Math.round(idle / STEP) + 5);
+  assert.equal(r3.players[0].alive, false, 'rules 3: taken');
+  // the cat's extra life says so too (effects only, every rules version)
+  const cat = couch([{ kind: 'grass' }, { kind: 'lily', pads: new Set([3]) }], ['cat'], 'classic', 3);
+  cat.players[0].x = 0; cat.rules.tryMove(cat.players[0], 0, 1); cat.hopTicks(cat.players[0]);
+  assert.deepEqual(cat.seen, [['trait', 0, 'cat']]);
+});
+
+test('rules 4 bombs: a magnet on row 12 is a bomb with two players (rules 3: a magnet); createSim builds the run\'s own world', () => {
+  const rows = grassRows(20);
+  rows[12] = { kind: 'grass', power: { x: 0, kind: 'magnet' } };
+  for (const [version, kind] of [[4, 'bomb'], [3, 'magnet']]) {
+    const got = [];
+    const b = benchWith(rows.map(l => ({ ...l, power: l.power && { ...l.power } })), ['frog', 'fox'], 'classic', version, { power: (p, lane, pw) => got.push(pw.kind) });
+    const [a, c] = b.players;
+    a.row = 11; a.x = 0; c.row = 5; c.x = 2;
+    b.rules.tryMove(a, 0, 1); b.hopTicks(a);
+    assert.deepEqual(got, [kind], 'rules ' + version);
+  }
+  // the world of a replay is the world of its version
+  const rp = { seed: 77, mode: 'classic', chars: ['frog', 'fox'], joined: [true, false], handicap: 0, startTick: 600, events: [] };
+  for (const version of [3, 4]) {
+    const sim = createSim({ ...rp, version }), g = createWorldGen(77, version);
+    for (let r = 1; r < 60; r++) assert.equal(sim.lane(r).kind, g.lane(r).kind, `rules ${version} row ${r}`);
+  }
 });

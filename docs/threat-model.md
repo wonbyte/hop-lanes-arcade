@@ -38,7 +38,7 @@ bests, picks), the online score lists and the score server host, the published s
     dropped from them in the last 60 days, is refused (409), so a replay taken from a GET cannot be posted again under
     another name or on another day. Only the applied hops are stored (a fresh code), so padding cannot grow the lists.
   - A POST's day must be the server's UTC date, the day before or the day after (time zones).
-  - The replay's rules version must be `MIN_RULES` or newer (default: the current `RULES`): a run cannot pick older
+  - The replay's rules version must be `MIN_RULES` or newer (default: the current `RULES`, 4): a run cannot pick older
     rules that score its hops higher. Old versions still play as links and ghosts.
   - Handicap runs (a free shield) and unknown animals are refused; the game does not post them.
   - In classic, race, coin war and tag one seed holds one place per board and per view, so a world learned by heart

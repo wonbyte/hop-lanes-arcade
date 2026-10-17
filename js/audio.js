@@ -23,7 +23,8 @@ function setMuted(on) {
   else if (G.state === 'attract') startTune();   // sound back on while on the title: the tune plays
   try { localStorage.setItem(MUTE_KEY, on ? '1' : '0'); } catch (e) {}
   const b = $('mute');
-  b.setAttribute('aria-pressed', String(on));
+  b.setAttribute('aria-pressed', String(!on));   // a toggle named SOUND: pressed means the sound is on
+  b.setAttribute('aria-label', t('SOUND'));
   b.textContent = t(on ? 'SOUND OFF' : 'SOUND ON');
 }
 function beep(freq, dur, type = 'square', vol = 0.06, slide = 0) {

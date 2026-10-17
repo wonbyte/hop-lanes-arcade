@@ -3,13 +3,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createWorldGen, railStep, standColumns, standGroups, trafficX, trainLen, wetAt, wetChunk, TRAIN_CARS, TRAIN_CAR_LEN, TRAIN_GAP } from '../js/gen.js';
-import { COIN_CHANCE, PLAY_HALF, POWER_CHANCE, TRAIN_SPEED, TRAIN_WARN, WRAP, difficulty } from '../js/rules.js';
+import { BARE_MAX, BOMB_POWER_BOOST, COIN_CHANCE, PLAY_HALF, POWER_CHANCE, RULES, TRAIN_SPEED, TRAIN_WARN, WRAP, difficulty, isBombRow, isStill, kindFrom } from '../js/rules.js';
 
 const near = (a, b, what, eps = 1e-9) => assert.ok(Math.abs(a - b) <= eps, `${what}: ${a} ~ ${b}`);
 const COLS = [-4, -3, -2, -1, 0, 1, 2, 3, 4];
-// every lane of the first `rows` rows of `seeds` worlds, with its world
-function* lanes(seeds, rows, from = 0) {
-  for (let seed = 1; seed <= seeds; seed++) { const g = createWorldGen(seed); for (let r = from; r < rows; r++) yield [g.lane(r), seed, g]; }
+// every lane of the first `rows` rows of `seeds` worlds, with its world (version: the rules version of the worlds;
+// 3, the worlds every saved run was played on, unless a test says otherwise)
+function* lanes(seeds, rows, from = 0, version = 3) {
+  for (let seed = 1; seed <= seeds; seed++) { const g = createWorldGen(seed, version); for (let r = from; r < rows; r++) yield [g.lane(r), seed, g]; }
 }
 
 test('trafficX: a thing moves at lane speed in the lane direction and wraps inside the span', () => {
@@ -29,7 +30,7 @@ test('trafficX: a thing moves at lane speed in the lane direction and wraps insi
 
 test('the chain: streaks count rows of one kind, prevKind is the row before, rivers alternate, dir is +-1', () => {
   for (let seed = 1; seed <= 20; seed++) {
-    const g = createWorldGen(seed);
+    const g = createWorldGen(seed, 3);
     let prev = null;
     for (let r = 0; r < 150; r++) {
       const l = g.lane(r);
@@ -48,7 +49,7 @@ test('the chain: streaks count rows of one kind, prevKind is the row before, riv
       if (r >= 1) prev = l;
     }
   }
-  const g = createWorldGen(9);
+  const g = createWorldGen(9, 3);
   assert.deepEqual([g.lane(0).streak, g.lane(0).prevKind, g.lane(-3).kind, g.lane(-3).streak, g.lane(1).streak], [2, 'grass', 'grass', 2, 2], 'rows 1 and below follow a grass head of streak 1');
   // both directions happen on roads
   const dirs = new Set(); for (const [l] of lanes(10, 60)) if (l.kind === 'road') dirs.add(l.dir);
@@ -296,14 +297,14 @@ test('rail: the train, its schedule and its warning; a boss train is twice as lo
   }
   assert.ok(rails > 50 && bosses >= 20, `${rails} rails, ${bosses} boss trains`);
   // seed 42: the rails of the first 80 rows and their first draws (pinned from the current generator)
-  const g = createWorldGen(42), seen = [];
+  const g = createWorldGen(42, 3), seen = [];
   for (let r = 0; r < 80; r++) { const l = g.lane(r); if (l.kind === 'rail') seen.push([r, Math.round(l.nextStart * 1e6) / 1e6, Math.round(l.rng() * 1e6) / 1e6]); }
   assert.deepEqual(seen, [[38, 2.806245, 0.033943], [41, 3.726006, 0.743125], [64, 4.263274, 0.117131], [65, 5.368614, 0.041583], [66, 4.821153, 0.512645]]);
-  assert.notEqual(createWorldGen(42).lane(38).rng(), createWorldGen(43).lane(38).rng(), 'the seed is in the schedule too');
+  assert.notEqual(createWorldGen(42, 3).lane(38).rng(), createWorldGen(43, 3).lane(38).rng(), 'the seed is in the schedule too');
 });
 
 test('railStep: trains come on the schedule, cross from the far side at lane speed, and the gaps shrink with difficulty', () => {
-  const g = createWorldGen(42), l = g.lane(38);
+  const g = createWorldGen(42, 3), l = g.lane(38);
   const start = l.nextStart, pass = l.pass;
   assert.equal(railStep(l, start - 0.01), false, 'waiting');
   assert.equal(l.train.x, 99, 'not moved');
@@ -390,7 +391,7 @@ test('a flood is the river 1.5x faster; the twister row moves at 1.4 + difficult
 
 test('mud looks and other draws that shift the coins after them: pinned for one row, and their shares', () => {
   // seed 42 row 39 is the first mud row: its puddles ({ w, x, dz }) and reeds ({ reed, x }) in draw order
-  const g = createWorldGen(42);
+  const g = createWorldGen(42, 3);
   let r = 13; while (g.lane(r).kind !== 'mud') r++;
   assert.equal(r, 39);
   const looks = g.lane(r).mudLooks.map(m => (m.reed ? [m.reed, m.x] : [m.w, +m.x.toFixed(4), +m.dz.toFixed(4)]));
@@ -416,7 +417,7 @@ test('mud looks and other draws that shift the coins after them: pinned for one 
   assert.ok(density(25, 60) < density(110, 140), 'more trees on the ice further out');
   // a coin is possible on row 1 (not row 0); every coin is set to true
   let row1 = 0;
-  for (let seed = 1; seed <= 60; seed++) { const w = createWorldGen(seed); if (w.lane(1).coins.size) row1++; assert.equal(w.lane(0).coins.size, 0); }
+  for (let seed = 1; seed <= 60; seed++) { const w = createWorldGen(seed, 3); if (w.lane(1).coins.size) row1++; assert.equal(w.lane(0).coins.size, 0); }
   assert.ok(row1 > 5, 'coins on row 1: ' + row1);
   for (const [l] of lanes(20, 100)) for (const v of l.coins.values()) assert.equal(v, true);
   // bridges start anywhere from the left edge up to where they still end inside the play columns
@@ -434,6 +435,65 @@ test('mud looks and other draws that shift the coins after them: pinned for one 
   // the cliff tiles are whole; row 100 itself carries the boss train when it is a rail
   let cliffs = 0, rail100 = 0;
   for (const [l] of lanes(40, 200, 125)) if (l.kind === 'cliff') { cliffs++; for (const t of l.planks.values()) assert.deepEqual(t, { breakAt: -1, backAt: -1 }); }
-  for (let seed = 1; seed <= 40; seed++) { const l = createWorldGen(seed).lane(100); if (l.kind === 'rail') { rail100++; assert.equal(l.boss, true, 'seed ' + seed); } }
+  for (let seed = 1; seed <= 40; seed++) { const l = createWorldGen(seed, 3).lane(100); if (l.kind === 'rail') { rail100++; assert.equal(l.boss, true, 'seed ' + seed); } }
   assert.ok(cliffs > 30 && rail100 > 0, `${cliffs} ${rail100}`);
+});
+
+// ---------- rules 4 worlds ----------
+const plain = l => JSON.stringify({ ...l, rng: null }, (k, v) => (v instanceof Set || v instanceof Map ? [...v] : v));
+test('rules 4: createWorldGen takes the rules version (the current one by default); rules 2 and 3 build the same worlds, rules 4 others', () => {
+  assert.equal(createWorldGen(5).version, RULES);
+  assert.equal(createWorldGen(5, 3).version, 3);
+  let same = 0, differ = 0;
+  for (let seed = 1; seed <= 20; seed++) {
+    const a = createWorldGen(seed, 2), b = createWorldGen(seed, 3), c = createWorldGen(seed, 4), d = createWorldGen(seed);
+    for (let r = -8; r < 160; r++) {
+      assert.equal(plain(a.lane(r)), plain(b.lane(r)), `seed ${seed} row ${r}: rules 2 = rules 3`);
+      assert.equal(plain(c.lane(r)), plain(d.lane(r)), 'the default is rules 4');
+      if (plain(b.lane(r)) === plain(c.lane(r))) same++; else differ++;
+    }
+  }
+  assert.ok(differ > same, `rules 4 worlds are other worlds: ${differ} rows differ, ${same} alike`);
+});
+
+test('rules 4: the late kinds from rows 20/30/40/50/60/75, a boss moment per 50 rows from row 50, still ground at least every 7 rows', () => {
+  const first = {};
+  for (let seed = 1; seed <= 40; seed++) {
+    const g = createWorldGen(seed, 4);
+    let prev = null, bare = 0;
+    const boss = new Set(), tw = new Set(), fl = new Set();
+    for (let r = 0; r < 300; r++) {
+      const l = g.lane(r);
+      if (!(l.kind in first) || r < first[l.kind]) first[l.kind] = r;
+      bare = isStill(l.kind) ? 0 : bare + 1;
+      assert.ok(bare <= BARE_MAX, `seed ${seed} row ${r}: ${bare} rows without still ground`);
+      if (l.boss) { assert.ok(l.kind === 'rail' && r >= 50 && l.bossChunk === Math.floor(r / 50) && !boss.has(l.bossChunk)); boss.add(l.bossChunk); }
+      if (l.twister) { assert.ok(l.kind === 'grass' && r >= 50 && l.twisterChunk === Math.floor(r / 50) && !tw.has(l.twisterChunk) && l.objs.length === 1); tw.add(l.twisterChunk); }
+      if (l.flood) { assert.ok(l.kind === 'river' && r >= 50 && l.floodChunk === Math.floor(r / 50) && !fl.has(l.floodChunk)); fl.add(l.floodChunk); }
+      if (prev && r >= 2) assert.equal(l.streak, l.kind === prev.kind ? prev.streak + 1 : 1);
+      if (r >= 1) prev = l;
+    }
+    // the first grass and river rows of every 50-row block from 50 carry the twister and the flood
+    for (let r = 50; r < 300; r++) {
+      const l = g.lane(r), k = Math.floor(r / 50);
+      if (l.kind === 'grass' && !tw.has(-k)) { assert.ok(l.twister, `seed ${seed}: the first grass of block ${k} (row ${r})`); tw.add(-k); }
+      if (l.kind === 'river' && !fl.has(-k)) { assert.ok(l.flood, `seed ${seed}: the first river of block ${k} (row ${r})`); fl.add(-k); }
+    }
+    assert.ok(boss.size >= 3, `seed ${seed}: boss trains in blocks ${[...boss]}`);
+  }
+  for (const [kind, from] of Object.entries(kindFrom(4))) assert.ok(first[kind] >= from && first[kind] < from + 25, `${kind} first at ${first[kind]} (from ${from})`);
+});
+
+test('rules 4: a power-up on a bomb row (12, 16, 20...) BOMB_POWER_BOOST times as often; other rows as before', () => {
+  const n = { bomb: 0, bombRows: 0, other: 0, otherRows: 0 };
+  for (const [l] of lanes(400, 120, 11, 4)) {
+    if (!['grass', 'road', 'mud', 'ice', 'rocks', 'spring', 'portal'].includes(l.kind)) continue;
+    if (isBombRow(l.r, 4)) { n.bombRows++; if (l.power) n.bomb++; } else { n.otherRows++; if (l.power) n.other++; }
+  }
+  assert.ok(Math.abs(n.bomb / n.bombRows - POWER_CHANCE * BOMB_POWER_BOOST) < 0.03, 'bomb rows: ' + JSON.stringify(n));
+  assert.ok(Math.abs(n.other / n.otherRows - POWER_CHANCE) < 0.012, 'other rows: ' + JSON.stringify(n));
+  // rules 3 (and the rows of a rules 3 world past 20): no boost
+  let p3 = 0, r3 = 0;
+  for (const [l] of lanes(400, 120, 21, 3)) if (isBombRow(l.r, 3) && ['grass', 'road', 'mud', 'ice', 'rocks'].includes(l.kind)) { r3++; if (l.power) p3++; }
+  assert.ok(Math.abs(p3 / r3 - POWER_CHANCE) < 0.025, `rules 3 bomb rows: ${p3} / ${r3}`);
 });

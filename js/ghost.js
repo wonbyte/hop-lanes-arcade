@@ -1,4 +1,4 @@
-import { G } from './core.js';
+import { COUNTDOWN, G, STEP } from './core.js';
 import { scene } from './gfx.js';
 import { CHARACTERS, makeCharacter } from './models.js';
 import { decodeReplay } from './replay.js';
@@ -48,11 +48,16 @@ function ghostRun() {
   const rp = decodeReplay(g.code);
   return rp && rp.joined[g.hero] ? { g, rp, sim: createSim(rp) } : null;
 }
-// each countdown step (app.js step): the ghost's own countdown runs along, one step per step, so the GO step
-// has no catch-up of hundreds of steps to do (a hitch on a slow phone)
+// each countdown step (app.js step): the ghost's own countdown (always COUNTDOWN long, as sim.js plays it) runs along,
+// spread over the steps our countdown has left (a quick one-second countdown takes three ghost steps a step), so the
+// GO step has no catch-up of hundreds of steps to do (a hitch on a slow phone)
+const GHOST_COUNT_STEPS = Math.ceil(COUNTDOWN / STEP);
 function primeGhost() {
-  if (!primed) primed = ghostRun() || { sim: null };
-  if (primed.sim && primed.sim.state === 'countdown') primed.sim.step();
+  if (G.state !== 'countdown') return;   // the step that started play (startGhost has taken the primed run)
+  if (!primed) primed = { ...(ghostRun() || { sim: null }), n: 0 };
+  if (!primed.sim) return;
+  const left = Math.max(1, Math.ceil(G.countdown / STEP));
+  for (let k = Math.ceil((GHOST_COUNT_STEPS - primed.n) / left); k > 0 && primed.sim.state === 'countdown'; k--) { primed.sim.step(); primed.n++; }
 }
 // at the start of play (screens.js startPlay): the saved best run on this world, if any
 function startGhost() {

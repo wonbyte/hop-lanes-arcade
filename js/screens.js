@@ -1,15 +1,15 @@
 import { audio, isMuted, setMuted, sfx, startPlayLoop, stopPlayLoop, stopTune } from './audio.js';
-import { $, COUNTDOWN, FIXED_SEED, G, GO_TIME, MODES, PRIZE_COST, RESULTS_DELAY, SCORES_TOKEN, SCORES_URL, WIPE_MS } from './core.js';
+import { $, COUNTDOWN, FIXED_SEED, G, GO_TIME, MODES, PRIZE_COST, RETRY_AFTER, SCORES_TOKEN, SCORES_URL, SOLO_COUNTDOWN, WIPE_MS } from './core.js';
 import { nextLang, setLang, t } from './i18n.js';
-import { DAILY, DAILY_REWARD, MISSIONS, MISSION_REWARD, advanceMissions, dailyDoneText, dailyMissions, doneDaily, doneMissions, emptyStats, missionsText, parseDailyDone, parseMissions } from './missions.js';
+import { DAILY, DAILY_REWARD, MISSION_REWARD, advanceMissions, carriedText, carryCoins, dailyDoneText, dailyMissions, doneCarried, doneDaily, emptyStats, missionAt, missionValue, missionsText, newMissions, parseCarried, parseDailyDone, parseMissions } from './missions.js';
 import { encodeReplay } from './replay.js';
 import { DAY_PREFIX, RULES, dailySeedFor, dayBefore, hatFor, streakAfter, traitOf } from './rules.js';
 import { runOver, topScore, winnerOf } from './sim.js';
 import { keepAwake } from './device.js';
-import { reduceMotion, resetFrameWatch, touchQuery } from './gfx.js';
+import { marquee, reduceMotion, resetFrameWatch, stage, touchQuery } from './gfx.js';
 import { CHARACTERS, PIX, PRIZES, drawPix, isOwned } from './models.js';
 import { charOf, despawn, onGameOver, players, resetRules, restorePicks, spawn } from './players.js';
-import { BEST_KEY, DAILYDONE_KEY, DAILY_KEY, HANDICAP_KEY, HINT_KEY, HOWTO_KEY, INITIALS_KEY, LOCAL_KEY, STREAK_KEY, INSTALL_KEY, MISSIONS_KEY, MODE_KEY, OWNED_KEY, PICK_KEY, ROOM_KEY, cleanInitials, dayKey, deviceTag, entersLocal, flushBank, load, loadText, localTop, owned, parseLocal, refreshBests, save, savedMode, setBank, today } from './storage.js';
+import { BEST_KEY, DAILYDONE_KEY, DAILY_KEY, HANDICAP_KEY, HINT_KEY, HOWTO_KEY, INITIALS_KEY, LOCAL_KEY, MCOINS_KEY, MDONE_KEY, STREAK_KEY, INSTALL_KEY, MISSIONS_KEY, MODE_KEY, OWNED_KEY, PICK_KEY, ROOM_KEY, TIPS_KEY, cleanInitials, dayKey, deviceTag, entersLocal, flushBank, load, loadText, localTop, owned, parseLocal, refreshBests, save, savedMode, setBank, today } from './storage.js';
 import { getSeed, refreshPowerLooks, resetWorld } from './world.js';
 import { saveGhost, startGhost, stopGhost } from './ghost.js';
 
@@ -17,7 +17,7 @@ import { saveGhost, startGhost, stopGhost } from './ghost.js';
 // ---------- screens ----------
 let bannerKey = '';
 const banner = $('banner'), bannerH = banner.querySelector('h2'), bannerP = banner.querySelector('p');
-const resultsEl = $('results');
+const resultsEl = $('results'), app = $('app');
 function setBanner(h, sub = '') {
   const key = h + '|' + sub;
   if (key === bannerKey) return;      // only touch the DOM when the text changes
@@ -25,19 +25,31 @@ function setBanner(h, sub = '') {
   banner.hidden = !h;
   bannerH.textContent = h; bannerP.textContent = sub;
 }
+// the top bar is slimmer during play: the score chips and the logo sit under it, whatever its height (one layout read
+// per state change)
+const fitTopBar = () => stage.style.setProperty('--marquee-h', marquee.offsetHeight + 'px');
+// a state class on #app for the CSS: playing, over (the run has ended), results (the panel shows)
+function setAppState(playing, over, results) {
+  app.classList.toggle('playing', playing);
+  app.classList.toggle('over', over);
+  app.classList.toggle('results', results);
+  fitTopBar();
+}
 const pads = document.querySelectorAll('.pad');
-const joinText = () => t(touchQuery.matches ? 'TAP THIS\nSIDE TO JOIN' : 'PRESS TAP\nTO JOIN');
+// the join line: a touch screen joins by a tap on that side; a keyboard by the player's own key
+const joinText = i => t(touchQuery.matches ? 'TAP THIS\nSIDE TO JOIN' : i ? 'PRESS ↑\nTO JOIN' : 'PRESS W\nTO JOIN');
 function setCard(i) {
   const c = $('card' + (i + 1)), p = players[i], ch = charOf(p), locked = !isOwned(ch);
   pads[i].classList.toggle('idle', (G.state === 'play' || G.state === 'over') && !p.joined);
   c.classList.toggle('ready', p.joined && G.state === 'countdown');
   c.classList.toggle('locked', locked && !p.joined);
+  c.classList.toggle('open', !p.joined && !locked);   // the join line pulses (player 1)
   c.style.visibility = G.state === 'play' || G.state === 'over' ? 'hidden' : 'visible';
   if (p.shownChar !== ch.key) { drawPix($('pic' + (i + 1)), PIX[ch.key]); p.shownChar = ch.key; }
   const head = c.querySelector('.head'), st = c.querySelector('.state');
   if (p.joined) { head.textContent = t('READY!'); st.textContent = t('PLAYER {n}', { n: i + 1 }); }
   else if (locked) { const [h, sub] = lockedText(ch); head.textContent = h; st.textContent = sub; }
-  else { head.textContent = joinText(); st.textContent = t(ch.name) + ' \u00b7 ' + t(traitOf(ch.key).text || 'BALANCED'); }
+  else { head.textContent = joinText(i); st.textContent = t(ch.name) + ' · ' + t(traitOf(ch.key).text || 'BALANCED'); }
   for (const b of /** @type {NodeListOf<HTMLButtonElement>} */ (c.querySelectorAll('.cyc'))) b.disabled = p.joined;
 }
 // a locked card: a prize animal comes only from the prize machine; the others are bought with coins
@@ -62,9 +74,18 @@ function shakeCard(i) {
 const menu = $('menu');
 const setCards = () => { setCard(0); setCard(1); menu.hidden = G.state !== 'attract'; };
 
+// ---------- in-page questions: the room code and the initials (panels.js shows the letter slots) ----------
+// done(code) gets the letters, or null when the question was closed
+const askCode = (title, len, value, done) => document.dispatchEvent(new CustomEvent('hoplanes:ask', { detail: { title, len, value, done } }));
+
 // ---------- title menu: game mode, room code, prize machine, handicap, language, missions ----------
 const MODE_TEXT = { classic: 'MODE: CLASSIC', race: 'MODE: RACE', coinwar: 'MODE: COIN WAR', tag: 'MODE: TAG', daily: 'MODE: DAILY' };
-const setModeLabel = () => { $('mode').textContent = G.mode === 'room' ? t('ROOM: {code}', { code: G.room }) : t(MODE_TEXT[G.mode]); };
+// one short line under the button: what the mode is
+const MODE_NOTE = { classic: 'HOP AS FAR AS YOU CAN', race: 'FIRST TO FALL LOSES', coinwar: 'MOST COINS WINS', tag: 'THE ONE BEHIND HOPS FASTER', daily: 'ONE WORLD FOR ALL TODAY', room: 'SAME CODE, SAME WORLD' };
+function setModeLabel() {
+  $('modeText').textContent = G.mode === 'room' ? t('ROOM: {code}', { code: G.room }) : t(MODE_TEXT[G.mode]);
+  $('modeNote').textContent = t(MODE_NOTE[G.mode]);
+}
 function setMode(mode) {
   G.mode = mode;
   save(MODE_KEY, mode);
@@ -81,7 +102,7 @@ function buildWorld() {
 const runDay = () => G.worldDay || today();
 // the day changed (storage.js): today's missions are new, and a daily title world is rebuilt as the new day's world
 document.addEventListener('hoplanes:day', () => {
-  showDailyMissions();
+  showMissions();
   if (G.state === 'attract' && !G.restarting && G.mode === 'daily' && G.worldDay && G.worldDay !== today()) buildWorld();
 });
 // an unlocked look (settings): the land starts as a far biome or at night; the title world is built again in it
@@ -91,19 +112,18 @@ function setLook(key) {
 }
 // room mode: two phones that enter the same code play the same world (seed = the code)
 const randomCode = () => Array.from({ length: 4 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ'[Math.floor(Math.random() * 24)]).join('');
-function askRoom() {
-  let code = null;
-  try { code = window.prompt(t('ROOM CODE (4 LETTERS)'), G.room || randomCode()); } catch (e) {}
-  code = code === null ? '' : code.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
-  if (!code) return false;
-  G.room = code; save(ROOM_KEY, code);
-  return true;
-}
-function cycleMode() {
+const modeAfter = (mode, d) => MODES[(MODES.indexOf(mode) + d + MODES.length) % MODES.length];
+// d: +1 the next mode, -1 the one before; room mode asks for its code first (closed: the mode after it)
+function cycleMode(d) {
   sfx.tick();
-  let mode = MODES[(MODES.indexOf(G.mode) + 1) % MODES.length];
-  if (mode === 'room' && !askRoom()) mode = MODES[0];
-  setMode(mode);
+  const mode = modeAfter(G.mode, d);
+  if (mode !== 'room') { setMode(mode); return; }
+  askCode(t('ROOM CODE'), 4, (G.room || randomCode()).slice(0, 4), code => {
+    if (G.state !== 'attract') return;
+    if (!code) { setMode(modeAfter('room', d)); return; }
+    G.room = code; save(ROOM_KEY, code);
+    setMode('room');
+  });
 }
 function updatePrize() {
   const left = PRIZES.filter(k => !owned.has(k));
@@ -115,15 +135,22 @@ const HANDICAP_TEXT = ['HANDICAP: OFF', 'SHIELD: P1', 'SHIELD: P2'];
 function setHandicap(n) { G.handicap = n; save(HANDICAP_KEY, n); $('handicap').textContent = t(HANDICAP_TEXT[n]); }
 $('handicap').addEventListener('click', () => { audio(); sfx.tick(); setHandicap((G.handicap + 1) % 3); });
 $('lang').addEventListener('click', () => { audio(); sfx.tick(); setLang(nextLang()); refreshTexts(); });
-// missions: three small goals; a done one pays coins and the next one takes its place
-let missions = parseMissions(loadText(MISSIONS_KEY));
-const MISSION_TEXT = { coins: 'COLLECT {n} COINS IN ONE RUN', row: 'REACH ROW {n}', rivers: 'CROSS {n} RIVERS', hops: 'HOP {n} TIMES', logs: 'RIDE {n} LOGS', combo: 'COMBO OF {n}', powers: 'GRAB A POWER-UP', secrets: 'FIND A HIDDEN COIN', nears: '{n} NEAR MISSES' };
-const missionLabel = m => t(MISSION_TEXT[m.stat], { n: m.goal });
-const missionText = i => missionLabel(MISSIONS[i]);
+// missions: three small goals; a done one pays coins and the next one takes its place. A new player (no missions saved,
+// no best yet) starts with three easy ones; coin missions add up over runs (carried)
+let missions = loadText(MISSIONS_KEY) || G.bestAll ? parseMissions(loadText(MISSIONS_KEY)) : newMissions();
+let carried = parseCarried(loadText(MCOINS_KEY));
+const MISSION_TEXT = { coins: 'COLLECT {n} COINS', row: 'REACH ROW {n}', rivers: 'CROSS {n} RIVERS', hops: 'HOP {n} TIMES', logs: 'RIDE {n} LOGS', combo: 'COMBO OF {n}', powers: 'GRAB A POWER-UP', secrets: 'FIND A HIDDEN COIN', nears: '{n} NEAR MISSES' };
+// the short name of a mission for the progress line on the results ("ROW 30: 22/30")
+const MISSION_SHORT = { coins: 'COINS {n}', row: 'ROW {n}', rivers: 'RIVERS {n}', hops: 'HOPS {n}', logs: 'LOGS {n}', combo: 'COMBO {n}', powers: 'POWER-UP', secrets: 'HIDDEN COIN', nears: 'NEAR MISSES {n}' };
+const missionLabel = m => t(m.goal === 1 && m.stat === 'nears' ? '1 NEAR MISS' : MISSION_TEXT[m.stat], { n: m.goal });
+// a coin mission says how far it has come over the runs before
+const missionLine = i => missionLabel(missionAt(i)) + (carried[i] ? ' · ' + carried[i] + '/' + missionAt(i).goal : '');
+// missions done today (the chip on the title counts up to 3 a day)
+const doneToday = () => { const [d, n] = loadText(MDONE_KEY).split('|'); return d === today() ? Math.min(3, Number(n) || 0) : 0; };
 function showMissions() {
   const box = $('missions');
   box.querySelector('h3').textContent = t('MISSIONS');
-  box.querySelectorAll('li').forEach((li, k) => { li.textContent = missionText(missions.active[k]); });
+  box.querySelectorAll('li').forEach((li, k) => { li.textContent = missionLine(missions.active[k]); });
   showDailyMissions();
 }
 // daily missions: the same three for everyone on a day (missions.js picks them from the date); a done one gets a check mark
@@ -132,6 +159,9 @@ function showDailyMissions() {
   const box = $('dayMissions');
   box.querySelector('h3').textContent = t("TODAY'S MISSIONS");
   box.querySelectorAll('li').forEach((li, k) => { li.textContent = missionLabel(DAILY[picks[k]]); li.classList.toggle('done', !!(mask & (1 << k))); });
+  const daily = [0, 1, 2].filter(k => mask & (1 << k)).length;
+  $('chipMissions').textContent = t('MISSIONS {n}/3', { n: doneToday() });
+  $('chipToday').textContent = t('TODAY {n}/3', { n: daily });
 }
 function payDaily() {   // at game over: which of today's missions this run finished for the first time; returns the note text
   const day = today(), picks = dailyMissions(day);
@@ -145,9 +175,8 @@ function payDaily() {   // at game over: which of today's missions this run fini
   return t('DAILY MISSION DONE +{n}', { n: DAILY_REWARD * done.length }) + ': ' + done.map(k => missionLabel(DAILY[picks[k]])).join(' + ') + '. ';
 }
 // the best 10 runs on this device (panels.js lists them): the first run that makes it asks for the player's initials
-// (never inside a game step: the first time, the question waits until the results panel is up, so the death plays out;
-// a restart before that leaves it for the next results, never over a countdown)
-let askedInitials = false, initialsTimer = 0;
+// (never inside a game step: the question opens with the results panel, so the death plays out first)
+let askedInitials = false;
 const waitingLocal = [];   // entries that wait for the initials
 function saveLocal(entry, initials) {
   const list = parseLocal(loadText(LOCAL_KEY));
@@ -158,36 +187,43 @@ function enterLocal(name, score) {
   const entry = { name, score, day: runDay(), mode: G.mode }, initials = cleanInitials(loadText(INITIALS_KEY));
   if (initials) saveLocal(entry, initials); else waitingLocal.push(entry);
 }
-// on the results of game over n: ask for the initials once, then save every entry that waited for them
-function askInitialsLater(n) {
+const saveWaiting = initials => { for (const e of waitingLocal.splice(0)) saveLocal(e, initials || deviceTag.slice(0, 3)); };
+// when the results show: ask for the initials once a session (a closed question is not saved, so it comes again
+// another day; the device tag stands in), then save every entry that waited for them
+function askInitials() {
   if (!waitingLocal.length) return;
-  clearTimeout(initialsTimer);
-  initialsTimer = setTimeout(() => {
-    if (G.state !== 'over' || n !== overN) return;   // a restart came first: the next results ask
-    let initials = cleanInitials(loadText(INITIALS_KEY));
-    if (!initials && !askedInitials) {   // once per session; a cancelled question is not saved, so it can be answered another day
-      askedInitials = true;
-      try { initials = cleanInitials(window.prompt(t('YOUR INITIALS (3 LETTERS)'), deviceTag.slice(0, 3))); } catch (e) {}
-      if (initials) save(INITIALS_KEY, initials);
-    }
-    for (const e of waitingLocal.splice(0)) saveLocal(e, initials || deviceTag.slice(0, 3));
-  }, RESULTS_DELAY * 1000 + 800);
+  const initials = cleanInitials(loadText(INITIALS_KEY));
+  if (initials || askedInitials) { saveWaiting(initials); return; }
+  askedInitials = true;
+  askCode(t('YOUR INITIALS'), 3, deviceTag.slice(0, 3), code => {
+    const ini = cleanInitials(code);
+    if (ini) save(INITIALS_KEY, ini);
+    saveWaiting(ini);
+  });
 }
-function payMissions() {   // at game over: which missions this run finished; returns the note text
-  const done = doneMissions(missions, G.run);
+function payMissions() {   // at game over: which missions this run finished (coins carried over runs); returns the note text
+  const done = doneCarried(missions, G.run, carried);
+  carried = carryCoins(missions, G.run, carried);
+  save(MCOINS_KEY, carriedText(carried));
   if (!done.length) return '';
-  const text = done.map(i => missionText(i)).join(' + ');
+  const text = done.map(i => missionLabel(missionAt(i))).join(' + ');
   missions = advanceMissions(missions, done);
   save(MISSIONS_KEY, missionsText(missions));
+  save(MDONE_KEY, today() + '|' + (doneToday() + done.length));
   setBank(G.bank + MISSION_REWARD * done.length);
   showMissions();
   return t('MISSION DONE +{n}', { n: MISSION_REWARD * done.length }) + ': ' + text + '. ';
 }
+// before the payout: how far this run took each active mission ("ROW 30: 22/30")
+const missionProgress = () => missions.active.map(i => {
+  const m = missionAt(i);
+  return t(MISSION_SHORT[m.stat], { n: m.goal }) + ': ' + Math.min(m.goal, missionValue(i, G.run, carried)) + '/' + m.goal;
+}).join(' · ');
 // everything that shows text in the current language
 function refreshTexts() {
   setModeLabel(); updatePrize(); setHandicap(G.handicap); showMissions(); setCards(); setMuted(isMuted());
   document.dispatchEvent(new Event('hoplanes:lang'));   // panels.js relabels its buttons
-  if (G.state === 'over') $('share').textContent = t('SHARE');
+  if (G.state === 'over') { $('share').textContent = t('SHARE'); setRetryHint(); }
 }
 let menuNote = 0;
 function flashBanner(h, sub, ms) {
@@ -210,7 +246,12 @@ function prizeMachine() {
   updatePrize();
   setCards();
 }
-$('mode').addEventListener('click', () => { audio(); cycleMode(); });
+// the mode button has its arrows inside: a click on the left third goes back, anywhere else on
+$('mode').addEventListener('click', e => {
+  audio();
+  const r = $('mode').getBoundingClientRect();
+  cycleMode(e.detail && e.clientX < r.left + r.width / 3 ? -1 : 1);
+});
 $('prize').addEventListener('click', () => { audio(); prizeMachine(); });
 setModeLabel();   // the world is built once, by toAttract at boot
 updatePrize();
@@ -263,7 +304,6 @@ function toAttract() {
   G.state = 'attract'; G.stateT = 0; G.camRow = 0; G.biomeBlock = 0;
   // a restart from the pause menu skips endPlay: the run's coins are saved and the play look ends here too
   flushBank(); stopPlayLoop(); keepAwake(false); G.hint = false;
-  $('app').classList.remove('playing');
   players.forEach(p => { p.joined = false; despawn(p); });
   G.twoUp = false;
   resetRules();   // no bomb carries over (its rocks go before the lanes do)
@@ -271,9 +311,10 @@ function toAttract() {
   buildWorld();
   refreshBests();
   resultsEl.hidden = true; $('logo').hidden = false;
+  setAppState(false, false, false);
   $('score1').hidden = $('score2').hidden = true;
   $('share').textContent = t('SHARE');
-  $('replayBtn').textContent = t('COPY REPLAY LINK');
+  $('replayBtn').textContent = t('REPLAY LINK');
   $('replayBtn').hidden = true;
   $('shareText').hidden = true;
   $('resBest').hidden = true;
@@ -281,10 +322,12 @@ function toAttract() {
   setBanner('');
   setCards();
 }
-// cover the screen, build the new world under the cover, then fade back in
+// cover the screen, build the new world under the cover, then fade back in. who: the players who join at once (a
+// retry); a retry of a one-player game counts down quickly
 const wipe = $('wipe');
-function restart(joinPlayer) {
+function restart(who = []) {
   if (G.restarting) return;
+  const solo = players.filter(p => p.joined).length === 1;
   if (G.replay) {   // the replay has played: the next game is a normal one, in the player's own mode and animals
     G.replay = null;
     try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
@@ -295,10 +338,28 @@ function restart(joinPlayer) {
   wipe.classList.add('on');
   setTimeout(() => {
     toAttract();
-    if (joinPlayer !== undefined) join(joinPlayer);
+    G.quickStart = solo && who.length === 1;
+    who.forEach(join);
+    G.quickStart = false;
     requestAnimationFrame(() => { wipe.classList.remove('on'); G.restarting = false; });
   }, reduceMotion ? 0 : WIPE_MS);
 }
+// on the results: PLAY AGAIN (the same players join again), or a tap or key of one player (that one joins); MENU goes
+// to the title. A tap counts once the results have shown for RETRY_AFTER (no accidental retry)
+const canRetry = () => G.state === 'over' && G.resultsT >= RETRY_AFTER && !G.restarting;
+function playAgain(i) {
+  if (!canRetry()) return false;
+  const again = G.replay ? [] : players.filter(p => p.joined).map(p => p.id);
+  restart(i === undefined ? again : [i]);
+  return true;
+}
+function toMenu() {
+  if (G.state !== 'over' || G.resultsT < 0 || G.restarting) return;
+  sfx.tick();
+  restart();
+}
+$('again').addEventListener('click', () => { audio(); playAgain(); });
+$('toMenu').addEventListener('click', () => { audio(); toMenu(); });
 function join(i) {
   const p = players[i];
   if (p.joined) return;
@@ -316,8 +377,10 @@ function join(i) {
   document.dispatchEvent(new Event('hoplanes:join'));   // panels.js closes an open dialog
   spawn(p);
   if (players[0].joined && players[1].joined) { G.twoUp = true; refreshPowerLooks(); }
-  if (G.state === 'attract') { G.state = 'countdown'; G.countdown = COUNTDOWN; }
-  else G.countdown = Math.max(G.countdown, 2.5);
+  // from the title 3 s (a second player may still join); a retry of a one-player game READY, GO! in 1 s; a second
+  // player joining gives both at least 2.5 s
+  if (G.state === 'attract') { G.state = 'countdown'; G.countdown = G.quickStart ? SOLO_COUNTDOWN : COUNTDOWN; G.countFrom = G.countdown; }
+  else { G.countdown = Math.max(G.countdown, 2.5); G.countFrom = COUNTDOWN; }
   $('logo').hidden = true;
   setCards();
 }
@@ -328,7 +391,7 @@ function startPlay() {
   if (G.replay) { G.replay.i = 0; G.worldTick = G.replay.startTick; }
   G.rules = G.replay ? G.replay.version : RULES;   // a replay plays with the rules it was played with
   G.startTick = G.worldTick;
-  $('app').classList.add('playing');
+  setAppState(true, false, false);
   resetFrameWatch();
   keepAwake(true);
   startGhost();
@@ -369,25 +432,39 @@ function shareTexts(hero, top, replay) {
   $('replayBtn').hidden = !canReplay;
   return code;
 }
-// the run has ended: play stops (the results come after RESULTS_DELAY)
+// the run has ended: play stops (the results come after RESULTS_DELAY of real time, app.js revealResults)
 function endPlay() {
   G.state = 'over'; G.stateT = 0; overN++;
+  G.overRT = 0; G.resultsT = -1;
   G.overTick = G.tick;   // players.js: the rest of this step still runs the rules, as sim.js does
   flushBank();
   stopPlayLoop();
   G.hint = false;
-  $('app').classList.remove('playing');
+  setAppState(false, true, false);
   keepAwake(false);
   setBanner('');
 }
-// a new best gets its own big line, a jingle and (all time) confetti; returns the note without it
+// app.js, once the death has played out: the panel slides up and PLAY AGAIN takes the focus; a first local top-10
+// entry asks for the initials now
+function revealResults() {
+  resultsEl.hidden = false; G.resultsT = 0;
+  setAppState(false, true, true);
+  try { $('again').focus({ preventScroll: true }); } catch (e) {}
+  if (party) { party = false; confetti(); }
+  askInitials();
+}
+let party = false;   // a new all-time best: confetti when the results show
+const BEST_MIN = 10;   // a new best below this gets no ribbon and no confetti (a first run of 2 rows is no party)
+// a new best gets its own ribbon, a jingle and (all time) confetti; returns the note without it
 function showBest(note, top) {
-  const best = top >= 1 && /^NEW .*BEST!/.exec(note.replace(/^.*\. /, ''));
-  $('resBest').hidden = !best;
+  const best = /^NEW .*BEST!/.exec(note.replace(/^.*\. /, ''));
+  $('resBest').hidden = !best || top < BEST_MIN;
   if (!best) { sfx.over(); return note; }
+  const rest = note.replace(best[0], '').replace(/^ +| +$/g, '');
+  if (top < BEST_MIN) { sfx.over(); return rest; }
   $('resBest').textContent = t(best[0]);
-  if (best[0].includes('ALL TIME')) { confetti(); sfx.best(); } else sfx.cheer();
-  return note.replace(best[0], '').replace(/^ +| +$/g, '');
+  if (best[0].includes('ALL TIME')) { party = true; sfx.best(); } else sfx.cheer();
+  return rest;
 }
 const resultTitle = (replay, both, winner) => replay ? t('REPLAY OVER') : !both ? t('GAME OVER') : !winner ? t('TIE GAME!') : t('{name} WINS!', { name: t(charOf(winner).name) });
 // the player who set the posted score (sim.js topScore: the higher score, also when the other one won a coin war or a
@@ -403,14 +480,45 @@ function modeNote(note, both, winner) {
   if (G.mode === 'race' && winner) note = t('BY {n} ROWS.', { n: Math.abs(p1.score - p2.score) }) + ' ' + note;
   return note;
 }
-function showResults(note) {
+// what ended each run, in plain words, and a tip for the first few deaths of each kind
+const CAUSE_TEXT = { squash: 'HIT BY A CAR', splash: 'FELL IN THE WATER', train: 'HIT BY A TRAIN', eagle: 'TAKEN BY THE EAGLE', fall: 'FELL THROUGH A TILE', twister: 'CAUGHT BY THE TWISTER', swept: 'SWEPT AWAY', slow: 'LEFT BEHIND' };
+const CAUSE_TIP = { squash: 'WAIT FOR A GAP', splash: 'HOP ONLY ONTO LOGS AND PADS', train: 'WATCH THE RED LIGHT', eagle: 'THE EAGLE COMES IF YOU STAND STILL', fall: 'CRACKED TILES NEVER COME BACK', twister: 'THE TWISTER CROSSES LIKE A CAR', swept: 'HOP OFF BEFORE THE RAPIDS', slow: 'KEEP UP: THE VIEW MOVES ON' };
+const TIP_TIMES = 3;
+function causeLine(both) {
+  return players.filter(p => p.joined && CAUSE_TEXT[p.cause])
+    .map(p => (both ? t('P' + (p.id + 1)) + ': ' : '') + t(CAUSE_TEXT[p.cause]) + ' · ' + t('ROW {n}', { n: p.row })).join('\n');
+}
+function tipLine(replay) {
+  const p = players.find(q => q.joined && CAUSE_TIP[q.cause]);
+  if (replay || !p) return '';
+  let seen = {};
+  try { seen = JSON.parse(loadText(TIPS_KEY) || '{}') || {}; } catch (e) {}
+  const n = Number(seen[p.cause]) || 0;
+  if (n >= TIP_TIMES) return '';
+  seen[p.cause] = n + 1;
+  save(TIPS_KEY, JSON.stringify(seen));
+  return t(CAUSE_TIP[p.cause]);
+}
+const setRetryHint = () => { $('resHint').textContent = t(touchQuery.matches ? 'TAP TO PLAY AGAIN' : 'SPACE TO PLAY AGAIN'); };
+function showResults(note, info) {
   const [p1, p2] = players;
   $('res1').hidden = !p1.joined; $('res2').hidden = !p2.joined;
   $('res1').querySelector('span').textContent = t(charOf(p1).name);
   $('res2').querySelector('span').textContent = t(charOf(p2).name);
   $('res1').querySelector('b').textContent = p1.score;
   $('res2').querySelector('b').textContent = p2.score;
-  $('resNote').textContent = (note ? note + ' ' : '') + t('PRESS TAP TO PLAY AGAIN');
+  $('resCause').textContent = info.cause;
+  $('resTip').textContent = info.tip; $('resTip').hidden = !info.tip;
+  $('resStats').textContent = info.stats;
+  $('resNote').textContent = note;
+  $('again').textContent = t(G.replay ? 'MENU' : 'PLAY AGAIN');
+  $('toMenu').hidden = !!G.replay;
+  setRetryHint();
+}
+// the stats line: the coins of this run and the missions' progress (before the payout moves them on)
+function statsLine(replay) {
+  if (replay || !G.run) return '';
+  return (G.run.coins ? t('+{n} COINS', { n: G.run.coins }) + ' · ' : '') + missionProgress();
 }
 function checkOver() {
   if (G.state !== 'play') return;
@@ -430,14 +538,14 @@ function checkOver() {
   const code = shareTexts(scorer, top, replay);   // the replay code: the seed, the animals and every hop of this run
   saveGhost(code, top, scorer.id);   // daily and room worlds: the best run comes back as a ghost
   note = showBest(note, top);
+  const info = { cause: causeLine(both), tip: tipLine(replay), stats: statsLine(replay) };
   if (!replay) note = payMissions() + payDaily() + note;
   if (!replay) enterLocal(charOf(scorer).name, top);
-  askInitialsLater(overN);   // a first entry waits for the initials until the results are up
   const hat = hatFor(G.bestAll);
   if (!replay && hat && hat !== hatBefore) note = t('NEW HAT: {name}!', { name: t(hat.name) }) + ' ' + note;
   $('world').hidden = true;
   if (!replay && canPost()) postScore(charOf(scorer).name + ' ' + deviceTag, top, code || runCode(), overN);   // the server keeps one entry per name
-  showResults(note);
+  showResults(note, info);
 }
 
 // a fixed world (#seed-N) or a handicap shield is not a fair run for the online list: it stays on this device
@@ -470,7 +578,7 @@ async function postScore(name, score, code, gameN) {
   } catch (e) { /* offline, blocked by the page policy, or no server: nothing to show */ }
 }
 
-// ---------- pause (phone call, app switch, or the P key) ----------
+// ---------- pause (phone call, app switch, the P key or the II button) ----------
 let pausedFrom = '';
 function pauseGame() {
   if (G.state !== 'play' && G.state !== 'countdown') return;
@@ -533,4 +641,4 @@ $('gotit').addEventListener('click', hideHowto);
 
 onGameOver(checkOver);   // players.js calls it when the rules end the game
 
-export { setLook, setModeLabel, banner, confetti, cycleChar, hideHowto, howto, join, menu, pads, pauseGame, restart, resultsEl, resumeGame, setBanner, showHowto, startPlay, toAttract, wipe };
+export { setLook, setModeLabel, banner, canRetry, confetti, cycleChar, hideHowto, howto, join, menu, pads, pauseGame, playAgain, restart, resultsEl, resumeGame, revealResults, setBanner, showHowto, startPlay, toAttract, toMenu, wipe };

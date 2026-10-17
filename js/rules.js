@@ -23,7 +23,9 @@ const PLAY_HALF = 4;          // playable columns: -4..4
 const EDGE_DEATH = 5.4;       // carried this far on a log = swept away
 const WRAP = 15;              // traffic wraps at +-WRAP
 const HOP_TIME = 0.12;
-const HIT_PAD = 0.28;         // extra hit width around cars and trains
+const HIT_PAD = 0.28;         // extra hit width around cars and trains (rules 2 and 3)
+const HIT_PAD_BODY = 0.2;     // rules 4: a hit needs the body (half width about 0.31) to overlap the car by about 0.11
+const NEAR_MISS_BODY = 0.58;  // rules 4: NEAR_MISS + HIT_PAD - HIT_PAD_BODY, so the near-miss band ends where it did
 const TRAIN_SPEED = 26;
 const TRAIN_WARN = 1.3;       // seconds the signal flashes before a train
 const FIRST_ROW = -8;         // rows behind the start line that are built for scenery
@@ -46,7 +48,11 @@ const LOG_SLACK_BODY = 0.3;   // rules 3: the body (about 0.62 wide) still overl
 // 3: a landing counts on a log while the body overlaps it (LOG_SLACK_BODY); a forward or back hop from a log carried
 // past the edge of the last column (|x| > 4.5) goes to the last column (it was refused, and the rider was swept away); a plank or tile that
 // breaks drops only a player who stands on it, not one who has hopped off it (that one fell in the first half of the hop).
-const RULES = 3;
+// 4: the couch leash and the hop back in (two players, not race: sim.js camLead, LEASH_ROWS, REJOIN_TICKS), a car hit
+// needs the body (HIT_PAD_BODY), the late kinds and the boss moments come sooner (KIND_FROM, BOSS_ROWS), never more than
+// BARE_MAX rows without still ground, more versus bombs (from row 10, BOMB_POWER_BOOST), and the robot shakes off its
+// first eagle.
+const RULES = 4;
 const HOP_MID = 0.5;          // until this part of a hop the player is still over the row they left
 const MAX_RUN_TICKS = TICKS_PER_S * 60 * 61;   // an hour of play (plus a minute): a replay or a run past this is junk
 // the daily world: one seed per local day, the same on every device and on the score server (VERIFY)
@@ -65,11 +71,19 @@ const TAG_BOOST = 0.7;        // tag mode: the player behind hops this much fast
 const LEAD_FROM = 30, LEAD_GAP = 5, LEAD_SLOW = 1.3;
 // two players: a magnet on a bomb row is a bomb instead, blocking a column ahead of the other player for BOMB_TICKS steps
 const BOMB_TICKS = 360;       // 3 s at STEP
-const isBombRow = r => r > 20 && r % 4 === 0;
+// a bomb row: past row 20 every 4th row; rules 4: from row 10 (version: the rules version of the run)
+const isBombRow = (r, version = RULES) => (version >= 4 ? r >= 10 : r > 20) && r % 4 === 0;
 // a magnet on a bomb row is a versus bomb when two play (sim.js pickPower and world.js placeCoins use this one rule)
-const isBombPower = (kind, r, twoPlayers) => kind === 'magnet' && twoPlayers && isBombRow(r);
-// boss moments: the first grass row past each 100 rows carries a twister, the first river a flood (gen.js sets them)
+const isBombPower = (kind, r, twoPlayers, version = RULES) => kind === 'magnet' && twoPlayers && isBombRow(r, version);
+const BOMB_POWER_BOOST = 3;   // rules 4: a bomb row draws a power-up this many times as often (the same one draw)
+// boss moments: the first grass row past each 100 rows carries a twister, the first river a flood (gen.js sets them);
+// rules 4: every 50 rows from row 50
 const TWISTER_LEN = 0.9, FLOOD_SPEED = 1.5;
+const bossRows = version => (version >= 4 ? 50 : 100);
+// two players (not race), rules 4: the camera follows at most LEASH_CAM rows past the trailing player's row (sim.js
+// camLead), a forward hop that would put the leader more than LEASH_ROWS rows past the trailing player is refused, and
+// a player who dies comes back once, REJOIN_TICKS steps later, next to the partner (when the partner is still alive)
+const LEASH_CAM = 4, LEASH_ROWS = 9, REJOIN_TICKS = 600;   // 5 s at STEP
 const difficulty = r => difficultyAt(r, DIFF_ROWS);
 
 // ---------- lanes ----------
@@ -79,17 +93,31 @@ const STREAK_MAX = { road: 4, river: 3, lily: 2, mud: 2, rail: 3, ice: 2, bridge
 const ICE_FROM = 25, BRIDGE_FROM = 40, ROCKS_FROM = 55;
 // the latest kinds weigh 0 below these rows: the saved runs reach row 86 and must stay the same worlds
 const SPRING_FROM = 95, PORTAL_FROM = 110, CLIFF_FROM = 125;
-// the kind of row r, given the row before it ({ kind, streak }) and the world generator
-function nextLaneKind(r, diff, prev, rng) {
+// the first row of each late kind by rules version: rules 4 brings them sooner (worlds of older runs keep the old rows)
+const KIND_FROM = {
+  3: { ice: ICE_FROM, bridge: BRIDGE_FROM, rocks: ROCKS_FROM, spring: SPRING_FROM, portal: PORTAL_FROM, cliff: CLIFF_FROM },
+  4: { ice: 20, bridge: 30, rocks: 40, spring: 50, portal: 60, cliff: 75 }
+};
+const kindFrom = version => (version >= 4 ? KIND_FROM[4] : KIND_FROM[3]);
+// still ground: a row a player can stand on with nothing moving across it (a rejoin lands there; rules 4 never builds
+// more than BARE_MAX rows in a row without one)
+const isStill = kind => kind === 'grass' || kind === 'mud' || kind === 'ice' || kind === 'spring' || kind === 'portal';
+const BARE_MAX = 6;
+// the weight of each kind at row r (f: the first rows of the late kinds, kindFrom)
+const kindWeights = (r, diff, f) => ({
+  grass: 0.32 - diff * 0.12, road: 0.36, river: 0.2 + diff * 0.06,
+  lily: r > 8 ? 0.1 : 0, mud: r > 12 ? 0.07 : 0, rail: 0.12 + diff * 0.06,
+  ice: r >= f.ice ? 0.05 + diff * 0.04 : 0, bridge: r >= f.bridge ? 0.04 + diff * 0.04 : 0, rocks: r >= f.rocks ? 0.04 + diff * 0.06 : 0,
+  spring: r >= f.spring ? 0.05 : 0, portal: r >= f.portal ? 0.04 : 0, cliff: r >= f.cliff ? 0.04 + diff * 0.03 : 0
+});
+// the kind of row r, given the row before it ({ kind, streak, bare: rows in a row without still ground }), the world
+// generator and the rules version of the world
+function nextLaneKind(r, diff, prev, rng, version = RULES) {
   if (r < 4) return 'grass';
+  if (version >= 4 && prev.bare >= BARE_MAX) return 'grass';   // rules 4: a breather (no draw: a new world)
   // keep runs of the same type together, like real roads and rivers
   if (prev.kind !== 'grass' && prev.streak < STREAK_MAX[prev.kind] && rng() < 0.55) return prev.kind;
-  const w = {
-    grass: 0.32 - diff * 0.12, road: 0.36, river: 0.2 + diff * 0.06,
-    lily: r > 8 ? 0.1 : 0, mud: r > 12 ? 0.07 : 0, rail: 0.12 + diff * 0.06,
-    ice: r >= ICE_FROM ? 0.05 + diff * 0.04 : 0, bridge: r >= BRIDGE_FROM ? 0.04 + diff * 0.04 : 0, rocks: r >= ROCKS_FROM ? 0.04 + diff * 0.06 : 0,
-    spring: r >= SPRING_FROM ? 0.05 : 0, portal: r >= PORTAL_FROM ? 0.04 : 0, cliff: r >= CLIFF_FROM ? 0.04 + diff * 0.03 : 0
-  };
+  const w = kindWeights(r, diff, kindFrom(version));
   // the new kinds come last in the sum and the walk, so a world below SPRING_FROM lands on the same kind as before
   let x = rng() * (w.grass + w.road + w.river + w.lily + w.mud + w.rail + w.ice + w.bridge + w.rocks + w.spring + w.portal + w.cliff);
   let k = 'rail';
@@ -138,14 +166,14 @@ const TRAITS = {
   fox: { comboGap: 1.5, text: 'LONG COMBOS' },        // combos stay alive longer (more coins; the run itself is the same)
   bunny: { hop: 0.8, text: 'FAST HOPS' },             // faster hops
   cat: { lives: 1, text: 'ONE EXTRA LIFE' },          // survives one fall into water
-  robot: { idle: 3, text: 'PATIENT EAGLE' },          // the eagle waits 3 s longer
+  robot: { idle: 3, shake: true, text: 'PATIENT EAGLE' },   // the eagle waits 3 s longer; rules 4: the first catch is shaken off
   pig: { magnet: 1.5, text: 'LONG MAGNET' },          // the magnet lasts longer
   penguin: { noSlide: true, text: 'NO ICE SLIDE' },   // at home on ice: no slide
   turtle: { behind: 1, text: 'MORE SLACK' }           // one more row of slack behind the scroll line
 };
 const traitOf = key => (Object.hasOwn(TRAITS, key) ? TRAITS[key] : {});   // hasOwn: a replay could name 'constructor'
 // hats: unlocked by the all-time best score on this device (the first whose `at` is reached, from the top)
-const HATS = [{ key: 'halo', name: 'HALO', at: 500 }, { key: 'crown', name: 'CROWN', at: 250 }, { key: 'cap', name: 'CAP', at: 100 }];
+const HATS = [{ key: 'halo', name: 'HALO', at: 300 }, { key: 'crown', name: 'CROWN', at: 150 }, { key: 'cap', name: 'CAP', at: 50 }];
 const hatFor = best => HATS.find(h => best >= h.at) || null;
 // the daily streak: days in a row with a daily run, saved as "YYYY-MM-DD|n"; today's run returns the new text
 function streakAfter(saved, day, yesterday) {
@@ -170,7 +198,7 @@ const pad2 = n => String(n).padStart(2, '0');
 const isoDay = (d = new Date()) => d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
 const dayBefore = (d = new Date()) => { const y = new Date(d); y.setDate(y.getDate() - 1); return isoDay(y); };
 
-export { LOG_SLACK_BODY, RULES, CAM_CATCH_RATE, CAM_CATCH_ROWS, CAM_CREEP, CAM_CREEP_GAIN, CAM_CREEP_MAX, HOP_MID, LOG_SLACK, RESCUE_HOP, START_X, DAY_PREFIX, MAX_RUN_TICKS, TICKS_PER_S, dailySeedFor, BOMB_TICKS, BRIDGE_FROM, CLIFF_FROM, FLOOD_SPEED, HATS, ICE_FROM, LEAD_FROM, LEAD_GAP, LEAD_SLOW, NEAR_MISS, PORTAL_FROM, SPRING_FROM, SPRING_HOP, TAG_BOOST, TWISTER_LEN, isBombPower, isBombRow, TRAITS, dayBefore, hatFor, isoWeek, streakAfter, streakCount, traitOf, PLANK_BACK, PLANK_BREAK, ROCKS_FROM, SLIDE_TIME, isWater, plankState,
+export { BARE_MAX, BOMB_POWER_BOOST, HIT_PAD_BODY, KIND_FROM, LEASH_CAM, LEASH_ROWS, NEAR_MISS_BODY, REJOIN_TICKS, bossRows, isStill, kindFrom, LOG_SLACK_BODY, RULES, CAM_CATCH_RATE, CAM_CATCH_ROWS, CAM_CREEP, CAM_CREEP_GAIN, CAM_CREEP_MAX, HOP_MID, LOG_SLACK, RESCUE_HOP, START_X, DAY_PREFIX, MAX_RUN_TICKS, TICKS_PER_S, dailySeedFor, BOMB_TICKS, BRIDGE_FROM, CLIFF_FROM, FLOOD_SPEED, HATS, ICE_FROM, LEAD_FROM, LEAD_GAP, LEAD_SLOW, NEAR_MISS, PORTAL_FROM, SPRING_FROM, SPRING_HOP, TAG_BOOST, TWISTER_LEN, isBombPower, isBombRow, TRAITS, dayBefore, hatFor, isoWeek, streakAfter, streakCount, traitOf, PLANK_BACK, PLANK_BREAK, ROCKS_FROM, SLIDE_TIME, isWater, plankState,
   BEHIND_LIMIT, COIN_CHANCE, COMBO_EVERY, COMBO_GAP, COUNTDOWN, DIFF_ROWS, EAGLE_IDLE, EAGLE_SWOOP, EAGLE_WARN, EDGE_DEATH, FIRST_ROW, HIT_PAD, HOP_TIME,
   LANE_KINDS, MAGNET_REACH, MAGNET_TIME, MODES, MUD_SLOW, PLAY_HALF, POWER_CHANCE, SHIELD_TIME, STEP, STREAK_MAX, TRAIN_SPEED, TRAIN_WARN, WRAP,
   difficulty, difficultyAt, hashString, hopTarget, hopTime, isoDay, mulberry32, nextLaneKind };
