@@ -35,6 +35,7 @@ function mergeBoxes(boxes) {
   const pos = new Float32Array(n * UV * 3), nor = new Float32Array(n * UV * 3), col = new Float32Array(n * UV * 3), ao = new Float32Array(n * UV);
   const idx = new (n * UV > 65535 ? Uint32Array : Uint16Array)(n * UI.length);
   boxes.forEach(([w, h, d, color, x, y, z, glow = 0], k) => {
+    if (typeof color !== 'number') console.error('a box without a color: it draws black', boxes[k]);   // the tests fail on a console error
     tmpColor.setHex(color);
     const o = k * UV * 3;
     for (let i = 0; i < UV * 3; i += 3) {

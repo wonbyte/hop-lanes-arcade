@@ -197,7 +197,8 @@ function rapids(ground, z, water) {
 const LANE_BUILDERS = {
   grass(lane, { r, z, ground, B }) {
     const snow = weatherAt(r) === 'snow';
-    ground.push([40, 0.3, 1, snow ? (r % 2 ? 0xe6eef7 : 0xdbe6f2) : B.grass[r % 2], 0, -0.3, z]);
+    // r & 1, not r % 2: a row behind the start (r < 0) gives -1 there, no color, and drew black
+    ground.push([40, 0.3, 1, snow ? (r & 1 ? 0xe6eef7 : 0xdbe6f2) : B.grass[r & 1], 0, -0.3, z]);
     const [tw, th] = B.tree;
     for (const [x, h] of lane.treeH) ground.push([0.3, 0.3, 0.3, B.trunk, x, 0, z], [tw, h * th, tw, snow ? 0xd4e6ec : B.leaf, x, 0.3, z]);
     // the grass boss: a twister wanders across (gen.js lane.twister); darker, torn ground under its path
@@ -238,14 +239,14 @@ const LANE_BUILDERS = {
   },
   // mud: safe, but a hop out of it is slow (rules.js hopTime), so the scroll line catches up
   mud(lane, { r, z, ground, B }) {
-    ground.push([40, 0.3, 1, B.mud[r % 2], 0, -0.3, z]);
+    ground.push([40, 0.3, 1, B.mud[r & 1], 0, -0.3, z]);
     for (const m of lane.mudLooks)
       if (m.reed) ground.push([0.3, m.reed, 0.3, 0x8a7a3a, m.x, 0, z]);   // reeds
       else ground.push([m.w, 0.02, 0.5, 0x5e3f24, m.x, 0, z + m.dz]);      // puddles
   },
   // ice: pale blue, with light sheen stripes (so it differs from grass by shape too) and snowy trees
   ice(lane, { r, z, ground, B }) {
-    ground.push([40, 0.3, 1, B.ice[r % 2], 0, -0.3, z]);
+    ground.push([40, 0.3, 1, B.ice[r & 1], 0, -0.3, z]);
     for (let x = -12; x <= 12; x += 2.5) ground.push([1.1, 0.02, 0.07, 0xf6fcff, x + (r % 3) * 0.6, 0, z - 0.22], [0.6, 0.02, 0.07, 0xf6fcff, x + 0.4 + (r % 3) * 0.6, 0, z + 0.12]);
     for (const [x, h] of lane.treeH) ground.push([0.3, 0.3, 0.3, 0x7a4b2a, x, 0, z], [0.6, h, 0.6, 0xe3f0f5, x, 0.3, z]);
   },
@@ -263,13 +264,13 @@ const LANE_BUILDERS = {
   },
   // rocks: dusty ground with pebbles; boulders roll across like slow traffic
   rocks(lane, { r, z, ground, B }) {
-    ground.push([40, 0.3, 1, B.rocks[r % 2], 0, -0.3, z]);
+    ground.push([40, 0.3, 1, B.rocks[r & 1], 0, -0.3, z]);
     for (let x = -12; x <= 12; x += 3) ground.push([0.22, 0.08, 0.18, 0x7a7266, x + (r % 4) * 0.7, 0, z + ((x + r) % 2 ? 0.3 : -0.3)]);
     placeTraffic(lane, z, () => new Inst('boulder', boulderBoxes, true));
   },
   // a spring row: grass with a trampoline on every play column; a forward hop from here flies two rows (sim.js)
   spring(lane, { r, z, ground, B }) {
-    ground.push([40, 0.3, 1, B.grass[r % 2], 0, -0.3, z]);
+    ground.push([40, 0.3, 1, B.grass[r & 1], 0, -0.3, z]);
     for (let x = -PLAY_HALF; x <= PLAY_HALF; x++) ground.push([0.8, 0.08, 0.8, 0xe05a3a, x, 0, z], [0.56, 0.05, 0.56, 0xffd84a, x, 0.08, z], [0.3, 0.05, 0.3, 0xe05a3a, x, 0.13, z]);
     for (let x = -12; x <= 12; x++) if (Math.abs(x) > PLAY_HALF && (x + r) % 3 === 0) ground.push([0.3, 0.3, 0.3, B.trunk, x, 0, z], [0.6, 0.9, 0.6, B.leaf, x, 0.3, z]);
   },
