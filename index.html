@@ -43,26 +43,26 @@
 <body>
 <noscript><p class="nojs">Hop Lanes needs JavaScript. Turn it on and reload the page.</p></noscript>
 <div id="app">
-  <p class="sr-only">Two-player road crossing game. Player 1 moves with W, A, S and D. Player 2 moves with the arrow keys. Space starts. On a touch screen, tap the game to hop and swipe to move.</p>
+  <p class="sr-only" data-i18n="Two-player road crossing game. Player 1 moves with W, A, S and D. Player 2 moves with the arrow keys. Space starts. On a touch screen, tap the game to hop and swipe to move.">Two-player road crossing game. Player 1 moves with W, A, S and D. Player 2 moves with the arrow keys. Space starts. On a touch screen, tap the game to hop and swipe to move.</p>
   <div id="stage">
     <div id="marquee">
       <div class="hs"><small data-i18n="BEST">BEST</small><b id="best">0</b></div>
       <div class="hs"><small data-i18n="TODAY">TODAY</small><b id="daily">0</b></div>
-      <div class="hs"><small data-i18n="COINS">COINS</small><b id="bank">0</b></div>
-      <div class="hs" id="streakBox" hidden title="Daily runs on days in a row"><small data-i18n="STREAK">STREAK</small><b id="streak">0</b></div>
-      <button type="button" id="mute" aria-pressed="false">SOUND ON</button>
+      <div class="hs coins"><small data-i18n="COINS">COINS</small><b id="bank">0</b></div>
+      <div class="hs" id="streakBox" hidden><small data-i18n="STREAK">STREAK</small><b id="streak">0</b></div>
+      <button type="button" id="mute" aria-pressed="true" aria-label="SOUND" data-i18n-label="SOUND">SOUND ON</button>
+      <button type="button" id="pauseBtn" aria-label="PAUSE" data-i18n-label="PAUSE">II</button>
     </div>
-    <div id="score1" class="score" hidden><span>P1 FROG</span><b>0</b></div>
-    <div id="score2" class="score" hidden><span>P2 FOX</span><b>0</b></div>
+    <div id="score1" class="score" hidden><span class="lbl">P1 FROG</span><b>0</b><span class="pills"><i class="pill out" hidden>OUT</i><i class="pill combo" hidden></i><i class="pill mag" hidden><span>MAGNET</span><s></s></i><i class="pill slow" hidden>SLOW</i></span></div>
+    <div id="score2" class="score" hidden><span class="lbl">P2 FOX</span><b>0</b><span class="pills"><i class="pill out" hidden>OUT</i><i class="pill combo" hidden></i><i class="pill mag" hidden><span>MAGNET</span><s></s></i><i class="pill slow" hidden>SLOW</i></span></div>
     <div id="logo"><h1><small>ARCADE</small>HOP<br>LANES</h1></div>
     <div id="menu">
-      <button type="button" id="mode">MODE: CLASSIC</button>
+      <div class="modebox"><button type="button" id="mode"><span class="arr" aria-hidden="true">&#9664;</span><span id="modeText">MODE: CLASSIC</span><span class="arr" aria-hidden="true">&#9654;</span></button><small id="modeNote"></small></div>
       <button type="button" id="prize">PRIZE &#183; 50 COINS</button>
       <button type="button" id="board" data-i18n="TOP 10">TOP 10</button>
       <button type="button" id="settings" data-i18n="SETTINGS">SETTINGS</button>
+      <button type="button" id="missionChip"><span id="chipMissions">MISSIONS 0/3</span> <span class="dot">&#183;</span> <span id="chipToday">TODAY 0/3</span></button>
       <button type="button" id="install" hidden data-i18n="ADD TO HOME SCREEN">ADD TO HOME SCREEN</button>
-      <div id="missions"><h3>MISSIONS</h3><ul><li></li><li></li><li></li></ul></div>
-      <div id="dayMissions"><h3>TODAY'S MISSIONS</h3><ul><li></li><li></li><li></li></ul></div>
     </div>
     <div id="weather" aria-hidden="true"></div>
     <div id="replayTag" hidden data-i18n="REPLAY">REPLAY</div>
@@ -70,7 +70,7 @@
     <div id="hint" hidden aria-hidden="true"><span></span></div>
     <div id="confetti" aria-hidden="true"></div>
     <div id="banner" hidden aria-live="polite"><h2></h2><p></p></div>
-    <div id="howto" class="dialog" role="dialog" aria-modal="true" aria-label="How to play" hidden>
+    <div id="howto" class="dialog" role="dialog" aria-modal="true" aria-label="HOW TO PLAY" data-i18n-label="HOW TO PLAY" hidden>
       <div class="box">
         <h2 data-i18n="HOW TO PLAY">HOW TO PLAY</h2>
         <p></p>
@@ -83,7 +83,7 @@
         <div class="opts">
           <button type="button" id="sound">SOUND: ON</button>
           <button type="button" id="buzz">VIBRATION: ON</button>
-          <div class="opt"><span data-i18n="LANGUAGE">LANGUAGE</span><button type="button" id="lang" aria-label="Language">EN</button></div>
+          <div class="opt"><span data-i18n="LANGUAGE">LANGUAGE</span><button type="button" id="lang" aria-label="LANGUAGE" data-i18n-label="LANGUAGE">EN</button></div>
           <button type="button" id="handicap">HANDICAP: OFF</button>
           <button type="button" id="motion">MOTION: AUTO</button>
           <button type="button" id="look">LOOK: AUTO</button>
@@ -102,6 +102,24 @@
         <button type="button" id="closeBoard" class="go" data-i18n="CLOSE">CLOSE</button>
       </div>
     </div>
+    <div id="missionsBox" class="dialog" role="dialog" aria-modal="true" aria-labelledby="missionsTitle" hidden>
+      <div class="box">
+        <h2 id="missionsTitle" data-i18n="MISSIONS">MISSIONS</h2>
+        <div id="missions"><h3>MISSIONS</h3><ul><li></li><li></li><li></li></ul></div>
+        <div id="dayMissions"><h3>TODAY'S MISSIONS</h3><ul><li></li><li></li><li></li></ul></div>
+        <button type="button" id="closeMissions" class="go" data-i18n="CLOSE">CLOSE</button>
+      </div>
+    </div>
+    <div id="codeBox" class="dialog" role="dialog" aria-modal="true" aria-labelledby="codeTitle" hidden>
+      <div class="box">
+        <h2 id="codeTitle">ROOM CODE</h2>
+        <div id="slots"></div>
+        <div class="opts two">
+          <button type="button" id="codeCancel" data-i18n="CANCEL">CANCEL</button>
+          <button type="button" id="codeOk" class="go" data-i18n="OK">OK</button>
+        </div>
+      </div>
+    </div>
     <div id="pauseBox" class="dialog" role="dialog" aria-modal="true" aria-labelledby="pauseTitle" hidden>
       <div class="box">
         <h2 id="pauseTitle" data-i18n="PAUSED">PAUSED</h2>
@@ -116,34 +134,45 @@
     <div id="live" class="sr-only" aria-live="polite"></div>
     <div id="wipe" aria-hidden="true"></div>
     <div id="results" hidden aria-live="polite">
+      <div class="resText">
+      <p id="resBest" hidden></p>
       <h2 id="resTitle">GAME OVER</h2>
       <div class="row">
         <div class="r1" id="res1"><span>FROG</span><b>0</b></div>
         <div class="r2" id="res2"><span>FOX</span><b>0</b></div>
       </div>
-      <p id="resBest" hidden></p>
+      <p id="resCause"></p>
+      <p id="resTip" hidden></p>
+      <p id="resStats"></p>
       <p id="world" hidden></p>
       <p id="resNote"></p>
-      <button type="button" id="share">SHARE</button>
-      <button type="button" id="replayBtn" hidden>COPY REPLAY LINK</button>
-      <textarea id="shareText" hidden readonly rows="2" aria-label="Score text to copy"></textarea>
+      </div>
+      <div class="resActs">
+      <button type="button" id="again" data-i18n="PLAY AGAIN">PLAY AGAIN</button>
+      <div class="pair"><button type="button" id="share" data-i18n="SHARE">SHARE</button><button type="button" id="replayBtn" hidden data-i18n="REPLAY LINK">REPLAY LINK</button></div>
+      <button type="button" id="toMenu" data-i18n="MENU">MENU</button>
+      <p id="resHint"></p>
+      <textarea id="shareText" hidden readonly rows="2" aria-label="SCORE TEXT TO COPY" data-i18n-label="SCORE TEXT TO COPY"></textarea>
+      </div>
     </div>
     <div id="cards">
       <div class="card p1" id="card1">
-        <div class="head">PRESS TAP<br>TO JOIN</div>
+        <div class="head">PRESS W
+TO JOIN</div>
         <div class="pickrow">
-          <button type="button" class="cyc" data-p="0" data-d="-1" aria-label="Player 1: previous character">&#9664;</button>
+          <button type="button" class="cyc" data-p="0" data-d="-1" aria-label="PLAYER 1: PREVIOUS ANIMAL" data-i18n-label="PLAYER 1: PREVIOUS ANIMAL">&#9664;</button>
           <svg id="pic1" viewBox="0 0 12 12" shape-rendering="crispEdges" aria-hidden="true"></svg>
-          <button type="button" class="cyc" data-p="0" data-d="1" aria-label="Player 1: next character">&#9654;</button>
+          <button type="button" class="cyc" data-p="0" data-d="1" aria-label="PLAYER 1: NEXT ANIMAL" data-i18n-label="PLAYER 1: NEXT ANIMAL">&#9654;</button>
         </div>
         <div class="state">FROG</div>
       </div>
       <div class="card p2" id="card2">
-        <div class="head">PRESS TAP<br>TO JOIN</div>
+        <div class="head">PRESS &#8593;
+TO JOIN</div>
         <div class="pickrow">
-          <button type="button" class="cyc" data-p="1" data-d="-1" aria-label="Player 2: previous character">&#9664;</button>
+          <button type="button" class="cyc" data-p="1" data-d="-1" aria-label="PLAYER 2: PREVIOUS ANIMAL" data-i18n-label="PLAYER 2: PREVIOUS ANIMAL">&#9664;</button>
           <svg id="pic2" viewBox="0 0 12 12" shape-rendering="crispEdges" aria-hidden="true"></svg>
-          <button type="button" class="cyc" data-p="1" data-d="1" aria-label="Player 2: next character">&#9654;</button>
+          <button type="button" class="cyc" data-p="1" data-d="1" aria-label="PLAYER 2: NEXT ANIMAL" data-i18n-label="PLAYER 2: NEXT ANIMAL">&#9654;</button>
         </div>
         <div class="state">FOX</div>
       </div>
@@ -151,18 +180,18 @@
   </div>
   <div id="deck">
     <div class="pad p1">
-      <button type="button" class="side" data-p="0" data-dx="-1" aria-label="Player 1 left">&#9664;</button>
-      <div class="pad-col"><button type="button" class="tap" id="tap1" data-p="0" aria-label="Player 1 hop forward" data-i18n="TAP">TAP</button><span class="lbl" data-i18n="PLAYER 1">PLAYER 1</span></div>
-      <button type="button" class="side" data-p="0" data-dx="1" aria-label="Player 1 right">&#9654;</button>
+      <button type="button" class="side" data-p="0" data-dx="-1" aria-label="PLAYER 1: LEFT" data-i18n-label="PLAYER 1: LEFT">&#9664;</button>
+      <div class="pad-col"><button type="button" class="tap" id="tap1" data-p="0" aria-label="PLAYER 1: HOP" data-i18n-label="PLAYER 1: HOP" data-i18n="TAP">TAP</button><span class="lbl" data-i18n="PLAYER 1">PLAYER 1</span></div>
+      <button type="button" class="side" data-p="0" data-dx="1" aria-label="PLAYER 1: RIGHT" data-i18n-label="PLAYER 1: RIGHT">&#9654;</button>
     </div>
     <div class="pad-col">
       <button type="button" id="start" data-i18n="START">START</button>
       <div id="keys"><span data-i18n="P1 W A S D">P1 W A S D</span><br><span data-i18n="P2 ARROWS">P2 ARROWS</span><br><span data-i18n="SPACE START">SPACE START</span></div>
     </div>
     <div class="pad p2">
-      <button type="button" class="side" data-p="1" data-dx="-1" aria-label="Player 2 left">&#9664;</button>
-      <div class="pad-col"><button type="button" class="tap" id="tap2" data-p="1" aria-label="Player 2 hop forward" data-i18n="TAP">TAP</button><span class="lbl" data-i18n="PLAYER 2">PLAYER 2</span></div>
-      <button type="button" class="side" data-p="1" data-dx="1" aria-label="Player 2 right">&#9654;</button>
+      <button type="button" class="side" data-p="1" data-dx="-1" aria-label="PLAYER 2: LEFT" data-i18n-label="PLAYER 2: LEFT">&#9664;</button>
+      <div class="pad-col"><button type="button" class="tap" id="tap2" data-p="1" aria-label="PLAYER 2: HOP" data-i18n-label="PLAYER 2: HOP" data-i18n="TAP">TAP</button><span class="lbl" data-i18n="PLAYER 2">PLAYER 2</span></div>
+      <button type="button" class="side" data-p="1" data-dx="1" aria-label="PLAYER 2: RIGHT" data-i18n-label="PLAYER 2: RIGHT">&#9654;</button>
     </div>
   </div>
 </div>

@@ -1,19 +1,19 @@
 import { idleAudio, isMuted, playLayers, playLoopOn, sfx, startTune, stopTune, tuneOn } from './audio.js';
-import { $, BENCH, BIOME_ROWS, COUNTDOWN, DEBUG, G, LAND_DIP, OVER_SLOW, OVER_SLOW_T, OVER_ZOOM, REPLAY_CODE, RESULTS_DELAY, STEP, TUTORIAL_SEED } from './core.js';
+import { $, BENCH, BIOME_ROWS, DEBUG, G, LAND_DIP, OVER_SLOW, OVER_SLOW_T, OVER_ZOOM, REPLAY_CODE, RESULTS_DELAY, SOLO_COUNTDOWN, STEP, TUTORIAL_SEED } from './core.js';
 import { pollGamepads } from './input.js';   // also sets up every input listener
 import { decodeReplay } from './replay.js';
-import { creepCamera } from './sim.js';
+import { camLead, creepCamera } from './sim.js';
 import { ghostInfo, ghostMat, ghostWarmGeo, placeGhost, primeGhost, stepGhost } from './ghost.js';
 import { CHARACTERS } from './models.js';
 import { CAM_OFF, SUN_OFF, camera, focus, getPixelRatio, holdFrameWatch, reduceMotion, renderer, scene, setNight, setZoom, shadowCadence, sun, touchQuery, viewInfo, viewSize, watchFrameTime } from './gfx.js';
 import { announceFrame } from './panels.js';   // also sets up the settings, pause and top-10 panels
 import { keepAwake } from './device.js';
 import { flushBank } from './storage.js';
-import { applyMoves, blobGeo, blobMat, bubbleGeo, bubbleMat, charOf, giveShield, kill, players, dressPlayer, updateParts, updatePlayer } from './players.js';
-import { join, resultsEl, setBanner, setModeLabel, showHowto, startPlay, toAttract } from './screens.js';
+import { applyMoves, blobGeo, blobMat, bubbleGeo, bubbleMat, charOf, fx, giveShield, kill, placeBubbles, players, dressPlayer, updateParts, updatePlayer } from './players.js';
+import { canRetry, join, resultsEl, revealResults, setBanner, setModeLabel, showHowto, startPlay, toAttract } from './screens.js';
 import { HINT_KEY, HOWTO_KEY, dailySeed, loadText, owned, save } from './storage.js';
 import { biomeAt, biomeIndex, ensureLanes, getSeed, laneCoins, laneKinds, lanes, showLane, spinAll, updateFarLanes, updateLanes, weatherAt } from './world.js';
-import { t } from './i18n.js';
+import { applyLang, t } from './i18n.js';
 
 // The game loop and boot. main.js loads this once Three.js is present.
 // ---------- loop ----------
@@ -23,11 +23,11 @@ function updateCountdown(dt) {
   const n = Math.ceil(G.countdown);
   if (n !== before && n > 0) sfx.tick();
   if (G.countdown <= 0) { G.countKey = ''; startPlay(); return; }
-  // the banner text is built only when the number or the players change
-  const both = players[0].joined && players[1].joined, key = n + '|' + both;
+  // the banner text is built only when the number or the players change; a quick one-second countdown says READY!
+  const both = players[0].joined && players[1].joined, key = n + '|' + both + '|' + G.countFrom;
   if (key === G.countKey) return;
   G.countKey = key;
-  setBanner(String(n), (G.replay ? t('REPLAY') : both ? t('{a} VS {b}', { a: t(charOf(players[0]).name), b: t(charOf(players[1]).name) }) : t('OTHER PLAYER: TAP TO JOIN'))
+  setBanner(G.countFrom <= SOLO_COUNTDOWN ? t('READY!') : String(n), (G.replay ? t('REPLAY') : both ? t('{a} VS {b}', { a: t(charOf(players[0]).name), b: t(charOf(players[1]).name) }) : t('OTHER PLAYER: TAP TO JOIN'))
     + (touchQuery.matches && !G.replay ? '\n' + t('TAP TO HOP · SWIPE TO TURN') : ''));
 }
 function updateCamera(dt) {
@@ -36,9 +36,7 @@ function updateCamera(dt) {
   // a new land every BIOME_ROWS rows: its name shows for a moment
   const block = Math.floor(G.camRow / BIOME_ROWS);
   if (block > G.biomeBlock) { G.biomeBlock = block; if (block > 0) { setBanner(t(biomeAt(G.camRow).name)); G.goT = 1.6; sfx.cheer(); } }
-  let lead = -Infinity;
-  for (const p of players) if (p.joined && p.alive) lead = Math.max(lead, p.row);
-  G.camRow = creepCamera(G.camRow, G.playT, lead, dt);   // the one copy of the creep rule (sim.js)
+  G.camRow = creepCamera(G.camRow, G.playT, camLead(players, G.mode, G.rules), dt);   // the one copy of the creep and leash rules (sim.js)
 }
 function placeCamera() {
   focus.set(G.overX, 0, -(G.camRow + G.camLead));
@@ -59,8 +57,8 @@ function placeCamera() {
 const hintEl = $('hint'), hintSpan = hintEl.firstElementChild;
 const hintPos = new THREE.Vector3();
 let hintX = -1, hintY = -1;
-const HINT_ROWS = 12;
-const LANE_HINT = { road: 'WAIT FOR A GAP', river: 'HOP ON A LOG', rail: 'MIND THE TRAIN', lily: 'PADS ONLY' };
+const HINT_ROWS = 20;
+const LANE_HINT = { road: 'WAIT FOR A GAP', river: 'HOP ON A LOG', rail: 'MIND THE TRAIN', lily: 'PADS ONLY', mud: 'MUD IS SLOW: HOP OUT EARLY', bridge: 'PLANKS BREAK: KEEP MOVING' };
 function hintText(p) {
   const plain = (touchQuery.matches ? t('TAP') : p.id ? '\u2191' : 'W') + ' \u25b2';
   if (getSeed() !== TUTORIAL_SEED) return plain;
@@ -97,6 +95,14 @@ function overFx(dt) {
   setZoom(G.overT > OVER_FX_T ? OVER_ZOOM : camera.zoom + (OVER_ZOOM - camera.zoom) * k);
   if (d && d.mesh) G.overX += (Math.max(-3, Math.min(3, d.mesh.position.x)) * 0.5 - G.overX) * k;
 }
+// the results come RESULTS_DELAY of real time after the end (the slow motion does not stretch the wait), and a retry
+// counts from when they show (screens.js canRetry); never inside a game step
+function resultsClock(dt) {
+  if (G.state !== 'over') return;
+  G.overRT += dt;
+  if (G.resultsT >= 0) G.resultsT += dt;
+  else if (G.overRT > RESULTS_DELAY) revealResults();
+}
 // one fixed step of the game: the same hops on the same ticks give the same run (replays)
 function step(dt) {
   if (DEBUG && G.boom) { G.boom = false; throw new Error('test crash'); }   // hopLanes.boom(): the crash notice test
@@ -104,7 +110,6 @@ function step(dt) {
   if (G.shakeT > 0) G.shakeT = Math.max(0, G.shakeT - dt);
   if (G.state === 'countdown') { updateCountdown(dt); primeGhost(); }
   else if (G.state === 'play') { G.playTick++; applyMoves(); updateCamera(dt); stepGhost(); }
-  else if (G.state === 'over' && G.stateT > RESULTS_DELAY && resultsEl.hidden) resultsEl.hidden = false;
   ensureLanes();
   updateLanes(players);   // only the lanes a player can touch; the rest move once per drawn frame
   for (const p of players) updatePlayer(p, dt);
@@ -137,6 +142,7 @@ function frameBody(now) {
   lastT = now;
   pollGamepads();
   overFx(dt);
+  resultsClock(dt);
   if (G.landT > 0) G.landT = Math.max(0, G.landT - dt);
 
   if (G.state === 'paused') {                       // nothing moves: draw only when asked (pausing, a resize)
@@ -152,8 +158,8 @@ function frameBody(now) {
   updateParts(dt);   // effects: once per frame, not per step
   for (const p of players) dressPlayer(p, dt);   // the animals' turns, blinks and shadow blobs: looks only
 
-  const idle = G.state === 'attract' || (G.state === 'over' && G.stateT > RESULTS_DELAY);
-  if (shouldDraw(now, rawDt, idle)) drawFrame(now, idle, work0);
+  const idle = G.state === 'attract' || (G.state === 'over' && !resultsEl.hidden);
+  if (shouldDraw(now, rawDt, idle)) drawFrame(now, idle, work0, dt);
   if (BENCH) benchStep();
   if (G.state === 'attract') { if (G.stateT < 0.5) startTune(); else if (G.stateT > 14) idleAudio(); }
   requestAnimationFrame(frame);
@@ -181,12 +187,13 @@ function shouldDraw(now, rawDt, idle) {
   return screenN % every === 0;
 }
 // the per-frame looks (never the rules), then the render; work0: when the frame began (#debug frame times)
-function drawFrame(now, idle, work0) {
+function drawFrame(now, idle, work0, dt) {
   spinAll(now);
   updateFarLanes();
   placeCamera();
   placeGhost();
   placeHint();
+  placeBubbles(dt);
   announceFrame();
   shadowCadence(idle);
   renderer.render(scene, camera);
@@ -238,6 +245,7 @@ if (DEBUG) {
   fpsEl.hidden = false;
   window.hopLanes = {
     players, renderer, laneCoins, laneKinds, kill, giveShield,
+    fx,   // the effect hooks the rules call (tests: the rules-4 hooks leashed, rejoin and trait)
     get state() { return G.state; },
     get camRow() { return G.camRow; },
     set camRow(r) { G.camRow = r; },   // tests: look at a far part of the world without playing there
@@ -266,6 +274,8 @@ if (DEBUG) {
     biomeIndex,
     get zoom() { return camera.zoom; },
     get slowT() { return G.slowT; },
+    get canRetry() { return canRetry(); },
+    get countdown() { return G.countdown; },   // seconds of the countdown left (a quick retry: 1)   // a tap or key on the results plays again now
     get hintText() { return hintEl.textContent; },
     boom() { G.boom = true; },   // throw inside the next step: the crash notice
     get frames() { return frames.slice(); },
@@ -288,10 +298,13 @@ function playReplay(code) {
   }
   toAttract();
   if (!G.replay) return;
-  // start the world clock so the countdown ends on the tick the recorded run began (startPlay sets it exactly)
-  G.worldTick = Math.max(0, G.replay.startTick - Math.ceil(COUNTDOWN / STEP));
   G.replay.joined.forEach((on, i) => { if (on) join(i); });
+  // start the world clock so the countdown ends on the tick the recorded run began (startPlay sets it exactly)
+  G.worldTick = Math.max(0, G.replay.startTick - Math.ceil(G.countdown / STEP));
 }
+// the game view's name for a screen reader, in the player's language (i18n.js applyLang)
+renderer.domElement.dataset.i18nLabel = 'GAME VIEW: ROADS, RIVERS AND TRAIN TRACKS TO HOP ACROSS';
+applyLang();
 playReplay(REPLAY_CODE);
 if (loadText(HOWTO_KEY) !== '1' && !G.replay) showHowto();
 // build the other shaders (the see-through landing spot, shield bubble and ghost) after the first title frame, so

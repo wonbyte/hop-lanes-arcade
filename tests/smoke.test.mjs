@@ -50,7 +50,7 @@ test('3. touch: tap left half to join and hop', async () => {
     await waitState(page, 'attract');
     const box = await page.locator('#stage').boundingBox();
     assert.ok(box, 'stage has a box');
-    const x = box.x + box.width * 0.25, y = box.y + box.height * 0.5;
+    const x = box.x + box.width * 0.25, y = box.y + box.height * 0.62;   // the field between the title menu and the join cards
     await page.touchscreen.tap(x, y);
     await waitState(page, 'play');
     assert.equal(await page.evaluate(() => window.hopLanes.players[0].joined), true);
@@ -74,7 +74,7 @@ test('4. game over when idle', async () => {
   } finally { await context.close(); }
 });
 
-test('4b. restart after game over covers the screen, then counts down', async () => {
+test('4b. restart after game over covers the screen, then counts down READY, GO! in a second', async () => {
   const { context, page, errors } = await open({}, INDEX + '#debug');
   try {
     await waitState(page, 'attract');
@@ -82,9 +82,21 @@ test('4b. restart after game over covers the screen, then counts down', async ()
     await waitState(page, 'play');
     await page.waitForFunction(() => window.hopLanes.state === 'over', null, { timeout: 90000 });
     await page.waitForFunction(() => !document.getElementById('results').hidden, null, { timeout: T });
+    // the results take no tap for their first half second (no accidental retry)
+    const early = await page.evaluate(() => {
+      const was = window.hopLanes.canRetry;
+      window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW' }));
+      return { was, wipe: document.getElementById('wipe').classList.contains('on'), state: window.hopLanes.state };
+    });
+    assert.deepEqual(early, { was: false, wipe: false, state: 'over' }, 'a key right away does nothing');
+    await page.waitForFunction(() => window.hopLanes.canRetry, null, { timeout: T });
+    assert.equal(await page.evaluate(() => document.activeElement && document.activeElement.id), 'again', 'PLAY AGAIN has the focus');
     await page.keyboard.press('KeyW');
     await waitState(page, 'countdown');
-    await page.waitForFunction(() => !document.getElementById('wipe').classList.contains('on'), null, { timeout: T });
+    await page.waitForFunction(() => /READY/.test(document.querySelector('#banner h2').textContent), null, { timeout: T });
+    const left = await page.evaluate(() => window.hopLanes.countdown);
+    assert.ok(left > 0 && left <= 1, 'a one-player retry counts down one second (game time): ' + left);
+    await waitState(page, 'play');
     assert.equal(await page.evaluate(() => window.hopLanes.players[0].joined), true);
     assert.deepEqual(errors, []);
   } finally { await context.close(); }
@@ -144,7 +156,7 @@ test('4e. pause with P, mute with M', async () => {
     assert.equal(await page.evaluate(() => window.hopLanes.muted), false);
     await page.keyboard.press('KeyM');
     assert.equal(await page.evaluate(() => window.hopLanes.muted), true);
-    assert.equal(await page.evaluate(() => document.getElementById('mute').getAttribute('aria-pressed')), 'true');
+    assert.equal(await page.evaluate(() => document.getElementById('mute').getAttribute('aria-pressed')), 'false', 'pressed means the sound is on');
     assert.deepEqual(errors, []);
   } finally { await context.close(); }
 });
@@ -187,6 +199,9 @@ test('5c. a replay link plays the same run again, across traffic, on another scr
     await waitState(page, 'attract');
     await settle(page, 1500);   // traffic runs on the title screen: the replay must not depend on how long
     await page.keyboard.press('KeyW');
+    await waitState(page, 'countdown');
+    await settle(page, 300);
+    await page.keyboard.press('KeyW');   // a joined player's key starts at once: the replay must not depend on that either
     await waitState(page, 'play');
     // run forward into roads, rivers and rails until something ends the run
     // (each hop is waited to land before the next, so no hop is queued behind another)

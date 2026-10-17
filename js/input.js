@@ -1,19 +1,22 @@
 import { audio, muted, setMuted } from './audio.js';
-import { $, G, RESULTS_DELAY } from './core.js';
+import { $, G } from './core.js';
 import { stage } from './gfx.js';
-import { players, queueMove } from './players.js';
-import { cycleChar, hideHowto, join, pauseGame, restart, resumeGame } from './screens.js';
+import { crouch, players, queueMove } from './players.js';
+import { cycleChar, hideHowto, join, pauseGame, playAgain, resumeGame, toMenu } from './screens.js';
 import { closeDialog, dialogOpen } from './panels.js';
 
 // Input: keyboard, the on-screen buttons, and taps and swipes on the field.
 // ---------- input ----------
-const canRestart = () => G.state === 'over' && G.stateT > RESULTS_DELAY && !G.restarting;
+// the countdown ends at once (a joined player's tap or key, or START): the world clock goes on from here, and the
+// replay code keeps the tick play began on, so the run is the same however long the countdown was
+const goNow = () => { G.countdown = Math.min(G.countdown, 0.01); };
 function press(i, dx, dr) {
   audio();
   if (G.restarting || hideHowto()) return;
   if (G.state === 'paused') { resumeGame(); return; }
-  if (canRestart()) restart(i);
-  else if (G.replay) return;   // a replay plays itself: no joins, no hops, until it is over
+  if (G.state === 'over') { playAgain(i); return; }   // once the results have shown a moment (screens.js canRetry)
+  if (G.replay) return;   // a replay plays itself: no joins, no hops, until it is over
+  if (G.state === 'countdown' && players[i].joined) goNow();
   else if (G.state === 'attract' || G.state === 'countdown') join(i);
   else if (G.state === 'play') { if (players[i].joined) queueMove(i, dx, dr); }
 }
@@ -21,10 +24,10 @@ function pressStart() {
   audio();
   if (G.restarting || hideHowto()) return;
   if (G.state === 'paused') { resumeGame(); return; }
-  if (canRestart()) restart();
+  if (G.state === 'over') playAgain();
   else if (G.replay) return;
   else if (G.state === 'attract') join(0);
-  else if (G.state === 'countdown') G.countdown = Math.min(G.countdown, 0.01);
+  else if (G.state === 'countdown') goNow();
 }
 
 const KEYS = {
@@ -38,6 +41,7 @@ window.addEventListener('keydown', e => {
   if (panelKey(e, k || start)) return;
   if (k) { e.preventDefault(); press(...k); }
   else if (start) { e.preventDefault(); pressStart(); }
+  else if (e.code === 'Escape' && G.state === 'over') toMenu();   // the results: back to the title
   else if (e.code === 'KeyP' || e.code === 'Escape') togglePause();
   else if (e.code === 'KeyM') setMuted(!muted);
 });
@@ -59,6 +63,7 @@ function panelKey(e, gameKey) {
   return panelUp();   // a panel is open: keys go to its buttons
 }
 $('mute').addEventListener('click', () => { audio(); setMuted(!muted); });
+$('pauseBtn').addEventListener('click', () => { audio(); pauseGame(); });   // the II button of the slim top bar in play
 setMuted(muted);
 // character picker arrows on the join cards (they sit on the field, so the field must not also get the touch)
 /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll('.cyc')).forEach(btn => {
@@ -101,9 +106,10 @@ function touchRing(clientX, clientY, i, r) {
   setTimeout(gone, 500);   // also without animations (reduced motion)
 }
 stage.addEventListener('pointerdown', e => {
-  if (e.button > 0 || panelUp() || /** @type {HTMLElement} */ (e.target).closest('#cards, #howto, #menu, #results button, #results textarea, #mute, .dialog .box')) return;
+  if (e.button > 0 || panelUp() || /** @type {HTMLElement} */ (e.target).closest('#cards, #howto, #menu, #results button, #results textarea, #marquee button, .dialog .box')) return;
   const r = stage.getBoundingClientRect();   // one layout read per touch
   const i = fieldPlayer(e.clientX, r);
+  if (G.state === 'play' && !G.replay) crouch(i);   // the animal crouches; the hop (or the swipe) comes on release
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, i, done: false });
   touchRing(e.clientX, e.clientY, i, r);
   try { stage.setPointerCapture(e.pointerId); } catch (err) {}   // release lands here even off the field

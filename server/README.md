@@ -19,7 +19,7 @@ Dependency-free Node 20 server for an online top-10 list.
 | `VERIFY_MS` | `300` | wall-clock budget for replaying one run (the replay blocks the event loop, so keep it short); a run that takes longer is answered `503 {"error":"busy: the replay check ran out of time"}` with `Retry-After: 30` (the server was slow, the run is not wrong) |
 | `VERIFY_BUDGET_MS` | `20000` | simulation wall time allowed per minute for the whole server, all clients together; once spent, a POST is answered `503 {"error":"busy"}` with `Retry-After` (seconds) instead of being replayed |
 | `VERIFY_CLIENT_MS` | `5000` | the same for one client (an IPv4 address, or an IPv6 /56: what one subscriber may hold), so one client cannot spend the whole budget; past it `429` with `Retry-After` |
-| `MIN_RULES` | `RULES` of `js/rules.js` (3) | the oldest rules version a posted replay may be played with; an older one is `400 {"error":"old rules: replay version 2, this server takes 3 or newer"}`. Old links and ghosts still play in the game: this is only for new posts |
+| `MIN_RULES` | `RULES` of `js/rules.js` (4) | the oldest rules version a posted replay may be played with; an older one is `400 {"error":"old rules: replay version 2, this server takes 3 or newer"}`. Old links and ghosts still play in the game: this is only for new posts |
 | `SAVE_DELAY_MS` | `1000` | accepted POSTs are written to disk at most this often (asynchronously, to a temp file then renamed), and on exit (`0` writes at once, synchronously) |
 
 ## Endpoints

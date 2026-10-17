@@ -9,7 +9,7 @@ import http from 'node:http';
 import net from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { decodeReplay, encodeReplay } from '../js/replay.js';
-import { dailySeedFor, hashString } from '../js/rules.js';
+import { RULES, dailySeedFor, hashString } from '../js/rules.js';
 import { createSim, simulate } from '../js/sim.js';
 import { addrKey, getCacheSize, isoWeek, topJson } from '../server/scores.mjs';
 
@@ -20,8 +20,10 @@ const procs = [];
 // VERIFY is on by default; the tests turn it off unless they ask for it (VERIFY: null leaves it unset: the default)
 async function start(extraEnv = {}) {
   const port = await freePort();
-  const env = { ...process.env, PORT: String(port), DATA_FILE: path.join(dir, `s${port}.json`), VERIFY: '0', ...extraEnv };
+  // MIN_RULES 3: the saved browser runs below are rules 3 runs (null: the server's default, rules.js RULES)
+  const env = { ...process.env, PORT: String(port), DATA_FILE: path.join(dir, `s${port}.json`), VERIFY: '0', MIN_RULES: '3', ...extraEnv };
   if (env.VERIFY === null) delete env.VERIFY;
+  if (env.MIN_RULES === null) delete env.MIN_RULES;
   const p = spawn(process.execPath, [SERVER], { env, stdio: ['ignore', 'pipe', 'inherit'] });
   procs.push(p);
   const line = await new Promise((res, rej) => { p.stdout.once('data', d => res(String(d))); p.once('error', rej); });
@@ -191,7 +193,8 @@ const dailyDay = code => { const seed = decodeReplay(code).seed; for (let d = 1;
 const RUN38 = 'MnwxOTcxNjQ3MzAwfGNsYXNzaWN8ZnJvZyxmb3h8MXwwfDU2NXw1YVUzMWFVMzJhVTExYUQyMWFVMTlhUjEzYVIzMmFVOWFVMTJhUjM1YUQzN2FVMjRhUjIwYVIyN2FMMTFhUjEzYVIzN2FEMTZhVTI1YVIyM2FSMzVhVTIxYVUyMWFEMTVhVTExYVIyMWFEMzdhVTMxYVUxOGFVMjlhVTEwYVUxNGFVMTZhVTI0YVUzMGFEMThhVTIwYVUyM2FEMzVhVTM0YUQyOGFVOWFSMjZhVTEyYVUzM2FVMTFhVTM0YUQxM2FVMjZhRDI5YVUzNWFMMTlhTDIyYVUzNGFSMjZhRDMyYVUzNGFMMzZhVTIzYVUxNGFVMTNhVTE3YVUxN2FVMTdhVTIzYUwzMmFVMjFhVThhVTI5YVU5YVUyN2FVMjJhVTE2YVUxN2FVMTRhVTMyYVUyOGFVMzVhRDE1YUwzNGFEMTVhVTI5YUwzNWFMMjlhTDM0YUwxNWFMMTBhUjM0YUQyMWFVMjJhVTIxYVUyMWFVMTJhVThhVTM1YVUxMWFMMjVhTDE3YVIyOGFSMzNhTDI0YVUxOGFVMjdhUjM1YUwyN2FVMTFhVTIwYVUxNmFSMTNhTDE5YVIzNmFMMjVhVTI3YVUxN2FVMzZhTDEyYUwxNWFSMTdhVTI2YVUzNGFMMjZhTDIyYVIyNmFVMTRhRDE3YVUyNmFVMzRhVTE0YVUxNWFVMTNhRDIwYUQxN2FVOGFMMTRhRDExYVUxOWFEMjVhVTEwYVUzNGFSMzVhUjE0YVUyNWFVMTJhRDlhVTlhRDExYVIyM2FSMjhhRDE0YUQxMWFVMjFhRDIyYVUyNGFEMTZhVTMyYVUxMGFEMzZhVTE4YVUxNWFMMTRhUjE4YVUxM2FSMTBhVTM1YVUyMWFVMjlhRDE1YVUyNmFEMzdhVTMxYUwxMGFVMzJhRDM0YVUzNGFEMzdhVTEwYUQyNmFVMTRhRDMyYVUzMmFEMTVhVTI5YUQxOWFVOGFEMTJhVTI0YUQzMGFVMTFhVTE5YVIyNmFMOGFSMzFhRDMzYUQyNmFVMThhRDIyYVUzNGFEMjFhVTMxYUQxMGFVMjJhRDMwYVUzNGFEMjZhVTE0YUQyNGFVMzJhRDI4YVUxN2FVMzRhVTEyYVUyNGFSMzNhTDIzYVIxMmFSMzNhTDI3YVU4YVUxOWFVMjBhVTMzYUwyMWFSMjBhTDIyYVIyNWFMMTNhUjI2YVUxNWFMMjVhUjMxYVUxMGFSMzRhTDIyYUwyM2FSMTBhUjIwYVUzMGFVMTdhRDEwYVUzNGFMMjdhUjlhTDM1YUQyN2FVMjZhTDEyYUwzNGFMMjJhTDMwYVIyNGFMMjFhTDI5YUwyNGFMMzFhRDEzYVUxNWFEMzFhTDE1YUQzNWFVMTZhTDI5YVUxMGFVMjFhTDIwYUQ4YVUyMWFSOWFSMzFhRDEwYUwzNWFVMTBhRDEyYUwzNGFV';
 const SEED78 = 'Mnw3NzQ1NTM4MzR8Y2xhc3NpY3xmcm9nLGZveHwxfDB8NjcwfDVhVTI3YVUyMWFVMjRhUjI0YUQxNmFMMTRhTDhhUjEwYUQzMmFVMTdhRDMyYVUxN2FMMzBhRDI1YVUxMmFMMjdhTDE2YUQyNmFVMTZhUjExYUwyMWFMMjBhUjMxYVIxOGFVMzJhVTEyYUQyN2FVMTBhVTIwYVUyMWFVOWFVMTlhVTEzYVUyOWFVMTdhVTMzYVUxNGFVMjdhVTE5YVUxNGFVMjRhVTIyYVUxN2FVMjhhVTE3YVUxMWFSMjJhUjE3YUQxMWFVMjJhRDEwYVUyMmFEMTdhVTEzYVUyM2FVMzNhRDI3YVUyOWFVMTBhVTI0YVUxMWFVMjlhVTE5YVIxOGFVMjdhVTE0YVUyMGFEMThhVTE3YUQyM2FVMTdhRDE5YVUxNmFMOWFVMzBhVTI0YVUyOWFMMzBhRDMxYVUyMmFMMTJhRDMzYVUxM2FVMjVhVTMxYVUyM2FVMTFhVTMyYVIyMmFSMjZhUjEwYVIyOWFMMjRhTDMwYVUyMWFVMzFhVTE1YVIxM2FSMjZhTDIzYUwzMWFSMjRhVTI2YVUxMWFVMTNhVTI1YVU5YVUxN2FSMjZhTDI4YVUyNmFSMjhhVTE5YUw4YVIyOWFEOGFVMjJhUjMwYUQxN2FVMzNhUjI0YVIxNGFSMThhUjIwYVI5YUwxM2FMMjVhVTI3YUwxNmFSMjVhVThhRDI5YVUxMWFMMTRhVTIzYVUxMmFVMjJhRDEyYVU5YVU4YVUyNGFVMjZhVTIxYUwyNmFVMjVhUjEyYVIxNGFVMTFhVTIzYUQzM2FEMzBhVTE4YVIxNWFSMTRhTDMxYUQzMGFMMzFhVTI5YVUxN2FSMjFhRDI0YVU4YVUyM2FEMjlhVTIzYUwyMmFVMjhhVTI5YVUxM2FSMjBhRDEwYVUyNWFMMjVhVTlhVTEyYVUxNGFVMjBhVTE2YVUyNWFSMjNhUjE4YUwyN2FSOWFSMTlhTDE0YUwxMWFVMThhRDMzYVUxNmFMMTNhRDE4YVUzMGFVMTdhRDIxYVUyN2FMMTVhTDMyYVIzM2FVMTJhVTI1YUQxOWFEMzBhUjMwYUQ5YVUyOGFMMjlhRDI1YVIxMWFMMTFhTDI0YUQyMGFVMTJhRDEzYVUyNWFMMTZhUjlhUjE2YUQzMWFVMjZhTDEzYVIxMWFEMjRhVTMxYUQxOWFSOWFVOWFSMTRhRDE1YUQyOWFEMTBhUjI2YVIxMWFSMTFhTDI5YVUyM2FMMTJhTDIyYUwxMmFSMjNhUjMyYVIyN2FSMjhhUjI0YUw';
 const SEED30 = 'Mnw3NzQ1NTM4MzR8Y2xhc3NpY3xmcm9nLGZveHwxfDB8NjcwfDVhVTI3YVUyMWFVMjRhUjI0YUQxNmFMMTRhTDhhUjEwYUQzMmFVMTdhRDMyYVUxN2FMMzBhRDI1YVUxMmFMMjdhTDE2YUQyNmFVMTZhUjExYUwyMWFMMjBhUjMxYVIxOGFVMzJhVTEyYUQyN2FVMTBhVTIwYVUyMWFVOWFVMTlhVTEzYVUyOWFVMTdhVTMzYVUxNGFVMjdhVTE5YVUxNGFVMjRhVTIyYVUxN2FVMjhhVTE3YVUxMWFSMjJhUjE3YUQxMWFVMjJhRDEwYVUyMmFEMTdhVTEzYVUyM2FVMzNhRDI3YVUyOWFVMTBhVTI0YVUxMWFVMjlhVQ';
-// A run as the game posts it today: rules 3 (MIN_RULES), no handicap; the score is what it plays to.
+// A run as the game posted it: rules 3 (the worlds these hops were played on; start() sets MIN_RULES 3), no handicap;
+// the score is what it plays to.
 function asNow(code, over = {}) {
   const rp = { ...decodeReplay(code), version: 3, handicap: 0, ...over };
   const run = simulate(rp);
@@ -510,15 +513,20 @@ test('the week view and the other views of several buckets keep one entry per na
 
 // ---- finding 2: the rules version -----------------------------------------------------------------------------
 test('MIN_RULES: a replay played with older rules is refused (400), unless the server allows it', async () => {
-  const old = { ...decodeReplay(CLASSIC_RUN), version: 2, handicap: 0 }, score = simulate(old).score, code = encodeReplay(old);
-  for (const VERIFY of ['1', '0']) {
-    const srv = await start({ RATE_MAX: '1000', VERIFY });
-    const r = await poster(srv)({ name: 'Old', score, mode: 'classic', replay: code });
-    assert.equal(r.status, 400, 'VERIFY=' + VERIFY);
-    assert.equal((await r.json()).error, 'old rules: replay version 2, this server takes 3 or newer');
+  for (const version of [2, 3]) {
+    const old = { ...decodeReplay(CLASSIC_RUN), version, handicap: 0 }, score = simulate(old).score, code = encodeReplay(old);
+    for (const VERIFY of ['1', '0']) {
+      const srv = await start({ RATE_MAX: '1000', VERIFY, MIN_RULES: null });   // the default: rules.js RULES
+      const r = await poster(srv)({ name: 'Old', score, mode: 'classic', replay: code });
+      assert.equal(r.status, 400, 'VERIFY=' + VERIFY);
+      assert.equal((await r.json()).error, `old rules: replay version ${version}, this server takes ${RULES} or newer`);
+    }
+    const two = await start({ RATE_MAX: '1000', VERIFY: '1', MIN_RULES: '2' });
+    assert.equal((await poster(two)({ name: 'Old', score, mode: 'classic', replay: code })).status, 200, 'MIN_RULES=2: rules ' + version);
   }
-  const two = await start({ RATE_MAX: '1000', VERIFY: '1', MIN_RULES: '2' });
-  assert.equal((await poster(two)({ name: 'Old', score, mode: 'classic', replay: code })).status, 200, 'MIN_RULES=2');
+  // a run of today's rules is taken by default (the same hops on a rules 4 world: another run, checked as one)
+  const now = { ...decodeReplay(CLASSIC_RUN), version: RULES, handicap: 0 }, srv = await start({ RATE_MAX: '1000', VERIFY: '1', MIN_RULES: null });
+  assert.equal((await poster(srv)({ name: 'New', score: simulate(now).score, mode: 'classic', replay: encodeReplay(now) })).status, 200, 'rules ' + RULES);
 });
 
 // ---- finding 3: cross-site posts ------------------------------------------------------------------------------

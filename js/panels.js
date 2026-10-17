@@ -20,6 +20,7 @@ function openDialog(id) {
 function closeDialog() {
   if (!openBox) return false;
   openBox.hidden = true; openBox = null;
+  answerCode(null);   // a question closed without OK (Escape, a join) answers nothing
   return true;
 }
 const dialogOpen = () => !!openBox && !openBox.hidden;
@@ -57,6 +58,80 @@ $('look').addEventListener('click', () => {
   labelLook();
 });
 document.addEventListener('hoplanes:lang', labelSettings);
+
+// ---------- missions: the title's chip opens both lists (screens.js fills them) ----------
+$('missionChip').addEventListener('click', () => { audio(); sfx.tick(); openDialog('missionsBox'); });
+$('closeMissions').addEventListener('click', () => { sfx.tick(); closeDialog(); });
+
+// ---------- a question in letters: the room code, the initials (screens.js asks with a hoplanes:ask event) ----------
+// Each slot has a 44px up and down button; letters and digits typed on a keyboard fill the slots in turn.
+const ALPHA = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+let codeDone = null, codeAt = 0;
+const codeLetters = [];
+const codeText = () => codeLetters.map(k => ALPHA[k]).join('');
+function answerCode(code) {
+  if (!codeDone) return;
+  const done = codeDone;
+  codeDone = null;
+  done(code);
+}
+function showSlots() {
+  $('slots').querySelectorAll('.slot').forEach((el, k) => {
+    el.querySelector('b').textContent = ALPHA[codeLetters[k]];
+    el.classList.toggle('cur', k === codeAt);
+  });
+}
+function turnSlot(k, d) {
+  codeAt = k;
+  codeLetters[k] = (codeLetters[k] + d + ALPHA.length) % ALPHA.length;
+  sfx.tick();
+  showSlots();
+}
+function slotButton(text, label, k, d) {
+  const b = document.createElement('button');
+  b.type = 'button'; b.textContent = text; b.setAttribute('aria-label', label);
+  b.addEventListener('click', () => turnSlot(k, d));
+  return b;
+}
+function buildSlots(len, value) {
+  const box = $('slots');
+  box.textContent = '';
+  codeLetters.length = 0; codeAt = 0;
+  for (let k = 0; k < len; k++) {
+    codeLetters.push(Math.max(0, ALPHA.indexOf(value[k] || 'A')));
+    const slot = document.createElement('div');
+    slot.className = 'slot';
+    slot.append(slotButton('\u25b2', t('LETTER {n}: NEXT', { n: k + 1 }), k, 1), document.createElement('b'), slotButton('\u25bc', t('LETTER {n}: BACK', { n: k + 1 }), k, -1));
+    box.appendChild(slot);
+  }
+  showSlots();
+}
+document.addEventListener('hoplanes:ask', e => {
+  const { title, len, value, done } = /** @type {CustomEvent} */ (e).detail;
+  $('codeTitle').textContent = title;
+  buildSlots(len, String(value || '').toUpperCase());
+  $('codeOk').textContent = t('OK'); $('codeCancel').textContent = t('CANCEL');
+  openDialog('codeBox');
+  try { $('codeOk').focus({ preventScroll: true }); } catch (err) {}
+  codeDone = done;
+});
+function finishCode(ok) {
+  const code = codeText(), done = codeDone;
+  codeDone = null;
+  closeDialog();
+  if (done) done(ok ? code : null);
+}
+$('codeOk').addEventListener('click', () => { sfx.tick(); finishCode(true); });
+$('codeCancel').addEventListener('click', () => { sfx.tick(); finishCode(false); });
+// typing: a letter or digit fills the current slot and moves on; Backspace goes back; Enter is OK
+$('codeBox').addEventListener('keydown', e => {
+  const m = /^(?:Key|Digit)([A-Z0-9])$/.exec(e.code);
+  if (m) { codeLetters[codeAt] = ALPHA.indexOf(m[1]); codeAt = Math.min(codeLetters.length - 1, codeAt + 1); showSlots(); }
+  else if (e.code === 'Backspace') { codeAt = Math.max(0, codeAt - 1); showSlots(); }
+  else if (e.code === 'Enter' && e.target !== $('codeCancel')) finishCode(true);
+  else return;
+  e.preventDefault(); e.stopPropagation();
+});
 
 // ---------- pause menu ----------
 document.addEventListener('hoplanes:pause', () => { labelPause(); openDialog('pauseBox'); });   // screens.js pauseGame() shows the box
@@ -184,7 +259,7 @@ function announceFrame() {
     if (G.state === 'play') { if (from === 'countdown') { lastRows = [0, 0]; announce(t('GO!')); } }   // a resume from pause goes on counting
     else if (G.state === 'over') {
       const parts = players.filter(p => p.joined).map(p => t('PLAYER {n}', { n: p.id + 1 }) + ' ' + p.score);
-      announce(t('GAME OVER') + '. ' + parts.join(', ') + '. ' + $('resNote').textContent);
+      announce(t('GAME OVER') + '. ' + parts.join(', ') + '. ' + $('resCause').textContent + ' ' + $('resNote').textContent);
     } else if (G.state === 'paused') announce(t('PAUSED'));
     return;
   }
@@ -195,5 +270,8 @@ function announceFrame() {
     if (tens > lastRows[p.id]) { lastRows[p.id] = tens; announce(t('PLAYER {n} ROW {m}', { n: p.id + 1, m: tens * 10 })); }
   }
 }
+
+// a warning for one player (players.js: the eagle, the rapids): said at once
+document.addEventListener('hoplanes:say', e => announce(String(/** @type {CustomEvent} */ (e).detail)));
 
 export { announceFrame, closeDialog, dialogOpen };

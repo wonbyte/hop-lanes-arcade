@@ -2,17 +2,21 @@
 // No DOM, no Three.js. players.js plays these rules in the browser (makeRules with effect hooks that move meshes and
 // make sounds); simulate() plays a replay with no effects, so the score server can check a posted score.
 // Everything here is step-driven (fixed STEP), so the browser and simulate() give the same run tick for tick.
-import { BEHIND_LIMIT, BOMB_TICKS, CAM_CATCH_RATE, CAM_CATCH_ROWS, CAM_CREEP, CAM_CREEP_GAIN, CAM_CREEP_MAX, COMBO_EVERY, HOP_MID, LOG_SLACK, LOG_SLACK_BODY, MAX_RUN_TICKS, RULES, RESCUE_HOP, START_X, COUNTDOWN, COMBO_GAP, EAGLE_IDLE, EAGLE_SWOOP, EAGLE_WARN, EDGE_DEATH, HIT_PAD, HOP_TIME, LEAD_FROM, LEAD_GAP, LEAD_SLOW, MAGNET_REACH, MAGNET_TIME, NEAR_MISS, PLAY_HALF, SHIELD_TIME, SLIDE_TIME, SPRING_HOP, STEP, PLANK_BACK, PLANK_BREAK, TAG_BOOST, hopTarget, hopTime, isBombPower, isWater, plankState, traitOf } from './rules.js';
+import { HIT_PAD_BODY, LEASH_CAM, LEASH_ROWS, NEAR_MISS_BODY, REJOIN_TICKS, isStill, BEHIND_LIMIT, BOMB_TICKS, CAM_CATCH_RATE, CAM_CATCH_ROWS, CAM_CREEP, CAM_CREEP_GAIN, CAM_CREEP_MAX, COMBO_EVERY, HOP_MID, LOG_SLACK, LOG_SLACK_BODY, MAX_RUN_TICKS, RULES, RESCUE_HOP, START_X, COUNTDOWN, COMBO_GAP, EAGLE_IDLE, EAGLE_SWOOP, EAGLE_WARN, EDGE_DEATH, HIT_PAD, HOP_TIME, LEAD_FROM, LEAD_GAP, LEAD_SLOW, MAGNET_REACH, MAGNET_TIME, NEAR_MISS, PLAY_HALF, SHIELD_TIME, SLIDE_TIME, SPRING_HOP, STEP, PLANK_BACK, PLANK_BREAK, TAG_BOOST, hopTarget, hopTime, isBombPower, isWater, plankState, traitOf } from './rules.js';
 import { createWorldGen, railStep, trafficX } from './gen.js';
 
-const RULE_HOOKS = ['hop', 'combo', 'kill', 'rescue', 'shield', 'power', 'coin', 'land', 'hopPose', 'stand', 'warn', 'eagle', 'swoop', 'label', 'near', 'lives', 'teleport', 'bomb', 'unbomb', 'edge'];
+// rules 4 added: leashed(p, other) a forward hop refused by the couch leash; rejoin(p, eagle) a dead player is back
+// (eagle: the eagle that carried it off, or null); trait(p, key) an animal's edge saved it ('robot': it shook off the
+// eagle, still in p.eagle during the call; 'cat': its extra life)
+const RULE_HOOKS = ['hop', 'combo', 'kill', 'rescue', 'shield', 'power', 'coin', 'land', 'hopPose', 'stand', 'warn', 'eagle', 'swoop', 'label', 'near', 'lives', 'teleport', 'bomb', 'unbomb', 'edge', 'leashed', 'rejoin', 'trait'];
 // a player's run state, as it is when the animal appears on row 0. p.trait (rules.js traitOf) is set by the caller first.
 function resetPlayer(p) {
   p.trait = p.trait || {};
   Object.assign(p, {
     x: START_X[p.id], row: 0, alive: true, hop: null, queue: null, score: 0, idleT: 0, warned: false, eagle: null,
     facing: 0, cause: '', log: null, logOff: 0, trainDir: 0, combo: 0, lastHop: -9, shield: false, safeT: 0, magnetT: 0,
-    coins: 0, lives: p.trait.lives || 0, nearSeen: new Set(), nearRow: null, lead: false, edgeWarned: false
+    coins: 0, lives: p.trait.lives || 0, nearSeen: new Set(), nearRow: null, lead: false, edgeWarned: false,
+    rejoinT: 0, rejoined: false, shook: false   // rules 4: steps until the hop back in (0: none due), once per run; the robot's one shake
   });
 }
 // the camera's scroll line: it creeps forward on its own, and catches up fast to a player who runs ahead.
@@ -22,6 +26,17 @@ function creepCamera(camRow, playT, lead, dt) {
   if (lead - CAM_CATCH_ROWS > camRow) camRow += (lead - CAM_CATCH_ROWS - camRow) * Math.min(1, dt * CAM_CATCH_RATE);
   return camRow;
 }
+// the row the scroll line follows (creepCamera's lead): the front player's row. Rules 4, two players alive, not race:
+// the couch leash, at most LEASH_CAM rows past the trailing player's scroll target (creepCamera follows lead - CAM_CATCH_ROWS).
+// version: the rules version of the run. (app.js updateCamera calls this too.)
+function camLead(players, mode, version) {
+  let lead = -Infinity, trail = Infinity, alive = 0;
+  for (const p of players) if (p.joined && p.alive) { lead = Math.max(lead, p.row); trail = Math.min(trail, p.row); alive++; }
+  if ((version || RULES) < 4 || alive < 2 || mode === 'race') return lead;
+  return Math.min(lead, trail + LEASH_CAM + CAM_CATCH_ROWS);
+}
+// facing: 0 = forward (-z), PI = back, +PI/2 = left, -PI/2 = right
+const facingOf = (dx, dr) => (dr > 0 ? 0 : dr < 0 ? Math.PI : (dx > 0 ? -Math.PI / 2 : Math.PI / 2));
 // the rows whose lanes a player can touch this step (collisions and landings read cars, logs and trains only there)
 function touchRows(players, into) {
   into.clear();
@@ -47,8 +62,12 @@ function makeRules(W) {
 
   const players = W.players || [];
   const rules3 = () => (G.rules || RULES) >= 3;
+  const rules4 = () => (G.rules || RULES) >= 4;
   const others = p => players.filter(q => q !== p && q.joined && q.alive);
   const bothJoined = () => players.length === 2 && players[0].joined && players[1].joined;
+  const partnerOf = p => (players[0] === p ? players[1] : players[0]);   // only with bothJoined()
+  // rules 4, two players, not race: the leash and the hop back in
+  const couch = () => rules4() && G.mode !== 'race' && bothJoined();
   const behindLimit = p => BEHIND_LIMIT + (p.trait.behind || 0);
   // two players (not race or tag): far out, a leader well ahead hops slower so the other can catch up
   // (runs every step for both players: no arrays here)
@@ -93,7 +112,7 @@ function makeRules(W) {
     const pw = lane.power;
     lane.power = null;
     let kind = pw.kind;
-    if (isBombPower(kind, lane.r, bothJoined())) {   // two players: this magnet is a bomb (world.js draws it so)
+    if (isBombPower(kind, lane.r, bothJoined(), G.rules || RULES)) {   // two players: this magnet is a bomb (world.js draws it so)
       const other = others(p)[0];
       kind = other && dropBomb(p, other) ? 'bomb' : 'shield';   // nobody to bomb, or water ahead of them: a shield for the picker
     }
@@ -137,14 +156,13 @@ function makeRules(W) {
   function tryMove(p, dx, dr) {
     if (!p.alive || p.eagle) return;   // once the eagle is coming there is no escape
     if (p.hop) { p.queue = [dx, dr]; return; }
-    // facing: 0 = forward (-z), PI = back, +PI/2 = left, -PI/2 = right
-    p.facing = dr > 0 ? 0 : dr < 0 ? Math.PI : (dx > 0 ? -Math.PI / 2 : Math.PI / 2);
+    p.facing = facingOf(dx, dr);
     const from = W.lane(p.row);
     const spring = dr === 1 && !!from && from.kind === 'spring';   // a spring throws a forward hop two rows on
     if (spring) dr = 2;
     const tx = hopTo(p, dx, dr);
     if (tx === null) return;
-    if (p.row + dr < G.camRow - behindLimit(p)) return;
+    if (p.row + dr < G.camRow - behindLimit(p) || leashed(p, dr)) return;
     const dur = hopDuration(p, from, spring);
     p.hop = {
       t: 0, dur, fromRow: p.row, fx: p.x, fz: -p.row, tx, tz: -(p.row + dr),
@@ -169,6 +187,15 @@ function makeRules(W) {
     const tx = hopTarget(lane, p.x, dx, PLAY_HALF);
     if (tx !== null || !p.log || dx !== 0 || !rules3()) return tx;
     return hopTarget(lane, Math.max(-PLAY_HALF, Math.min(PLAY_HALF, p.x)), dx, PLAY_HALF);
+  }
+  // rules 4, the couch leash: a forward hop that would put this player more than LEASH_ROWS rows past the other
+  // (alive) one is refused
+  function leashed(p, dr) {
+    if (dr <= 0 || !couch()) return false;
+    const q = partnerOf(p);
+    if (!q.alive || p.row + dr - q.row <= LEASH_ROWS) return false;
+    fx.leashed(p, q);
+    return true;
   }
   // how long a hop from `from` takes: mud is slow, the bunny quick; tag, a spring and the two-player leader change it
   function hopDuration(p, from, spring) {
@@ -196,10 +223,47 @@ function makeRules(W) {
     // just after a rescue cars and trains pass through you, but water still does not hold you up
     if ((cause === 'squash' || cause === 'train' || cause === 'twister') && p.safeT > 0) return;
     if ((cause === 'squash' || cause === 'train' || cause === 'twister' || cause === 'splash' || cause === 'fall') && p.shield && rescue(p)) return;
-    if (cause === 'splash' && p.lives > 0 && rescue(p)) { p.lives--; fx.lives(p); return; }   // the cat's extra life
+    if (cause === 'splash' && p.lives > 0 && rescue(p)) { p.lives--; fx.lives(p); fx.trait(p, 'cat'); return; }   // the cat's extra life
     p.alive = false; p.cause = cause; p.hop = null;
+    // rules 4, two players (not race): the first death comes back in REJOIN_TICKS steps if the partner lives on
+    if (couch() && !p.rejoined && G.state === 'play' && partnerOf(p).alive) p.rejoinT = REJOIN_TICKS;
     fx.kill(p, cause);
     W.over();
+  }
+  // rules 4: the hop back in, counted down by the partner's steps (the partner is alive, or no rejoin comes). It lands
+  // on still ground at the partner's row, the row ahead of it or the row behind, on the nearest free column, and
+  // blinks (safe) for SHIELD_TIME; with no such place yet it tries again the next step. The score goes on from there.
+  function stepRejoin(p) {
+    const q = partnerOf(p);
+    if (q.alive || !q.rejoinT || --q.rejoinT > 0) return;
+    const spot = rejoinSpot(q, p);
+    if (!spot) { q.rejoinT = 1; return; }
+    const eagle = q.eagle;
+    Object.assign(q, { alive: true, cause: '', row: spot.r, x: spot.x, hop: null, queue: null, log: null, logOff: 0, eagle: null, facing: 0,
+      idleT: 0, warned: false, combo: 0, safeT: SHIELD_TIME, magnetT: 0, nearRow: null, lead: false, edgeWarned: false, rejoined: true });
+    q.nearSeen.clear();
+    fx.rejoin(q, eagle);
+  }
+  function rejoinSpot(q, p) {
+    for (const r of [p.row, p.row + 1, p.row - 1]) {
+      const lane = W.lane(r);
+      if (!lane || !isStill(lane.kind) || r < G.camRow - behindLimit(q) + 1) continue;
+      const x = freeColumn(lane, p, r === p.row);
+      if (x !== null) return { r, x };
+    }
+    return null;
+  }
+  // the free column nearest the partner (not the partner's own one on its row): no tree or bomb, no portal
+  function freeColumn(lane, p, sameRow) {
+    const px = Math.max(-PLAY_HALF, Math.min(PLAY_HALF, Math.round(p.x)));
+    const taken = sameRow ? [px, p.hop ? Math.round(p.hop.tx) : px] : [];
+    for (let d = 0; d <= 2 * PLAY_HALF; d++) {
+      for (const x of d ? [px + d, px - d] : [px]) {
+        if (Math.abs(x) > PLAY_HALF || lane.trees.has(x) || taken.includes(x) || (lane.portals && lane.portals.includes(x))) continue;
+        return x;
+      }
+    }
+    return null;
   }
   // The landing helpers return undefined when the landing goes on, or the value land() returns at once: after a fall
   // into water (or off a tile) that is p.alive, which a shield or the cat's extra life can keep true.
@@ -281,17 +345,19 @@ function makeRules(W) {
   }
   // what moves across the row under the player: cars, boulders or the twister (a near miss counts once per car), a
   // train. Returns true if it hit.
+  // rules 4: the hit width is smaller (HIT_PAD_BODY: the body overlaps the car), the near-miss band ends where it did
   function hitByTraffic(p, hz) {
+    const pad = rules4() ? HIT_PAD_BODY : HIT_PAD, nearBand = rules4() ? NEAR_MISS_BODY : NEAR_MISS;
     if (hz.kind === 'road' || hz.kind === 'rocks' || hz.twister) {   // the twister crosses a grass row
       for (const o of hz.objs) {
-        const gap = Math.abs(o.x - p.x) - o.len / 2 - HIT_PAD;
+        const gap = Math.abs(o.x - p.x) - o.len / 2 - pad;
         // Stryker disable next-line BooleanLiteral: equivalent: after the kill the caller's slow check does nothing (kill() returns at once for a dead player; a shield rescue lands on a row inside the limit)
         if (gap < 0) { kill(p, o.twister ? 'twister' : 'squash'); return true; }
-        if (gap < NEAR_MISS && !o.twister && !p.nearSeen.has(o)) nearMiss(p, o);
+        if (gap < nearBand && !o.twister && !p.nearSeen.has(o)) nearMiss(p, o);
       }
     } else if (hz.kind === 'rail' && hz.train.active) {
       // Stryker disable next-line BooleanLiteral: equivalent: after the kill the caller's slow check does nothing (kill() returns at once for a dead player; a shield rescue lands on a row inside the limit)
-      if (Math.abs(hz.train.x - p.x) < hz.train.len / 2 + HIT_PAD) { p.trainDir = hz.dir; kill(p, 'train'); return true; }
+      if (Math.abs(hz.train.x - p.x) < hz.train.len / 2 + pad) { p.trainDir = hz.dir; kill(p, 'train'); return true; }
     }
     return false;
   }
@@ -315,6 +381,9 @@ function makeRules(W) {
   // one fixed step of a live player (the browser calls it from updatePlayer, simulate() directly)
   function stepPlayer(p, dt) {
     if (bombs.length) stepBombs();   // whoever steps first frees a spent bomb
+    // first: a partner due back this step is back before anything can kill p (p's death then finds a live partner
+    // and gets its own hop back in, instead of a game over with the partner back on the field)
+    if (couch() && G.state === 'play') stepRejoin(p);
     if (p.safeT > 0) p.safeT = Math.max(0, p.safeT - dt);
     const ok = p.hop ? stepHop(p, W.lane(p.row), dt) : stand(p, dt);
     if (ok && p.alive && !p.safeT) checkHazards(p, W.lane(p.row));
@@ -334,7 +403,16 @@ function makeRules(W) {
     if (!p.eagle) return;
     p.eagle.t = Math.min(1, p.eagle.t + dt / EAGLE_SWOOP);
     fx.swoop(p);
-    if (p.eagle.t >= 1) kill(p, 'eagle');
+    if (p.eagle.t >= 1 && !shakeOff(p)) kill(p, 'eagle');
+  }
+  // rules 4: the robot shakes off its first eagle of the run (fx.trait sees the eagle still in p.eagle), then it waits
+  // a whole idle time again
+  function shakeOff(p) {
+    if (!rules4() || !p.trait.shake || p.shook) return false;
+    p.shook = true;
+    fx.trait(p, 'robot');
+    p.eagle = null; p.idleT = 0; p.warned = false;
+    return true;
   }
   return { giveShield, kill, reset, stepPlayer, tryMove };
 }
@@ -363,7 +441,7 @@ function winnerOf(players, mode) {
 // overwritten move, not an ice slide or a rescue), at the play tick it started; dr is the move (1 for a spring's
 // two-row hop). The score server stores only these. It changes nothing in the run.
 function createSim(rp, { onHop = null } = {}) {
-  const gen = createWorldGen(rp.seed);
+  const gen = createWorldGen(rp.seed, rp.version || RULES);   // the world of the run's rules version
   const lanes = new Map();
   const lane = r => {
     let l = lanes.get(r);
@@ -401,9 +479,7 @@ function createSim(rp, { onHop = null } = {}) {
       playTick++;
       feedReplay(feed, playTick, (i, dx, dr) => rules.tryMove(players[i], dx, dr));
       S.playT += STEP;
-      let lead = -Infinity;
-      for (const p of players) if (p.joined && p.alive) lead = Math.max(lead, p.row);
-      S.camRow = creepCamera(S.camRow, S.playT, lead, STEP);
+      S.camRow = creepCamera(S.camRow, S.playT, camLead(players, rp.mode, S.rules), STEP);
     }
     const w = S.worldTick * STEP;
     for (const r of touchRows(players, hot)) {
@@ -442,4 +518,4 @@ function simulate(rp, { maxTicks = MAX_RUN_TICKS, maxMs = Infinity, until = Infi
   };
 }
 
-export { createSim, creepCamera, feedReplay, makeRules, resetPlayer, runOver, simulate, topScore, touchRows, winnerOf };
+export { camLead, createSim, creepCamera, feedReplay, makeRules, resetPlayer, runOver, simulate, topScore, touchRows, winnerOf };

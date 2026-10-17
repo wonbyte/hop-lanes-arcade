@@ -4,18 +4,20 @@ import { COUNTDOWN, FIRST_ROW, HOP_TIME, MODES, PLAY_HALF, STEP, TRAIN_SPEED, WR
 // ---------- tuning ----------
 // what decides a run lives in rules.js (pure: sim.js and the score server use it too); the rest is here
 const LANES_AHEAD = 22, LANES_BEHIND = 12;
-const RESULTS_DELAY = 1.1;    // seconds from last death to the results panel (and restart)
+const RESULTS_DELAY = 0.7;    // real seconds from the last death to the results panel (the slow motion does not stretch it)
+const RETRY_AFTER = 0.5;      // real seconds the results show before a tap or key plays again (no accidental retry)
+const SOLO_COUNTDOWN = 1;     // a quick retry of a one-player game counts down READY, GO! (rules.js COUNTDOWN: 3 s from the title)
 const GO_TIME = 0.6;
 const WIPE_MS = 130;          // restart fade; the new world is built while the screen is covered
 const PRIZE_COST = 50;        // coins for one turn of the prize machine
 const NIGHT_START = 90, NIGHT_FULL = 150;   // rows over which day turns into night
-const TUTORIAL_SEED = 197;    // the very first classic game: three clear grass rows, a slow road, a rest, a river with long logs
-const BIOME_ROWS = 100;       // the look of the land changes every this many rows (world.js biomeAt)
+const TUTORIAL_SEED = 21216;  // the very first classic game (rules 4 worlds): at most 3 danger rows in a row to row 25 (docs/evidence.md; it was 197)
+const BIOME_ROWS = 50;        // the look of the land changes every this many rows (world.js biomeAt; looks only)
 const OVER_SLOW = 0.35, OVER_SLOW_T = 0.6;   // game over: the world runs this much slower for this long (real seconds)
 const OVER_ZOOM = 1.22;       // and the view closes in on the fallen player
 const LAND_DIP = 0.14;        // seconds of the small view dip after a landing (players.js sets G.landT, app.js draws it)
 // looks a player can unlock with the all-time best (screens.js): the land starts as that biome, or at night
-const LOOKS = [{ key: 'auto', at: 0 }, { key: 'desert', at: 100 }, { key: 'night', at: 150 }, { key: 'tundra', at: 200 }, { key: 'swamp', at: 300 }];
+const LOOKS = [{ key: 'auto', at: 0 }, { key: 'desert', at: 40 }, { key: 'night', at: 70 }, { key: 'tundra', at: 100 }, { key: 'swamp', at: 150 }];
 const TAU = Math.PI * 2;
 const $ = id => document.getElementById(id);
 
@@ -43,7 +45,7 @@ const G = {
   room: '',            // room code (room mode: a shared world for two phones)
   weather: '',         // '', 'rain' or 'snow' at the camera
   shakeT: 0,           // seconds left of the small view nudge (a near miss)
-  hint: false,         // first run: the floating hints follow the first player (app.js placeHint) until row 12
+  hint: false,         // first run: the floating hints follow the first player (app.js placeHint) until row 20
   hintTurn: false,     // first run: the player has hopped sideways once (the SWIPE TO TURN hint is done)
   landT: 0,            // seconds left of the small view dip after a landing
   slowT: 0,            // real seconds left of the game-over slow motion
@@ -55,7 +57,11 @@ const G = {
   biomeBlock: 0,       // the BIOME_ROWS block the camera is in (a new one shows its name)
   runHandicap: 0,      // the handicap of this run, fixed at the first join (screens.js join; spawn and the replay code use it)
   worldDay: '',        // the day the daily world's seed was made for ('' for any other world; screens.js buildWorld)
-  overTick: -1         // G.tick of the step the run ended in (players.js finishes that step's rules, as sim.js does)
+  overTick: -1,        // G.tick of the step the run ended in (players.js finishes that step's rules, as sim.js does)
+  overRT: 0,           // real seconds since game over (app.js: the results come after RESULTS_DELAY of it)
+  resultsT: -1,        // real seconds the results panel has shown (-1: not yet); a retry needs RETRY_AFTER of it
+  quickStart: false,   // the next join is a retry of a one-player game: a short countdown (screens.js restart)
+  countFrom: 0         // the length the countdown started with (a short one says READY, not a number)
 };
 
 // ---------- test hooks and seeds ----------
@@ -85,4 +91,4 @@ function fail(why) {
   b.querySelector('p').textContent = why;
 }
 
-export { $, BENCH, BIOME_ROWS, LAND_DIP, LOOKS, OVER_SLOW, OVER_SLOW_T, OVER_ZOOM, TUTORIAL_SEED, COUNTDOWN, DEBUG, FIRST_ROW, FIXED_SEED, SHADOW_BASIC, G, GO_TIME, HOP_TIME, LANES_AHEAD, LANES_BEHIND, MODES, REPLAY_CODE, NIGHT_FULL, NIGHT_START, PLAY_HALF, PRIZE_COST, RESULTS_DELAY, SCORES_TOKEN, SCORES_URL, STEP, TAU, TRAIN_SPEED, WIPE_MS, WRAP, fail };
+export { $, BENCH, BIOME_ROWS, LAND_DIP, LOOKS, OVER_SLOW, OVER_SLOW_T, OVER_ZOOM, TUTORIAL_SEED, COUNTDOWN, DEBUG, FIRST_ROW, FIXED_SEED, SHADOW_BASIC, G, GO_TIME, HOP_TIME, LANES_AHEAD, LANES_BEHIND, MODES, REPLAY_CODE, NIGHT_FULL, NIGHT_START, PLAY_HALF, PRIZE_COST, RESULTS_DELAY, RETRY_AFTER, SCORES_TOKEN, SOLO_COUNTDOWN, SCORES_URL, STEP, TAU, TRAIN_SPEED, WIPE_MS, WRAP, fail };

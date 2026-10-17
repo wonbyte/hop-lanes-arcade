@@ -4,7 +4,7 @@ import { t } from './i18n.js';
 import { hatFor, isWater, traitOf } from './rules.js';
 import { feedReplay, makeRules, resetPlayer } from './sim.js';
 import { buzz } from './device.js';
-import { ONE, reduceMotion, scene } from './gfx.js';
+import { ONE, camera, reduceMotion, scene, stage, viewSize } from './gfx.js';
 import { CHARACTERS, COLORS, eagleBoxes, makeCharacter } from './models.js';
 import { PICK_KEY, loadText, setBank } from './storage.js';
 import { cachedGeo, voxelMesh } from './voxel.js';
@@ -18,11 +18,16 @@ function pickIndex(i, fallback) {
   const k = CHARACTERS.findIndex(c => c.key === loadText(PICK_KEY + i));
   return k >= 0 ? k : fallback;
 }
+// the score chip of player n: the name, the number, and the pills (OUT, the combo, the magnet with its time bar, SLOW)
+function chipOf(n) {
+  const el = $('score' + n), q = sel => /** @type {HTMLElement} */ (el.querySelector(sel));
+  return { el, lbl: q('.lbl'), out: q('.out'), combo: q('.combo'), mag: q('.mag'), magText: q('.mag span'), bar: q('.mag s'), slow: q('.slow'), barW: -1 };
+}
 // a replay picks its own animals; after it each slot goes back to its saved pick
 function restorePicks() { players.forEach((p, i) => { p.charIndex = pickIndex(i, i); }); }
 const players = [
-  { id: 0, charIndex: pickIndex(0, 0), startX: -2, joined: false, scoreEl: $('score1').querySelector('b') },
-  { id: 1, charIndex: pickIndex(1, 1), startX: 2, joined: false, scoreEl: $('score2').querySelector('b') }
+  { id: 0, charIndex: pickIndex(0, 0), startX: -2, joined: false, scoreEl: $('score1').querySelector('b'), chip: chipOf(1) },
+  { id: 1, charIndex: pickIndex(1, 1), startX: 2, joined: false, scoreEl: $('score2').querySelector('b'), chip: chipOf(2) }
 ];
 const charOf = p => CHARACTERS[p.charIndex];
 // a soft dark spot on the ground under an animal in the air: it shows where the hop lands
@@ -42,6 +47,8 @@ function spawn(p) {
   p.mesh.position.set(p.x, 0, 0);
   p.scoreEl.textContent = '0';
   p.hot = false; p.scoreEl.classList.remove('hot'); p.restT = 0;   // the gold tint of the last game's combo goes
+  p.crouchT = 0; p.magMax = 0;
+  p.chip.el.classList.remove('dead', 'alarm', 'steady');
   setLabel(p);
   if (G.runHandicap === p.id + 1) giveShield(p);   // the handicap of this run (screens.js join): a shield to start with
 }
@@ -56,10 +63,117 @@ function popScore(p) {
   if (reduceMotion || !el.animate || (p.pop && p.pop.playState === 'running')) return;   // a pop still running keeps going
   p.pop = el.animate(hot ? POP_BIG : POP, { duration: hot ? 320 : 220, easing: 'ease-out' });
 }
-// the name over the score, plus the combo and the magnet while they last
+// the name over the score, and the pills: the combo, the magnet while it lasts, SLOW for a two-player leader, OUT for
+// a fallen player while the other plays on (the DOM is touched only when something changed)
 function setLabel(p) {
-  const text = t('P' + (p.id + 1)) + ' ' + t(charOf(p).name) + (p.combo >= 3 ? ' x' + p.combo : '') + (p.magnetT > 0 ? ' ' + t('MAGNET') : '') + (p.lead ? ' ' + t('SLOW') : '');
-  if (text !== p.label) { p.label = text; $('score' + (p.id + 1)).querySelector('span').textContent = text; }
+  const out = !p.alive && G.twoUp && G.state === 'play';
+  const text = t('P' + (p.id + 1)) + ' ' + t(charOf(p).name) + '|' + (p.combo >= 3 ? p.combo : '') + '|' + (p.magnetT > 0) + '|' + !!p.lead + '|' + out;
+  if (text === p.label) return;
+  p.label = text;
+  const c = p.chip;
+  c.lbl.textContent = text.split('|')[0];
+  c.combo.hidden = p.combo < 3; c.combo.textContent = 'x' + p.combo;
+  if (p.magnetT > 0 && c.mag.hidden) { p.magMax = p.magnetT; c.magText.textContent = t('MAGNET'); }
+  c.mag.hidden = !(p.magnetT > 0);
+  c.slow.hidden = !p.lead; c.slow.textContent = t('SLOW');
+  c.out.hidden = !out; c.out.textContent = t('OUT');
+  c.el.classList.toggle('dead', out);
+}
+// per drawn frame: the magnet's time bar shrinks (a transform, in 2% steps)
+function magnetBar(p) {
+  const c = p.chip;
+  if (c.mag.hidden || !p.magMax) return;
+  const w = Math.round(Math.max(0, p.magnetT / p.magMax) * 50) / 50;
+  if (w !== c.barW) { c.barW = w; c.bar.style.transform = 'scaleX(' + w + ')'; }
+}
+// a warning for one player (the eagle is coming, the rapids are near): a red ring flashes on the chip twice (steady
+// under reduced motion) and the screen reader says who must move
+function alarm(p) {
+  const el = p.chip.el, cls = reduceMotion ? 'steady' : 'alarm';
+  el.classList.remove('alarm', 'steady');
+  void el.offsetWidth;   // restart the flash
+  el.classList.add(cls);
+  clearTimeout(p.alarmT);
+  p.alarmT = setTimeout(() => el.classList.remove(cls), reduceMotion ? 1200 : 400);
+  document.dispatchEvent(new CustomEvent('hoplanes:say', { detail: t('PLAYER {n}: MOVE!', { n: p.id + 1 }) }));
+}
+// a finger on the field: the animal crouches for a moment (looks only); the hop comes when the finger lifts
+const CROUCH_T = 0.06;
+function crouch(i) {
+  const p = players[i];
+  if (p.joined && p.alive && p.mesh) p.crouchT = CROUCH_T;
+}
+// ---------- words over the animals: WAIT FOR P2, +LIFE (DOM, placed once per drawn frame) ----------
+const bubbles = [];
+const bubblePos = new THREE.Vector3();
+function say(p, text, kind) {
+  let b = bubbles.find(q => q.p === p && q.kind === kind);
+  if (!b) {
+    const el = document.createElement('div');
+    el.className = 'say ' + kind;
+    el.setAttribute('aria-hidden', 'true');
+    el.appendChild(document.createElement('span'));
+    stage.appendChild(el);
+    b = { p, kind, el, t: 0, x: -1, y: -1 };
+    bubbles.push(b);
+  }
+  b.el.firstChild.textContent = text; b.t = kind === 'pop' ? 1.2 : 1;
+}
+// the rope between the two animals: a thin box stretched from one to the other, for a second
+const ropeMat = new THREE.MeshLambertMaterial({ color: 0xffd84a });
+let ropeM = null, ropeT = 0, ropeA = null, ropeB = null;
+function rope(a, b) {
+  if (!a.mesh || !b.mesh) return;
+  if (!ropeM) { ropeM = new THREE.Mesh(new THREE.BoxGeometry(1, 0.05, 0.05), ropeMat); scene.add(ropeM); }
+  ropeA = a; ropeB = b; ropeT = 1; ropeM.visible = true;
+}
+function placeRope(dt) {
+  if (!ropeM || !ropeM.visible) return;
+  ropeT -= dt;
+  if (ropeT <= 0 || !ropeA.mesh || !ropeB.mesh) { ropeM.visible = false; return; }
+  const a = ropeA.mesh.position, b = ropeB.mesh.position, dx = b.x - a.x, dz = b.z - a.z;
+  ropeM.position.set((a.x + b.x) / 2, 0.45, (a.z + b.z) / 2);
+  ropeM.scale.x = Math.max(0.01, Math.hypot(dx, dz));
+  ropeM.rotation.y = -Math.atan2(dz, dx);
+}
+// an eagle the robot shook off flies away on its own
+const leaving = [];
+function flyAway(dt) {
+  for (let i = leaving.length - 1; i >= 0; i--) {
+    const m = leaving[i];
+    m.position.y += dt * 6; m.position.z -= dt * 6;
+    if (m.position.y > 14) { scene.remove(m); leaving.splice(i, 1); }
+  }
+}
+// once per drawn frame (app.js): the words follow their animal and fade; the rope and a leaving eagle move
+function placeBubbles(dt) {
+  placeRope(dt); flyAway(dt);
+  for (let i = bubbles.length - 1; i >= 0; i--) {
+    const b = bubbles[i];
+    b.t -= dt;
+    if (b.t <= 0 || !b.p.mesh) { b.el.remove(); bubbles.splice(i, 1); continue; }
+    bubblePos.copy(b.p.mesh.position); bubblePos.y += 1.4 + (b.kind === 'pop' ? (1.2 - b.t) * 0.8 : 0);
+    bubblePos.project(camera);
+    const x = Math.round((bubblePos.x + 1) / 2 * viewSize.w), y = Math.round((1 - bubblePos.y) / 2 * viewSize.h);
+    if (x !== b.x || y !== b.y) { b.x = x; b.y = y; b.el.style.transform = 'translate(' + x + 'px,' + y + 'px)'; }
+  }
+}
+// rules 4: a fallen player hops back in (sim.js chose the place and the safe time): a new animal, a pop and a sound,
+// and the chip lights up again. eagle: the one that carried it off (its mesh goes)
+function comeBack(p, eagle) {
+  if (eagle && eagle.mesh) scene.remove(eagle.mesh);
+  if (p.mesh) scene.remove(p.mesh);
+  const ch = charOf(p), hat = hatFor(G.bestAll);
+  p.mesh = makeCharacter(ch.boxes, ch.key, hat ? hat.key : '');
+  p.mesh.position.set(p.x, 0, -p.row);
+  p.mesh.userData.body.scale.set(1.3, 0.62, 1.3);   // lands with a squash; stand() eases it back
+  scene.add(p.mesh);
+  if (p.blob) p.blob.visible = false;
+  p.restT = 0;
+  sfx.join(); buzz(30);
+  if (!reduceMotion) burst(p.x, -p.row, NEAR_FX, 10, 0.7);
+  say(p, t('BACK IN!'), 'pop');
+  setLabel(p);
 }
 // ---------- power-ups ----------
 const bubbleMat = new THREE.MeshLambertMaterial({ color: 0x4fb8ff, transparent: true, opacity: 0.35 });
@@ -174,6 +288,16 @@ let overHook = () => {};
 const onGameOver = fn => { overHook = fn; };
 // what the rules do, shown: meshes, sounds, particles. Called by sim.js makeRules at the points where things happen.
 const fx = {
+  leashed(p, other) {   // rules 4: a two-player hop too far ahead of the partner is refused
+    say(p, t('WAIT FOR {who}', { who: t('P' + (other.id + 1)) }), 'wait');
+    rope(p, other);
+    sfx.nope();
+  },
+  rejoin: comeBack,
+  trait(p, kind) {   // an animal's edge did its job: the cat's extra life, the robot shaking off the eagle
+    if (kind === 'robot' && p.eagle && p.eagle.mesh) { leaving.push(p.eagle.mesh); sfx.eagle(); }
+    say(p, t(kind === 'cat' ? '+LIFE' : 'SHOOK OFF THE EAGLE!'), 'pop');
+  },
   near(p) {   // a car just missed: a whoosh, a nudge of the view and a flash of dust
     sfx.whoosh(); buzz(12);
     G.shakeT = 0.18;
@@ -203,6 +327,7 @@ const fx = {
   combo(p) { sfx.coin(); burst(p.x, -p.row, COIN_FX, 4); },
   kill(p, cause) {
     buzz(70);
+    setLabel(p);   // OUT on the chip while the other player plays on
     G.lastDead = p;   // the game-over view closes in on it (app.js)
     (DEATH_SOUND[cause] || sfx.squash)();
     const { x, z } = p.mesh.position;
@@ -221,6 +346,7 @@ const fx = {
   },
   shield: showBubble,
   power(p, lane, pw) {
+    setLabel(p);   // the magnet pill
     dropSpinner(pw.s);
     sfx.prize(); buzz(20);
     burst(p.x, -p.row, pw.kind === 'shield' ? SPLASH : COIN_FX, 8);
@@ -239,7 +365,7 @@ const fx = {
     if (lane && (lane.kind === 'bridge' || lane.kind === 'cliff')) sfx.crack();   // the plank or tile starts to give
   },
   edge(p) {   // a log carried the rider past the last column: the rapids are near, hop
-    sfx.warn(); buzz(30);
+    sfx.warn(); buzz(30); alarm(p);
     if (!reduceMotion) burst(p.x, -p.row, EDGE_FX, 6, 0.5);
   },
   hopPose(p, t) {
@@ -256,7 +382,7 @@ const fx = {
     if (!p.log) { m.position.y = 0; return; }
     m.position.x = p.x; m.position.y = 0.1;
   },
-  warn() { sfx.warn(); },   // move, or the eagle comes
+  warn(p) { sfx.warn(); alarm(p); },   // move, or the eagle comes
   eagle: sendEagle,
   swoop,
   label: setLabel
@@ -287,6 +413,8 @@ function restAfterRun(p, dt) {
 // and the shadow blob under a hop (nothing here changes the run)
 function dressPlayer(p, dt) {
   if (!p.mesh) return;
+  magnetBar(p);
+  if (p.crouchT > 0) { p.crouchT = Math.max(0, p.crouchT - dt); if (p.alive && !p.hop) p.mesh.userData.body.scale.y = 0.8; }
   const look = p.alive && !p.hop && !p.eagle && p.idleT > 1.2 ? Math.sin((p.idleT - 1.2) * 1.8) * 0.4 : 0;
   turnToward(p.mesh, p.facing + look, dt);
   if (!p.alive) return;
@@ -296,4 +424,4 @@ function dressPlayer(p, dt) {
   if (air) p.blob.position.set(p.mesh.position.x, 0.02, p.mesh.position.z);
 }
 
-export { blobGeo, blobMat, bubbleGeo, bubbleMat, charOf, despawn, dressPlayer, onGameOver, restorePicks, giveShield, kill, players, queueMove, applyMoves, resetRules, spawn, tryMove, updateParts, updatePlayer };
+export { blobGeo, blobMat, bubbleGeo, bubbleMat, charOf, crouch, despawn, fx, placeBubbles, dressPlayer, onGameOver, restorePicks, giveShield, kill, players, queueMove, applyMoves, resetRules, spawn, tryMove, updateParts, updatePlayer };
