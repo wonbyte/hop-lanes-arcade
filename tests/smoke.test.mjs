@@ -281,11 +281,34 @@ test('5e. the shadow box and the haze follow the screen shape', async () => {
       assert.ok(v.shadowH > 8 && v.shadowH < 80, 'shadow box height ' + v.shadowH);
       assert.ok(v.fogNear > 0 && v.fogFar > v.fogNear + 10, 'haze from ' + v.fogNear + ' to ' + v.fogFar);
       assert.ok([256, 512, 1024].includes(v.mapSize));
+      // the GPU compares and filters the shadow depth; the bias follows the fitted box and the map (no self-shadowing)
+      assert.equal(v.shadowType, 'pcf');
+      assert.equal(v.bias, -0.0004);
+      assert.ok(Math.abs(v.normalBias - 1.5 * Math.max(v.shadowW, v.shadowH) / v.mapSize) < 1e-9, 'normalBias ' + v.normalBias);
     }
+    assert.ok(Math.abs(wide.normalBias - tall.normalBias) > 1e-6, 'the bias is refitted with the box');
     assert.notEqual(wide.shadowW * wide.shadowH, tall.shadowW * tall.shadowH, 'the shadow box is refitted to the new screen shape');
     assert.equal(await page.locator('#fps').isVisible(), true, 'the debug frame counter shows');
     assert.deepEqual(errors, []);
   } finally { await context.close(); }
+});
+
+test('5f. a phone (coarse pointer) gets the filtered shadows too, with a 512 map; #shadow-basic is the old one-sample map', async () => {
+  for (const [hash, type] of [['#debug', 'pcf'], ['#debug-shadow-basic', 'basic']]) {
+    const { context, page, errors } = await open({ phone: true }, 'about:blank');
+    try {
+      await context.addInitScript(() => {   // headless Chromium never reports a coarse pointer: say so
+        const mm = window.matchMedia.bind(window);
+        window.matchMedia = q => q === '(pointer: coarse)' ? { matches: true, media: q, onchange: null, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent: () => false } : mm(q);
+      });
+      await page.goto(INDEX + hash);
+      await waitState(page, 'attract');
+      const v = await page.evaluate(() => window.hopLanes.view);
+      assert.deepEqual([v.shadowType, v.mapSize], [type, 512], hash);
+      assert.ok(v.normalBias > 0.05 && v.normalBias < 0.2, 'about a texel and a half: ' + v.normalBias);
+      assert.deepEqual(errors, []);
+    } finally { await context.close(); }
+  }
 });
 
 test('6. standalone works fully offline', async () => {

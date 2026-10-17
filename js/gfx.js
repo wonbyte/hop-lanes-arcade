@@ -1,5 +1,5 @@
 import { MOTION_KEY, loadText } from './storage.js';
-import { $, G, NIGHT_FULL, NIGHT_START, fail } from './core.js';
+import { $, G, NIGHT_FULL, NIGHT_START, SHADOW_BASIC, fail } from './core.js';
 import { glowU } from './voxel.js';
 
 // Three.js renderer, camera, light, resize handling and the adaptive quality ladder.
@@ -23,9 +23,11 @@ const savedRatio = Number(loadText(RATIO_KEY)) || Infinity;
 let pixelRatio = Math.min(lowGpu && phoneSized ? 2 : 1.5, window.devicePixelRatio || 1, savedRatio);
 renderer.setPixelRatio(pixelRatio);
 renderer.shadowMap.enabled = true;
-// phones: hard-edged shadows (one shadow-map read per pixel instead of several); they suit the voxel look.
+// PCF everywhere: the GPU compares and filters the shadow depth (r186 stores it in a depth texture). The one-sample
+// BasicShadowMap, which phones used, reads that depth texture as a plain texture, and on an iPhone that drew stair-
+// stepped shadow edges and a mottled, self-shadowed ground (17 Oct 2026): #shadow-basic keeps it for an A/B check.
 // Set once at boot: changing the type later rebuilds every shader.
-renderer.shadowMap.type = lowGpu ? THREE.BasicShadowMap : THREE.PCFShadowMap;
+renderer.shadowMap.type = SHADOW_BASIC ? THREE.BasicShadowMap : THREE.PCFShadowMap;
 stage.prepend(renderer.domElement);
 renderer.domElement.setAttribute('role', 'img');
 renderer.domElement.setAttribute('aria-label', 'Game view: roads, rivers and train tracks to hop across');
@@ -47,6 +49,16 @@ const sun = new THREE.DirectionalLight(0xffffff, 0.6 * Math.PI);
 sun.castShadow = true;
 sun.shadow.mapSize.setScalar(lowGpu ? 512 : 1024);   // phone screens are small: 512 looks the same there and costs a quarter
 Object.assign(sun.shadow.camera, { top: 15, bottom: -15, near: 1, far: 50 });   // fitted to the view in resize()
+// Against self-shadowing (acne): a surface's own depth, read back from the map, is only as exact as a map texel, and
+// the depth pass keeps the back faces, so a flat lane is covered by its own far edge. The receiver is lifted along its
+// normal by about a texel and a half (normalBias follows the map size and the fitted box: fitShadowBias) and compared
+// a hair closer (bias, in the 0..1 depth of the fitted box: about 0.02 units). Neither moves a shadow visibly.
+sun.shadow.bias = -0.0004;
+const NORMAL_BIAS_TEXELS = 1.5;
+function fitShadowBias() {
+  const sc = sun.shadow.camera;
+  sun.shadow.normalBias = NORMAL_BIAS_TEXELS * Math.max(sc.right - sc.left, sc.top - sc.bottom) / sun.shadow.mapSize.x;
+}
 scene.add(sun, sun.target);
 
 // day turns into night as the players get far: sky, ambient and sun blend toward a blue dusk
@@ -106,6 +118,7 @@ function fitView(halfW, halfH) {
   const sc = sun.shadow.camera, m = 1.5;
   Object.assign(sc, { left: x0 - m, right: x1 + m, bottom: y0 - m, top: y1 + m, near: Math.max(0.1, -z1 - 4), far: -z0 + 4 });
   sc.updateProjectionMatrix();
+  fitShadowBias();
 }
 
 const viewSize = { w: 1, h: 1 };   // the canvas size in CSS pixels, as of the last resize
@@ -155,6 +168,7 @@ function resetFrameWatch() {
 function setRatio(r) { pixelRatio = r; renderer.setPixelRatio(r); resize(); try { localStorage.setItem(RATIO_KEY, String(r)); } catch (e) {} }
 function setShadowMapSize(n) {
   sun.shadow.mapSize.setScalar(n);
+  fitShadowBias();
   if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }   // rebuilt at the new size
 }
 // the ladder: each rung lowers one thing and returns how to undo it, or null if it has nothing left to lower
@@ -214,6 +228,6 @@ function shadowCadence(idle) {
   if (!shadowSkip) renderer.shadowMap.needsUpdate = true;
 }
 // test hook: how the view was fitted
-const viewInfo = () => { const sc = sun.shadow.camera; return { shadowW: sc.right - sc.left, shadowH: sc.top - sc.bottom, fogNear: sceneFog.near, fogFar: sceneFog.far, mapSize: sun.shadow.mapSize.x, shadowHalf }; };
+const viewInfo = () => { const sc = sun.shadow.camera; return { shadowW: sc.right - sc.left, shadowH: sc.top - sc.bottom, fogNear: sceneFog.near, fogFar: sceneFog.far, mapSize: sun.shadow.mapSize.x, shadowHalf, shadowType: renderer.shadowMap.type === THREE.PCFShadowMap ? 'pcf' : 'basic', normalBias: sun.shadow.normalBias, bias: sun.shadow.bias }; };
 
 export { BLINK_STEPS, CAM_OFF, SUN_OFF, ONE, camera, focus, getPixelRatio, holdFrameWatch, marquee, reduceMotion, renderer, resetFrameWatch, resize, scene, setNight, setZoom, shadowCadence, stage, sun, touchQuery, viewInfo, viewSize, watchFrameTime };

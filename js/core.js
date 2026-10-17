@@ -60,7 +60,11 @@ const G = {
 
 // ---------- test hooks and seeds ----------
 // #debug exposes window.hopLanes; #seed-42 or #debug-seed-42 builds the same world every game
-const hashMatch = /^#(debug)?(?:-?seed-(\d+))?$/.exec(location.hash) || [];   // eslint-disable-line security/detect-unsafe-regex -- anchored, one optional group
+// #shadow-basic (alone or after #debug / a seed): the old one-sample shadow map, an A/B switch for a phone that draws
+// shadows wrong (gfx.js)
+const SHADOW_BASIC = /-?shadow-basic$/.test(location.hash);
+const hashText = location.hash.replace(/-?shadow-basic$/, '');
+const hashMatch = /^#(debug)?(?:-?seed-(\d+))?$/.exec(hashText) || [];   // eslint-disable-line security/detect-unsafe-regex -- anchored, one optional group
 // #debug-bench-replay-<code>: the device bench (docs/budgets.md): the replay plays again and again, and the frame times show
 const replayMatch = /^#(debug-|debug-bench-)?replay-([\w-]+)$/.exec(location.hash) || [];
 const BENCH = replayMatch[1] === 'debug-bench-';
@@ -81,4 +85,4 @@ function fail(why) {
   b.querySelector('p').textContent = why;
 }
 
-export { $, BENCH, BIOME_ROWS, LAND_DIP, LOOKS, OVER_SLOW, OVER_SLOW_T, OVER_ZOOM, TUTORIAL_SEED, COUNTDOWN, DEBUG, FIRST_ROW, FIXED_SEED, G, GO_TIME, HOP_TIME, LANES_AHEAD, LANES_BEHIND, MODES, REPLAY_CODE, NIGHT_FULL, NIGHT_START, PLAY_HALF, PRIZE_COST, RESULTS_DELAY, SCORES_TOKEN, SCORES_URL, STEP, TAU, TRAIN_SPEED, WIPE_MS, WRAP, fail };
+export { $, BENCH, BIOME_ROWS, LAND_DIP, LOOKS, OVER_SLOW, OVER_SLOW_T, OVER_ZOOM, TUTORIAL_SEED, COUNTDOWN, DEBUG, FIRST_ROW, FIXED_SEED, SHADOW_BASIC, G, GO_TIME, HOP_TIME, LANES_AHEAD, LANES_BEHIND, MODES, REPLAY_CODE, NIGHT_FULL, NIGHT_START, PLAY_HALF, PRIZE_COST, RESULTS_DELAY, SCORES_TOKEN, SCORES_URL, STEP, TAU, TRAIN_SPEED, WIPE_MS, WRAP, fail };

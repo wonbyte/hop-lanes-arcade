@@ -80,6 +80,7 @@ shadow map 256, shadows every other frame).
 | Ground chunk joins in a game step | up to 1 every 8 rows (1.0-1.8 ms in node for 8 rail rows) | 0: one a drawn frame | `mergePending` |
 | The weather layer (390 x 760 at 2x) | (W+280) x (H+560): 3.5 Mpx | (W+60) x (H+140): 1.6 Mpx; moves 60 times a second (rain), 30 (snow) | `css/style.css` |
 | The ghost's shadow | a solid shadow, one more shadow draw | none | `js/ghost.js` |
+| Shadows on a phone (iPhone, sideways, in the Claude app) | `BasicShadowMap`, bias 0: stair-stepped shadow edges of about 0.1 units and a mottled, self-shadowed ground (the player's screenshot) | `PCFShadowMap` everywhere, `bias` -0.0004, `normalBias` 1.5 texels; headless with a forced coarse pointer: clean edges at 512 and 256 | `js/gfx.js`; the player checks the device (`#shadow-basic` is the old path) |
 
 ### The review fixes of 17 Oct 2026 (score server; Node 22, 4 cores)
 

@@ -130,7 +130,7 @@ and every scanner's result.
   tests feed it by hand).
 - `index.html#debug` exposes `window.hopLanes` (`players`, `state`, `camRow` (settable: jump the view to a far row), `seed`, `bank`, `muted`, `drawCalls`, `view` (shadow box, haze, map size), `run` (mission stats), `record` (this run's hops), `replay`, `weather`, `laneCoins(r)`, `laneKinds()`, `kill`, `giveShield`) and shows `#fps` (drawn frames per second, draw calls, pixel ratio).
 - `#replay-<code>` (or `#debug-replay-<code>`) plays a run back; smoke test 5c runs into traffic after waiting on the title, then replays it on a phone-sized screen and checks it ends on the same tick, row and cause. 5d checks the shield and the water rule (`hopLanes.kill`, `hopLanes.giveShield`).
-- `#seed-42` or `#debug-seed-42` makes the world deterministic.
+- `#seed-42` or `#debug-seed-42` makes the world deterministic. `#shadow-basic` (alone, or after `#debug` or a seed: `#debug-shadow-basic`) draws with the old one-sample shadow map (`hopLanes.view.shadowType`).
 - Tests set `localStorage['hoplanes.howto'] = '1'` before load so the first-run help does not swallow the first tap.
 - Headless runs use SwiftShader; it is slow. Wait on state with `waitForFunction`, not fixed sleeps.
 - `KeyW` joins / moves Player 1, `ArrowUp` Player 2. Row 1 never has trees.
@@ -179,8 +179,11 @@ and every scanner's result.
   Anything added to `lane.ground` after the lane is built will not show while the chunk is merged.
 - Rail signals and police lights are one `light` fleet (`newLight`), painted per instance (`LIGHT_TINT`); repaint only
   on a state change (`paintSignal`, `o.lightRed`).
-- Phones use `BasicShadowMap` (hard edges, one shadow read per pixel) and a 512 shadow map; desktops `PCFShadowMap`
-  (r186 removed `PCFSoftShadowMap`) and 1024. Chosen once at boot. The quality ladder retries a rung that helped
+- Every device uses `PCFShadowMap` (the GPU compares and filters the depth texture r186 keeps shadows in; r186 removed
+  `PCFSoftShadowMap`), a 512 shadow map on phones and 1024 on desktops, `sun.shadow.bias` -0.0004 and a `normalBias` of
+  1.5 shadow texels (`fitShadowBias`, refitted with the view and the map size). Phones used `BasicShadowMap` (one plain
+  read of the depth texture): on an iPhone that drew stair-stepped shadow edges and a mottled, self-shadowed ground;
+  `#shadow-basic` brings it back for an A/B check. Chosen once at boot. The quality ladder retries a rung that helped
   (pixel ratio 2 → 1.5 → 1.25 → 1.0; phones with a dense screen start at 2, everything else at 1.5; then the shadow map size; last, shadows every other drawn frame in play too, `shadowHalf`); the lowered setting stays for the next game (`hoplanes.ratio`), and every rung may be tried again (`resetFrameWatch`). On the menus the shadow map is redrawn every other frame (`shadowCadence`).
 - The window of built rows follows `visRows` (fewer rows on a sideways phone): `rowsBehind()` and the ahead limit in
   `ensureLanes`.
