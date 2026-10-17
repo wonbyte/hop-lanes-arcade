@@ -39,21 +39,33 @@ function saveGhost(code, score, hero) {
 }
 
 let ghost = null;   // { sim, p, mesh }
+let primed = null;   // during the countdown: { g, rp, sim } (sim null: no ghost for this world)
+// the saved best run on this world, decoded, with its sim made: null when there is none
+function ghostRun() {
+  if (!ghostModes() || G.replay) return null;
+  const g = ghostFor(getSeed());
+  if (!g) return null;
+  const rp = decodeReplay(g.code);
+  return rp && rp.joined[g.hero] ? { g, rp, sim: createSim(rp) } : null;
+}
+// each countdown step (app.js step): the ghost's own countdown runs along, one step per step, so the GO step
+// has no catch-up of hundreds of steps to do (a hitch on a slow phone)
+function primeGhost() {
+  if (!primed) primed = ghostRun() || { sim: null };
+  if (primed.sim && primed.sim.state === 'countdown') primed.sim.step();
+}
 // at the start of play (screens.js startPlay): the saved best run on this world, if any
 function startGhost() {
+  const run = primed && primed.sim ? primed : ghostRun();
   stopGhost();
-  if (!ghostModes() || G.replay) return;
-  const g = ghostFor(getSeed());
-  if (!g) return;
-  const rp = decodeReplay(g.code);
-  if (!rp || !rp.joined[g.hero]) return;
+  if (!run) return;
+  const { g, rp, sim } = run;
   const ch = CHARACTERS.find(c => c.key === rp.chars[g.hero]) || CHARACTERS[0];
-  const sim = createSim(rp);
   for (let n = 0; n < 2000 && sim.state === 'countdown'; n++) sim.step();   // its countdown is over: play starts now
   if (sim.state !== 'play') return;
   const mesh = makeCharacter(ch.boxes, ch.key);
   mesh.userData.body.material = ghostMat;
-  mesh.castShadow = false;
+  mesh.userData.body.castShadow = false;   // see-through: no solid shadow (and one shadow draw less)
   scene.add(mesh);
   ghost = { sim, p: sim.players[g.hero], mesh, score: g.score };
   placeGhost();
@@ -73,10 +85,11 @@ function placeGhost() {
   m.rotation.y = p.facing || 0;
 }
 function stopGhost() {
+  primed = null;
   if (!ghost) return;
   scene.remove(ghost.mesh);
   ghost = null;
 }
 const ghostInfo = () => ghost ? { row: ghost.p.row, x: ghost.p.x, alive: ghost.p.alive && !ghost.done, score: ghost.score } : null;
 
-export { ghostInfo, ghostMat, ghostWarmGeo, placeGhost, saveGhost, startGhost, stepGhost, stopGhost };
+export { ghostInfo, ghostMat, ghostWarmGeo, placeGhost, primeGhost, saveGhost, startGhost, stepGhost, stopGhost };

@@ -16,9 +16,14 @@ paths:
       responses:
         '200': { description: The list, content: { application/json: { schema: { $ref: '#/components/schemas/Top' } } } }
         '400': { description: A bad query }
-        '429': { description: Too many requests from this address }
+        '429': { description: Too many requests from this address, headers: { Retry-After: { $ref: '#/components/headers/RetryAfter' } } }
     post:
       summary: Post a score; with VERIFY (the default) the replay must play to it
+      description: >-
+        The body must be application/json (a charset parameter is fine). With ALLOW_ORIGIN set to the game's origin, a
+        request whose Origin header names another origin is refused. day is the player's date: the server's UTC date or a
+        day either side. The replay must be played with rules MIN_RULES or newer, without the handicap shield. The server
+        stores only the hops the run applied (a fresh code), and refuses a run already on the boards.
       requestBody:
         required: true
         content:
@@ -29,20 +34,27 @@ paths:
               properties:
                 name: { type: string, pattern: '^[A-Za-z0-9 ]{1,16}$', example: 'FROG AB12' }
                 score: { type: integer, minimum: 0, maximum: 5000, example: 17 }
-                day: { type: string, example: '2026-10-16' }
+                day: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$', description: 'today (UTC) or a day either side', example: '2026-10-17' }
                 mode: { type: string, enum: [classic, race, coinwar, tag, daily, room] }
-                replay: { type: string, maxLength: 32768, example: 'MnwxMjN8Y2xhc3NpY3xmcm9nLGZveHwxfDB8MHw' }
+                replay: { type: string, maxLength: 32768, pattern: '^[\w-]+$', example: 'M3wxMjN8Y2xhc3NpY3xmcm9nLGZveHwxfDB8MHw' }
       responses:
         '200': { description: Accepted, content: { application/json: { schema: { $ref: '#/components/schemas/Top' } } } }
-        '400': { description: A bad body, or the replay does not play to the score }
+        '400': { description: 'A bad body; a day out of range; old rules (below MIN_RULES); a handicap run; an unknown animal; or the replay does not play to the score' }
         '401': { description: A wrong X-Hop-Token (when the server has a POST_TOKEN) }
-        '429': { description: Too many posts from this address }
-        '503': { description: The replay check budget is spent; Retry-After says when to come back }
+        '403': { description: The Origin header names another site than ALLOW_ORIGIN (when it is not *) }
+        '409': { description: This run (its fingerprint) is already on the boards, or was and was dropped }
+        '415': { description: The body is not application/json }
+        '429': { description: 'Too many posts from this address, or its share of the replay time (VERIFY_CLIENT_MS, an IPv6 /56) is spent', headers: { Retry-After: { $ref: '#/components/headers/RetryAfter' } } }
+        '503': { description: 'The replay check budget is spent (busy), or one replay ran out of VERIFY_MS; Retry-After says when to come back', headers: { Retry-After: { $ref: '#/components/headers/RetryAfter' } } }
     options:
       summary: CORS preflight
       responses:
         '204': { description: The CORS headers }
 components:
+  headers:
+    RetryAfter:
+      description: Seconds to wait before trying again
+      schema: { type: integer, minimum: 1 }
   schemas:
     Top:
       type: object

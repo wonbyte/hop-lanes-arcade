@@ -8,7 +8,9 @@ import { ROOT, T, launch, open as openPage, waitState, settle, waitTicks } from 
 import { spawn } from 'node:child_process';
 import os from 'node:os';
 import net from 'node:net';
-import { STEP } from '../js/rules.js';
+import { STEP, dailySeedFor } from '../js/rules.js';
+import { dailyMissions } from '../js/missions.js';
+import { decodeReplay } from '../js/replay.js';
 
 const SLOW = 120000; // whole-test budget for tests that wait through a game
 
@@ -264,6 +266,15 @@ test('6. share button copies the score text and says COPIED!', async () => {
   } finally { await context.close(); }
 });
 
+// the score server (server/scores.mjs) on a free port with its own data file; env: extra settings (VERIFY=0...)
+async function startScores(env = {}) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hop-scores-'));
+  const port = await new Promise(r => { const s = net.createServer().listen(0, () => { const p = s.address().port; s.close(() => r(p)); }); });
+  const srv = spawn(process.execPath, [path.join(ROOT, 'server/scores.mjs')],
+    { env: { ...process.env, PORT: String(port), DATA_FILE: path.join(dir, 's.json'), POST_TOKEN: 't0k', SAVE_DELAY_MS: '0', ...env }, stdio: ['ignore', 'pipe', 'inherit'] });
+  await new Promise((res, rej) => { srv.stdout.once('data', res); srv.once('error', rej); });
+  return { base: `http://127.0.0.1:${port}`, stop: () => { srv.kill(); fs.rmSync(dir, { recursive: true, force: true }); } };
+}
 // the served index.html with a score server wired in (the meta and its origin in connect-src)
 async function openWithScores(scoresBase, opts) {
   const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8')
@@ -278,12 +289,7 @@ async function openWithScores(scoresBase, opts) {
   return out;
 }
 test('6b. a finished game posts its score (today, mode) and the world best shows', { timeout: SLOW }, async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hop-scores-'));
-  const port = await new Promise(r => { const s = net.createServer().listen(0, () => { const p = s.address().port; s.close(() => r(p)); }); });
-  const srv = spawn(process.execPath, [path.join(ROOT, 'server/scores.mjs')],
-    { env: { ...process.env, PORT: String(port), DATA_FILE: path.join(dir, 's.json'), POST_TOKEN: 't0k', SAVE_DELAY_MS: '0' }, stdio: ['ignore', 'pipe', 'inherit'] });
-  await new Promise((res, rej) => { srv.stdout.once('data', res); srv.once('error', rej); });
-  const base = `http://127.0.0.1:${port}`;
+  const { base, stop } = await startScores();
   const { context, page, errors } = await openWithScores(base);
   try {
     await waitState(page, 'attract');
@@ -309,7 +315,7 @@ test('6b. a finished game posts its score (today, mode) and the world best shows
     await page.click('#closeBoard');
     assert.equal(await page.locator('#boardBox').isHidden(), true);
     assert.deepEqual(errors, []);
-  } finally { await context.close(); srv.kill(); fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally { await context.close(); stop(); }
 });
 
 test('6c. without a score server a finished run enters the local top 10 and the TOP 10 button lists it', { timeout: SLOW }, async () => {
@@ -618,6 +624,256 @@ test('12. the cat survives one fall into water in the real game (no shield bubbl
     assert.equal(await hop(page, () => window.hopLanes.players[0].lives), 0);
     await hop(page, () => window.hopLanes.kill(window.hopLanes.players[0], 'splash'));
     await waitState(page, 'over');
+    assert.deepEqual(errors, []);
+  } finally { await context.close(); }
+});
+
+// ---- regression tests for the second review ----
+// the first hop of player 1, then the rules end the run at once (hopLanes.kill): a run with a score of 1
+async function hopThenDie(page, cause = 'splash') {
+  await page.keyboard.press('KeyW');
+  await page.waitForFunction(() => window.hopLanes.players[0].row >= 1 && !window.hopLanes.players[0].hop, null, { timeout: T });
+  await page.evaluate(c => { const h = window.hopLanes, p = h.players[0]; h.kill(p, c); if (p.alive) h.kill(p, c); }, cause);   // twice: a shield takes the first
+  await waitState(page, 'over');
+}
+
+test('13a. a prize animal is not for sale on the join card: it comes only from the prize machine', async () => {
+  const { context, page, errors } = await open(INDEX, { storage: { 'hoplanes.coins': '500' } });
+  try {
+    await waitState(page, 'attract');
+    for (let k = 0; k < 5; k++) await page.click('#card1 .cyc[data-d="1"]');   // frog -> fox, bunny, cat, robot, pig
+    assert.match(await page.locator('#card1 .state').textContent(), /PIG · A PRIZE/);
+    assert.match(await page.locator('#card1 .head').textContent(), /PRIZE MACHINE/);
+    assert.doesNotMatch(await page.locator('#card1 .head').textContent(), /BUY/);
+    await page.click('#tap1');
+    await settle(page, 300);
+    assert.equal(await hop(page, () => window.hopLanes.players[0].joined), false, 'did not join');
+    assert.equal(await hop(page, () => window.hopLanes.bank), 500, 'nothing paid');
+    assert.equal(await hop(page, () => window.hopLanes.owned.includes('pig')), false, 'not owned');
+    await page.evaluate(() => document.getElementById('lang').click());   // the card says it in every language
+    assert.match(await page.locator('#card1 .head').textContent(), /MÁQUINA DE PREMIOS/);
+    assert.deepEqual(errors, []);
+  } finally { await context.close(); }
+});
+
+test('13b. the handicap is the one the run began with; a dialog takes no field taps and closes on a join', { timeout: SLOW }, async () => {
+  const { context, page, errors } = await open(INDEX, { clipboard: true });
+  try {
+    await waitState(page, 'attract');
+    await page.click('#settings');
+    await page.locator('#settingsBox').waitFor({ state: 'visible', timeout: T });
+    const box = await page.locator('#stage').boundingBox();
+    await page.mouse.click(box.x + 12, box.y + box.height * 0.6);   // the dimmed backdrop, not the box
+    await settle(page, 300);
+    assert.equal(await hop(page, () => window.hopLanes.state), 'attract', 'a tap on the backdrop does not join');
+    await page.evaluate(() => document.getElementById('tap1').dispatchEvent(new window.PointerEvent('pointerdown', { bubbles: true })));   // a join from outside the dialog
+    await waitState(page, 'countdown');
+    assert.equal(await page.locator('#settingsBox').isHidden(), true, 'the join closed the dialog');
+    await page.evaluate(() => document.getElementById('handicap').click());   // HANDICAP during the countdown: SHIELD: P1
+    await waitState(page, 'play');
+    assert.equal(await hop(page, () => window.hopLanes.players[0].shield), false, 'the run began without the handicap');
+    await hopThenDie(page, 'squash');
+    await resultsVisible(page);
+    await page.click('#replayBtn');
+    await page.waitForFunction(() => typeof window.__copied === 'string', null, { timeout: T });
+    const link = await hop(page, () => window.__copied);
+    const rp = decodeReplay(link.split('#replay-')[1]);
+    assert.equal(rp.handicap, 0, 'the replay link has the handicap of the run');
+    assert.equal(await page.evaluate(() => localStorage.getItem('hoplanes.handicap')), '1', 'the setting is kept for the next game');
+    assert.deepEqual(errors, []);
+  } finally { await context.close(); }
+});
+
+test('13c. no online post for a fixed world or a handicap run; a normal run posts', { timeout: 240000 }, async () => {
+  const { base, stop } = await startScores({ VERIFY: '0' });   // the kill hook is not in the replay: no replay check here
+  const posts = page => { const n = { posts: 0 }; page.on('request', r => { if (r.method() === 'POST') n.posts++; }); return n; };
+  try {
+    const a = await openWithScores(base);
+    try {   // #debug-seed-N: the same world every game
+      await a.page.goto(a.page.url().replace('#debug', '#debug-seed-18'));
+      await a.page.reload();
+      await waitState(a.page, 'attract');
+      assert.equal(await a.page.evaluate(() => window.hopLanes.seed), 18);
+      const n = posts(a.page);
+      await a.page.keyboard.press('KeyW');
+      await waitState(a.page, 'play');
+      await hopThenDie(a.page);
+      await resultsVisible(a.page);
+      await settle(a.page, 800);
+      assert.equal(n.posts, 0, 'a fixed world is not posted');
+      assert.equal(await a.page.locator('#world').isHidden(), true, 'no online line');
+      assert.deepEqual(a.errors, []);
+    } finally { await a.context.close(); }
+    const b = await openWithScores(base, { storage: { 'hoplanes.handicap': '1' } });
+    try {
+      await waitState(b.page, 'attract');
+      const n = posts(b.page);
+      await b.page.keyboard.press('KeyW');
+      await waitState(b.page, 'play');
+      assert.equal(await b.page.evaluate(() => window.hopLanes.players[0].shield), true, 'the handicap shield');
+      await hopThenDie(b.page);
+      await resultsVisible(b.page);
+      await settle(b.page, 800);
+      assert.equal(n.posts, 0, 'a handicap run is not posted');
+      assert.equal(await b.page.locator('#world').isHidden(), true, 'no online line');
+      assert.ok(JSON.parse(await b.page.evaluate(() => localStorage.getItem('hoplanes.local') || '[]')).length <= 1, 'the local list still works');
+      // the handicap off (SHIELD: P1 -> SHIELD: P2 -> OFF): the next run posts
+      await b.page.keyboard.press('Space');
+      await waitState(b.page, 'attract');
+      await b.page.evaluate(() => { const h = document.getElementById('handicap'); h.click(); h.click(); });
+      await b.page.keyboard.press('KeyW');
+      await waitState(b.page, 'play');
+      await hopThenDie(b.page);
+      await b.page.locator('#world').waitFor({ state: 'visible', timeout: T });
+      assert.equal(n.posts, 1, 'the normal run was posted');
+      assert.deepEqual(b.errors, []);
+    } finally { await b.context.close(); }
+  } finally { stop(); }
+});
+
+test('13d. the first initials question never opens over the next game: a quick restart leaves it for the next results', { timeout: SLOW }, async () => {
+  const { context, page, errors } = await open(INDEX);
+  await context.addInitScript(() => {
+    window.__asked = [];
+    window.prompt = () => { window.__asked.push(window.hopLanes.state); return 'ABC'; };
+    window.__later = [];   // the question's wait (1.9 s after game over) runs when the test says
+    const timer = window.setTimeout;
+    window.setTimeout = (f, ms, ...a) => { if (ms === 1900) { window.__later.push(f); return 0; } return timer(f, ms, ...a); };
+  });
+  try {
+    await page.reload();
+    await waitState(page, 'attract');
+    await page.keyboard.press('KeyW');
+    await waitState(page, 'play');
+    await hopThenDie(page);
+    await resultsVisible(page);
+    await page.keyboard.press('KeyW');   // play again at once
+    await waitState(page, 'countdown');
+    await hop(page, () => window.__later.splice(0).forEach(f => f()));   // the first question's time comes in the countdown
+    assert.deepEqual(await hop(page, () => window.__asked), [], 'no question over the next game');
+    assert.equal(await page.evaluate(() => localStorage.getItem('hoplanes.local')), null, 'the entry waits for the initials');
+    await waitState(page, 'play');
+    await hopThenDie(page);
+    await hop(page, () => window.__later.splice(0).forEach(f => f()));
+    assert.deepEqual(await hop(page, () => window.__asked), ['over'], 'asked once, on the results');
+    const saved = JSON.parse(await page.evaluate(() => localStorage.getItem('hoplanes.local')));
+    assert.deepEqual(saved.map(e => e.name), ['ABC FROG', 'ABC FROG'], 'both runs saved with the initials');
+    assert.deepEqual(errors, []);
+  } finally { await context.close(); }
+});
+
+test('13e. play again after a run past row 100 shows the biome banner again; the combo tint resets', { timeout: SLOW }, async () => {
+  const { context, page, errors } = await open(INDEX + '-seed-42');
+  // every banner text that shows (the view jump leaves the player behind: the banner is cleared again in that step)
+  const banners = () => page.evaluate(() => window.__banners.join('|'));
+  try {
+    await waitState(page, 'attract');
+    await page.evaluate(() => {
+      window.__banners = [];
+      const h2 = document.querySelector('#banner h2');
+      new MutationObserver(list => list.forEach(r => r.addedNodes.forEach(n => window.__banners.push(n.textContent)))).observe(h2, { childList: true });
+    });
+    await page.keyboard.press('KeyW');
+    await waitState(page, 'play');
+    await page.evaluate(step => {   // a combo of 6 in the making, and the hop that makes it 7 (queued before the next step)
+      const h = window.hopLanes, p = h.players[0];
+      p.combo = 6; p.lastHop = h.playTick * step;
+      window.dispatchEvent(new window.KeyboardEvent('keydown', { code: 'KeyW' }));
+    }, STEP);
+    await page.waitForFunction(() => document.querySelector('#score1 b').classList.contains('hot'), null, { timeout: T });
+    await hop(page, () => { window.hopLanes.camRow = 101; });
+    await waitState(page, 'over');   // left behind by the jump of the view
+    assert.match(await banners(), /DESERT/, 'the new land was named');
+    await resultsVisible(page);
+    await hop(page, () => { window.__banners = []; });
+    await page.keyboard.press('KeyW');   // over -> countdown, no title frame in between
+    await waitState(page, 'play');
+    assert.equal(await page.locator('#score1 b').evaluate(el => el.classList.contains('hot')), false, 'a new game starts without the gold tint');
+    await hop(page, () => { window.hopLanes.camRow = 101; });
+    await waitState(page, 'over');
+    assert.match(await banners(), /DESERT/, 'named again in the next game');
+    assert.deepEqual(errors, []);
+  } finally { await context.close(); }
+});
+
+test('13f. pause -> RESTART in play ends the play look and saves the coins; resume does not say GO! again', { timeout: SLOW }, async () => {
+  const { context, page, errors } = await open(INDEX + '-seed-18');   // seed 18: a coin right in front of P1
+  try {
+    await waitState(page, 'attract');
+    await page.keyboard.press('KeyW');
+    await waitState(page, 'play');
+    await page.waitForFunction(() => /GO!/.test(document.getElementById('live').textContent), null, { timeout: T });
+    await page.keyboard.press('KeyW');
+    await page.waitForFunction(() => window.hopLanes.bank === 1, null, { timeout: T });
+    assert.equal(await page.evaluate(() => localStorage.getItem('hoplanes.coins')), '0', 'coins of a run are saved at its end');
+    const said = await page.locator('#live').textContent();
+    await page.keyboard.press('KeyP');
+    await waitState(page, 'paused');
+    await page.keyboard.press('KeyP');
+    await waitState(page, 'play');
+    await settle(page, 400);
+    assert.equal(await page.locator('#live').textContent(), said, 'a resume is not a new game: no second GO!');
+    await page.keyboard.press('KeyP');
+    await waitState(page, 'paused');
+    await page.click('#restartBtn');
+    await waitState(page, 'attract');
+    assert.equal(await page.locator('#app').evaluate(el => el.classList.contains('playing')), false, 'the title shows its START button again');
+    assert.equal(await page.evaluate(() => localStorage.getItem('hoplanes.coins')), '1', 'the coin is saved');
+    assert.deepEqual(errors, []);
+  } finally { await context.close(); }
+});
+
+test('13g. race: the survivor stands still during the results (the rules stop at game over)', { timeout: SLOW }, async () => {
+  const { context, page, errors } = await open(INDEX + '-seed-42', { storage: { 'hoplanes.mode': 'race' } });
+  try {
+    await waitState(page, 'attract');
+    await page.keyboard.press('KeyW');
+    await page.keyboard.press('ArrowUp');
+    await waitState(page, 'play');
+    await waitTicks(page, Math.round(1 / STEP));
+    await hop(page, () => window.hopLanes.kill(window.hopLanes.players[0], 'splash'));
+    await waitState(page, 'over');
+    const before = await hop(page, () => { const p = window.hopLanes.players[1]; return { alive: p.alive, idleT: p.idleT, x: p.x, row: p.row, eagle: !!p.eagle }; });
+    assert.equal(before.alive, true);
+    await settle(page, 1500);
+    const after = await hop(page, () => { const p = window.hopLanes.players[1]; return { alive: p.alive, idleT: p.idleT, x: p.x, row: p.row, eagle: !!p.eagle }; });
+    assert.deepEqual(after, before, 'no eagle clock, no log, no hazard after the end');
+    assert.match(await page.locator('#resTitle').textContent(), /FOX WINS!/);
+    assert.deepEqual(errors, []);
+  } finally { await context.close(); }
+});
+
+test('13h. a daily run on a world built before midnight counts for that day; at midnight the title builds the new day', { timeout: SLOW }, async () => {
+  const { context, page, errors } = await open(INDEX, { storage: { 'hoplanes.mode': 'daily' }, context: { timezoneId: 'UTC' } });
+  await context.addInitScript(() => {   // a clock the test moves (Date only: the game's frame clock runs on)
+    const Real = Date;
+    let shift = Date.parse('2026-10-17T23:59:00Z') - Real.now();
+    window.__setNow = iso => { shift = Real.parse(iso) - Real.now(); };
+    window.Date = class extends Real { constructor(...a) { if (a.length) super(...a); else super(Real.now() + shift); } static now() { return Real.now() + shift; } };
+    const every = window.setInterval;   // the minute check of the day, every 0.3 s here
+    window.setInterval = (f, ms, ...a) => every(f, ms === 60000 ? 300 : ms, ...a);
+  });
+  try {
+    await page.reload();
+    await waitState(page, 'attract');
+    assert.equal(await hop(page, () => window.hopLanes.seed), dailySeedFor('2026-10-17'));
+    await page.keyboard.press('KeyW');
+    await waitState(page, 'play');
+    await hop(page, () => window.__setNow('2026-10-18T00:00:20Z'));   // midnight passes during the run
+    await settle(page, 600);
+    await hopThenDie(page);
+    await resultsVisible(page);
+    assert.match(await page.evaluate(() => localStorage.getItem('hoplanes.streak')), /^2026-10-17\|1$/, 'the streak counts the day of the world');
+    await page.waitForFunction(() => !!localStorage.getItem('hoplanes.local'), null, { timeout: T });
+    assert.equal(JSON.parse(await page.evaluate(() => localStorage.getItem('hoplanes.local')))[0].day, '2026-10-17');
+    await page.keyboard.press('Space');
+    await waitState(page, 'attract');
+    assert.equal(await hop(page, () => window.hopLanes.seed), dailySeedFor('2026-10-18'), 'the title after the run is the new day');
+    const listed = () => page.locator('#dayMissions').textContent();
+    const before = await listed();
+    await hop(page, () => window.__setNow('2026-10-19T00:00:20Z'));   // midnight passes on the title
+    await page.waitForFunction(s => window.hopLanes.seed === s, dailySeedFor('2026-10-19'), { timeout: T });
+    if (String(dailyMissions('2026-10-18')) !== String(dailyMissions('2026-10-19'))) assert.notEqual(await listed(), before, "today's missions are the new day's");
     assert.deepEqual(errors, []);
   } finally { await context.close(); }
 });

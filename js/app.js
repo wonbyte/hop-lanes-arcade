@@ -3,8 +3,8 @@ import { $, BENCH, BIOME_ROWS, COUNTDOWN, DEBUG, G, LAND_DIP, OVER_SLOW, OVER_SL
 import { pollGamepads } from './input.js';   // also sets up every input listener
 import { decodeReplay } from './replay.js';
 import { creepCamera } from './sim.js';
-import { ghostInfo, ghostMat, ghostWarmGeo, placeGhost, stepGhost } from './ghost.js';
-import { CHARACTERS, LIGHT_OFF, lightGeo } from './models.js';
+import { ghostInfo, ghostMat, ghostWarmGeo, placeGhost, primeGhost, stepGhost } from './ghost.js';
+import { CHARACTERS } from './models.js';
 import { CAM_OFF, SUN_OFF, camera, focus, getPixelRatio, holdFrameWatch, reduceMotion, renderer, scene, setNight, setZoom, shadowCadence, sun, touchQuery, viewInfo, viewSize, watchFrameTime } from './gfx.js';
 import { announceFrame } from './panels.js';   // also sets up the settings, pause and top-10 panels
 import { keepAwake } from './device.js';
@@ -102,15 +102,15 @@ function step(dt) {
   if (DEBUG && G.boom) { G.boom = false; throw new Error('test crash'); }   // hopLanes.boom(): the crash notice test
   G.tick++; G.worldTick++; G.stateT += dt;
   if (G.shakeT > 0) G.shakeT = Math.max(0, G.shakeT - dt);
-  if (G.state === 'countdown') updateCountdown(dt);
+  if (G.state === 'countdown') { updateCountdown(dt); primeGhost(); }
   else if (G.state === 'play') { G.playTick++; applyMoves(); updateCamera(dt); stepGhost(); }
   else if (G.state === 'over' && G.stateT > RESULTS_DELAY && resultsEl.hidden) resultsEl.hidden = false;
   ensureLanes();
   updateLanes(players);   // only the lanes a player can touch; the rest move once per drawn frame
   for (const p of players) updatePlayer(p, dt);
 }
-const DRAW_INTERVAL = 1000 / 60, MAX_STEPS = 6;   // after a long stall, time is dropped rather than caught up
-let lastT = performance.now(), nextDraw = 0, lastDraw = 0, acc = 0;
+const MAX_STEPS = 6;   // after a long stall, time is dropped rather than caught up
+let lastT = performance.now(), lastDraw = 0, acc = 0;
 // A script error must not leave a frozen screen: say so, and the next tap or key reloads the page.
 let crashed = false;
 function crash(err) {
@@ -159,14 +159,26 @@ function frameBody(now) {
   requestAnimationFrame(frame);
 }
 
-// draw at most ~60 fps while playing (90-144 Hz screens), and every other frame on menus, to save battery
+// Drawn frames: on a screen faster than 60 Hz, play draws every n-th screen frame, the largest n that still draws
+// at least 60 times a second (120 Hz: every 2nd; 144 and 165 Hz: every 2nd; 240 Hz: every 4th; 90 and 100 Hz: every
+// frame). Every n-th frame keeps the frames even (a 60/s clock on a 90 Hz screen gave 11 and 22 ms in turn), and the
+// cap saves battery. The menus draw half as often again, unless the screen is already at 30 Hz (iOS Low Power Mode).
+const PACE_N = 32, PACE_MAX = 1000 / 60 * 1.05;   // screen frames measured; the longest drawn interval (5% for jitter)
+const paceDt = new Float32Array(PACE_N);
+let paceI = 0, every = 1, screenN = 0;
+function measurePace(rawDt) {
+  if (rawDt <= 0 || rawDt > 0.05) return;   // a stall says nothing about the screen
+  paceDt[paceI++] = rawDt * 1000;
+  if (paceI < PACE_N) return;
+  paceI = 0;
+  const median = paceDt.slice().sort()[PACE_N >> 1];
+  every = Math.max(1, Math.floor(PACE_MAX / median));
+}
 function shouldDraw(now, rawDt, idle) {
-  // a screen already at 30 Hz (iOS Low Power Mode) draws every frame; faster ones skip every other on the menus
-  if (idle) return rawDt > 0.025 || (G.frameN++ & 1) === 0;
-  const draw = now >= nextDraw - 2;   // 2 ms tolerance: timestamps land a hair early or late
-  // keep a steady schedule: 60 draws/s on any refresh rate; after a stall, start the schedule again
-  if (draw) nextDraw = now - nextDraw > DRAW_INTERVAL * 2 ? now + DRAW_INTERVAL : nextDraw + DRAW_INTERVAL;
-  return draw;
+  measurePace(rawDt);
+  screenN++;
+  if (idle) return rawDt > 0.025 || screenN % (every * 2) === 0;
+  return screenN % every === 0;
 }
 // the per-frame looks (never the rules), then the render; work0: when the frame began (#debug frame times)
 function drawFrame(now, idle, work0) {
@@ -282,10 +294,12 @@ function playReplay(code) {
 }
 playReplay(REPLAY_CODE);
 if (loadText(HOWTO_KEY) !== '1' && !G.replay) showHowto();
-// build the other shaders now (rail lights; the see-through landing spot and shield bubble): built on the first
-// join or train, each one stutters the game
-const warm = [new THREE.Mesh(lightGeo, LIGHT_OFF), new THREE.Mesh(blobGeo, blobMat), new THREE.Mesh(bubbleGeo, bubbleMat), new THREE.Mesh(ghostWarmGeo(), ghostMat)];
-warm.forEach(m => scene.add(m));
-renderer.compile(scene, camera);
-warm.forEach(m => scene.remove(m));
-requestAnimationFrame(frame);
+// build the other shaders (the see-through landing spot, shield bubble and ghost) after the first title frame, so
+// they do not delay it: built on the first join or ghost instead, each one would stutter the game. compileAsync
+// builds them in the background where the browser can (KHR_parallel_shader_compile), with the scene's lights.
+function warmShaders() {
+  const warm = new THREE.Group();
+  warm.add(new THREE.Mesh(blobGeo, blobMat), new THREE.Mesh(bubbleGeo, bubbleMat), new THREE.Mesh(ghostWarmGeo(), ghostMat));
+  renderer.compileAsync(warm, camera, scene).catch(() => {});
+}
+requestAnimationFrame(now => { frame(now); setTimeout(warmShaders, 0); });

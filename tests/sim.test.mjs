@@ -2,6 +2,7 @@
 // Run: node tests/sim.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { createWorldGen, railStep, standColumns, standGroups, trafficX, wetAt } from '../js/gen.js';
 import { createSim, makeRules, resetPlayer, simulate, winnerOf } from '../js/sim.js';
 import { decodeReplay, encodeReplay } from '../js/replay.js';
@@ -29,8 +30,18 @@ const BROWSER_RUNS = [
   {"code":"MnwzODcyNzY5MTd8Y2xhc3NpY3xmcm9nLGZveHwxfDB8NDg1fDVhVTE3YVUzMmFVMjhhVTMwYVUxMWFVMzJhVTMyYVUyOGFVMTBhVTMzYUQzM2FVMTlhTDI2YUwyN2FSMjZhRDE3YVUxMGFVMTBhUjE0YUQzMGFVMTlhTDlhVTI2YUQxMGFVMTJhTDE4YUwxNGFMMTBhUjEzYVUyOGFVMTJhVTExYUwxNGFVMjFhVTEzYUwyMWFEMzJhVTI1YVIzM2FVMzFhVTMxYUwxNmFSMzFhTDMwYUQxNmFVMTBhRDI4YVUxOWFSMjVhTDIwYUwyNWFVMjlhVTMxYUQyNmFVMjhhVTI1YUQyMWFVMTJhVTIwYUwxM2FMMjlhRDExYVU5YUQxN2FMMjBhTDE3YVIzMWFVMTlhRDhhTDI3YVIxNWFMMTNhUjI1YUwyMWFSMjZhRDMzYUw5YVIxNWFMMTBhTDI2YVIyMmFEMjJhVTMzYUwyNmFVMjRhRDIxYVUyOGFVMjhhRDI5YVUxNmFEMTBhVTE5YVIzMWFEMjRhVTE0YUwxOWFSMjZhRDE0YVUyMGFVMTZhVTE5YVUyN2FVMTBhVTEwYVUxOGFMMjRhVTI3YVUxM2FVMThhUjE2YUQyNmFVMzBhTDEzYUwyMWFSMTVhUjIyYUQyM2FVMzFhVTI0YVUxOWFVMTVhVTI1YUQzMGFVMjJhTDlhUjIzYUwyNWFMMTlhVTMwYVUyOWFVMjJhRDI0YVUxOWFEMTNhVTE2YUwzMGFSMzNhVTEwYVUyN2FVMThhVTI5YVUyMWFSMTRhUjIwYVUyM2FSMTRhVTIwYUwzM2FEMzBhVTIyYUQyN2FVMjJhTDIwYVI4YUwxMmFMMTBhUjI1YUw5YVIxMmFVMjBhVTIyYVUxMmFVMjRhTDIyYVIzM2FVMjFhUjE2YVIxMWFEMTlhVTIwYUwzMGFSMjhhTDMwYUwxMGFSMzFhTDI1YVIxN2FSMjJhRDEwYVUzMmFVMTNhUjE4YVIyM2FEMzBhRDIwYVUxMGFSMjNhRDI4YVUxNmFEMTlhTDI0YUwxMmFMMTlhUjE2YVIyNWFMMzJhTDIwYUwyM2FVMzNhRDlhVTEyYVIxNmFEMjBhVTEyYVIyMWFEMjVhVTI2YUwxMmFEMjBhVTI5YUQxM2FVOGFVMTNhUjE5YUwyNGFVMTlhVTIyYUwyNWFMMjVhTDE2YVUyNWFMMTJhUjMwYUwyMWFMMzFhUjI0YVIyOWFSMzNhUjI4YVI5YVIyNmFSMTdhUjI1YUQyMmFVOGFEMzJhUjE2YVIzMWFMMjNhTDE2YVUxNmFVMzJhVTE3YUQxNGFVMTlhVTIxYUwyNWFMMTVhUjEzYUQyMGFVMjBhTDE3YUQzMGFVMjRhVTIxYVU5YUwzMWFSMTdhTDI0YUwxNmFVMTBhVTE1YUw4YVUyNmFVMjNhRDI1YVUyN2FSOGFMMTJhUjExYUwxNmFVOWFVMjFhVTI5YVUxMmFV","endTick":6428,"row":61,"cause":"eagle","scores":[61,0]},
   {"code":"Mnw3NzQ1NTM4MzR8Y2xhc3NpY3xmcm9nLGZveHwxfDB8NjcwfDVhVTI3YVUyMWFVMjRhUjI0YUQxNmFMMTRhTDhhUjEwYUQzMmFVMTdhRDMyYVUxN2FMMzBhRDI1YVUxMmFMMjdhTDE2YUQyNmFVMTZhUjExYUwyMWFMMjBhUjMxYVIxOGFVMzJhVTEyYUQyN2FVMTBhVTIwYVUyMWFVOWFVMTlhVTEzYVUyOWFVMTdhVTMzYVUxNGFVMjdhVTE5YVUxNGFVMjRhVTIyYVUxN2FVMjhhVTE3YVUxMWFSMjJhUjE3YUQxMWFVMjJhRDEwYVUyMmFEMTdhVTEzYVUyM2FVMzNhRDI3YVUyOWFVMTBhVTI0YVUxMWFVMjlhVQ","endTick":1987,"row":30,"cause":"eagle","scores":[30,0]},
   {"code":"MnwyMzIzNjYxNTAyfGNsYXNzaWN8ZnJvZyxmb3h8MXwwfDE0MTB8NWFVMTJhVTEyYVUyMGFMMTlhRDIwYVUxMGFSMzNhTDIwYVIyOWFVMzNhUjE1YVIyOWFSMzBhRDE3YVUyNmFMOGFEMjBhVTI4YUQ4YVUxOGFMMjlhUjMyYUQyN2FVMTBhVTE4YVUyM2FEOWFVMzJhTDEyYVIzMmFMMTJhTDE3YVUyOWFEMzBhVTI1YUwyMWFVMjhhVTMxYVUxN2FVMjdhTDExYVUyNWFSMThhRDlhVTIzYVIxMmFMMTdhRDI1YVUxM2FEMjRhVTI0YUQxMmFSMTRhTDI1YUwzMWFSMTVhUjI5YVUzM2FSMjRhTDE4YVUxOWFVMTFhVTE3YVUxNWFVMjNhVTE4YVUyMGFVMjFhVTMxYVUyMGFVMjdhVTE2YVIxM2FMMjVhUjI3YUwxOWFEMThhVTMzYUwyMGFMMjVhUjIwYUwzMWFMMjBhUjE4YVUxN2FVOWFVMTVhUjEyYUwyNmFSMjRhTDIyYVIzMWFVMjlhVTE5YUwxMWFEMTVhVTE0YUQyM2FVMjBhRDI4YVUxNGFVOWFVMjRhVTI3YVUyMWFMMjRhRDI0YVUxMGFSMjNhUjIxYVUyM2FVMzFhVTIyYUwyOWFVMjVhVTMyYUQxOWFVMTRhTDI1YVIzM2FMMTFhUjIxYVIxMWFVMjFhVTMwYUQxN2FSMTBhUjI5YUwxMWFSMzBhTDI0YVIyOGFVMzJhVTEzYUwxNmFSMjBhTDMwYVIxNmFSMTlhRDE5YVUxOGFVMTlhVTE1YVUyMmFVMTdhTDMwYVIyNWFSMjZhVTMzYVUyNWFMMzNhRDEwYVU5YUQ4YVIxMWFEMjlhVTIzYUQyMGFVMjJhUjI0YUQyM2FVMjhhUjIyYUQyMGFVMjNhUjE0YVIxMGFSMjZhUjMzYUwxOGFEMzNhTDhhUjE4YVIxOWFMMjZhTDE0YUw4YUwyNmFEMTBhRDIyYVUxOGFSMTFhTDE0YUQyMGFVMzBhTDIyYVIyNGFVMjFhVTMwYVU4YVIxNmFMMTlhRDI1YVUyN2FSOWFEMTZhVTMzYVUyNmFSMTJhUjI3YVIyNmFVMjhhVTI5YVU4YVUxN2FMMTVhTDE4YVIzMmFSOWFSMTZhTDE2YUwxMWFMMTZhVTMzYVU4YVUxNmFV","endTick":4607,"row":50,"cause":"splash","scores":[50,0]},
-  {"code":"MnwxNDAxMTgxMTQzfGNsYXNzaWN8ZnJvZyxmb3h8MXwwfDU1OXw1YVUxMGFVMjBhVTE4YVIyMmFSMjBhUjI2YVUxNmFVMjhhVTI4YVUxMmFSMTBhTDIzYUQxOWFVMTlhVTMxYUQyNWFEMjhhVTIwYUQyMGFVMThhTDIxYVUyN2FVMTlhTDEyYVIzM2FEMTNhVTIyYUQxOWFVMzNhVTEzYUwyM2FSMTlhTDMxYVU5YVUzM2FVMzJhVTIyYVUyNWFVMjJhVTE3YVUxMmFVMTZhVTEwYVUyNGFVMjJhVTIxYVUxNmFVOGFVMjhhVTI2YVUxOGFVMjZhTDE5YVUxMGFMMjdhUjIxYUwyMmFSMTNhUjE0YUwyNmFSMTNhTDIwYVI5YVIyN2FMMjVhVTMzYVUyNmFVMTBhVTIwYVUzMWFEMjVhVTMzYVIyMmFSMjdhRDI3YVUxOGFMMjdhRDI1YVUxMGFVMTZhRDMxYVUxMGFSMjhhUjIyYVUzMWFEMThhVTE0YVIyNWFSMjRhTDIzYVIxMmFMMzNhUjEzYUwzM2FVMjNhVTI5YUQxNWFVMTVhRDI1YVUyNmFEMjNhVTI0YVUyOGFVOWFVMTdhTDI5YVUxMWFVMTRhVTIwYVUzMmFMMjZhUjExYVIyMWFEMzJhVTEzYVIzMmFMMjVhRDMyYVUxOGFVMTJhRDlhVTI2YUQyN2FVMzJhVTIwYVIxMWFMMjZhUjE3YUwxOWFVMThhVTMzYVUyMWFVMTFhUjI4YUQyN2FVMjBhVTIyYVUyMWFVMjdhVTMxYVUzM2FVMzNhVTI3YVIyOWFMMzFhUjI3YVIxN2FVMjNhVTE5YVUyOGFVMTVhVTIzYVUzM2FVMjNhVTEwYUQxOWFVOGFEMTBhVTExYVUxOWFEMTJhVTIyYUQxNWFVMzJhRDMxYVU4OGFVMjBhVTE0YVUzMGFVMTRhVQ","endTick":3966,"row":55,"cause":"squash","scores":[55,0]}
+  {"code":"MnwxNDAxMTgxMTQzfGNsYXNzaWN8ZnJvZyxmb3h8MXwwfDU1OXw1YVUxMGFVMjBhVTE4YVIyMmFSMjBhUjI2YVUxNmFVMjhhVTI4YVUxMmFSMTBhTDIzYUQxOWFVMTlhVTMxYUQyNWFEMjhhVTIwYUQyMGFVMThhTDIxYVUyN2FVMTlhTDEyYVIzM2FEMTNhVTIyYUQxOWFVMzNhVTEzYUwyM2FSMTlhTDMxYVU5YVUzM2FVMzJhVTIyYVUyNWFVMjJhVTE3YVUxMmFVMTZhVTEwYVUyNGFVMjJhVTIxYVUxNmFVOGFVMjhhVTI2YVUxOGFVMjZhTDE5YVUxMGFMMjdhUjIxYUwyMmFSMTNhUjE0YUwyNmFSMTNhTDIwYVI5YVIyN2FMMjVhVTMzYVUyNmFVMTBhVTIwYVUzMWFEMjVhVTMzYVIyMmFSMjdhRDI3YVUxOGFMMjdhRDI1YVUxMGFVMTZhRDMxYVUxMGFSMjhhUjIyYVUzMWFEMThhVTE0YVIyNWFSMjRhTDIzYVIxMmFMMzNhUjEzYUwzM2FVMjNhVTI5YUQxNWFVMTVhRDI1YVUyNmFEMjNhVTI0YVUyOGFVOWFVMTdhTDI5YVUxMWFVMTRhVTIwYVUzMmFMMjZhUjExYVIyMWFEMzJhVTEzYVIzMmFMMjVhRDMyYVUxOGFVMTJhRDlhVTI2YUQyN2FVMzJhVTIwYVIxMWFMMjZhUjE3YUwxOWFVMThhVTMzYVUyMWFVMTFhUjI4YUQyN2FVMjBhVTIyYVUyMWFVMjdhVTMxYVUzM2FVMzNhVTI3YVIyOWFMMzFhUjI3YVIxN2FVMjNhVTE5YVUyOGFVMTVhVTIzYVUzM2FVMjNhVTEwYUQxOWFVOGFEMTBhVTExYVUxOWFEMTJhVTIyYUQxNWFVMzJhRDMxYVU4OGFVMjBhVTE0YVUzMGFVMTRhVQ","endTick":3966,"row":55,"cause":"squash","scores":[55,0]},
+  // rules 3 (the first field of the code), played in the browser
+  {"code":"M3wzMTMzN3xjbGFzc2ljfGZyb2csZm94fDF8MHwzODN8MThhVTQ4YVU0OGFVNDRhUjQ4YVU0OGFVNDhhTDQ4YVU5MGFVNDhhVQ","endTick":502,"row":8,"cause":"splash","scores":[8,0]},
+  {"code":"M3w4NTE1MzI2MnxjbGFzc2ljfGZyb2csZm94fDF8MHw0MDB8NDJhVTQ2YVIzM2FSNDRhUjIzYVUyM2FMMjdhVTM3YVUyNGFVMjhhVTQwYVUzNGFVNDZhTDM5YVU0NWFVMjRhVTI4YUQzN2FVMzZhUjQ3YVUzOWFVMzFhVTIwYVUzN2FVNDRhVTQ3YVUzNGFSMzJhVTIzYVUzOWFVNDhhTDIxYVU0NmFSNDFhVQ","endTick":1219,"row":22,"cause":"splash","scores":[22,0]}
 ];
+
+test('sim: the last saved browser run is a rules 3 run that rules 2 would end at row 4 (a landing on the log by the body)', () => {
+  const rp = decodeReplay(BROWSER_RUNS[BROWSER_RUNS.length - 1].code);
+  assert.equal(rp.version, 3);
+  const v2 = simulate({ ...rp, version: 2 });
+  assert.deepEqual([v2.score, v2.row, v2.cause], [4, 4, 'splash']);
+});
 
 test('gen: seed 42 gives the lane kinds the browser built', () => {
   const g = createWorldGen(42);
@@ -1358,4 +1369,24 @@ test('createSim: a dead player ahead does not pull the scroll line; prune forget
   const s = simulate({ ...rp, joined: [false, true] });
   assert.deepEqual([s.players[0].cause, s.players[0].alive, s.players[0].row, s.cause], ['', false, 0, 'eagle']);
   assert.notEqual(simulate({ ...rp, joined: [false, true] }, { maxMs: 60000 }), null, 'a minute is plenty');
+});
+
+// the score server stores only the hops a run applied (server/scores.mjs): onHop must name each hop the rules started,
+// as the move it was (a spring's two-row hop is the forward move), so their fresh code plays the very same run
+test('onHop: the hops the rules started; their fresh code plays the very same run', () => {
+  const bench = fs.readFileSync(new URL('./bench-replay.txt', import.meta.url), 'utf8').trim();   // crosses springs (row 95 on)
+  for (const code of [...BROWSER_RUNS.map(r => r.code), bench]) {
+    const rp = decodeReplay(code), hops = [];
+    const a = simulate(rp, { onHop: (...h) => hops.push(h) });
+    assert.ok(hops.length > 0 && hops.length <= rp.events.length, 'at most one hop per move');
+    assert.ok(hops.every(([t, p, dx, dr]) => rp.joined[p] && t >= 1 && t <= a.endTick && Math.abs(dx) + Math.abs(dr) === 1), 'a move of a joined player, in the run');
+    const fresh = decodeReplay(encodeReplay({ ...rp, events: hops }));
+    assert.deepEqual(simulate(fresh), a);
+    assert.deepEqual(simulate(rp), a, 'the hook changes nothing');
+  }
+  const sim = createSim(decodeReplay(bench)), seen = [];
+  const withHook = createSim(decodeReplay(bench), { onHop: (t, p) => seen.push(p) });
+  while (sim.step() | withHook.step());   // both to the end, step for step
+  assert.equal(withHook.end.endTick, sim.end.endTick);
+  assert.ok(seen.length > 100);
 });

@@ -31,7 +31,7 @@ const { rnd, int, pick } = seededRng(SEED);
 let built = 0;
 function validBody(name) {
   for (;;) {
-    const mode = pick(MODES), day = int(0, 2) ? dayAgo(int(0, 10)) : undefined;
+    const mode = pick(MODES), day = int(0, 2) ? dayAgo(int(0, 1)) : undefined;   // the server takes today (UTC) or a day either side
     const seed = mode === 'daily' ? dailySeedFor(day || today()) : int(0, 4294967295);
     const joined = [true, rnd() < 0.4];
     const events = [];
@@ -41,7 +41,7 @@ function validBody(name) {
       const d = rnd() < 0.8 ? DIRS[0] : pick(DIRS);
       events.push([t, joined[1] && rnd() < 0.5 ? 1 : 0, d[0], d[1]]);
     }
-    const rp = { seed, mode, chars: [pick(ANIMALS), pick(ANIMALS)], joined, handicap: int(0, 2), startTick: int(0, 2000), events };
+    const rp = { seed, mode, chars: [pick(ANIMALS), pick(ANIMALS)], joined, handicap: 0, startTick: int(0, 2000), events };   // a handicap run is not ranked
     const run = simulate(rp, { maxMs: 300 });
     built++;
     if (!run || !run.over || run.score > 5000) continue;

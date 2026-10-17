@@ -24,7 +24,6 @@ const G = {
   state: 'attract', stateT: 0, camRow: 0, playT: 0, countdown: 0, goT: 0,
   camLead: 4.2,        // camera looks this many rows past the scroll line (less on wide screens)
   visRows: 14,         // lanes further than this from the camera focus are not drawn
-  frameN: 0,
   restarting: false,
   mode: 'classic',     // one of MODES (rules.js): classic, race, coinwar, tag, daily, room
   bank: 0,             // coins collected over all games (set by storage.js)
@@ -53,7 +52,10 @@ const G = {
   lastDead: null,      // the player whose death ended the game (the view closes in on it)
   twoUp: false,        // both players are in the game (screens.js join; world.js draws a bomb-row magnet as a bomb then)
   look: 'auto',        // an unlocked look (LOOKS): which biome the land starts as, or 'night'
-  biomeBlock: 0        // the BIOME_ROWS block the camera is in (a new one shows its name)
+  biomeBlock: 0,       // the BIOME_ROWS block the camera is in (a new one shows its name)
+  runHandicap: 0,      // the handicap of this run, fixed at the first join (screens.js join; spawn and the replay code use it)
+  worldDay: '',        // the day the daily world's seed was made for ('' for any other world; screens.js buildWorld)
+  overTick: -1         // G.tick of the step the run ended in (players.js finishes that step's rules, as sim.js does)
 };
 
 // ---------- test hooks and seeds ----------

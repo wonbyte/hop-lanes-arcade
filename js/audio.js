@@ -4,8 +4,10 @@ import { MUTE_KEY, loadText } from './storage.js';
 
 // Sound effects made with the Web Audio API, and the mute switch.
 // ---------- audio ----------
-let actx = null;
+let actx = null, lastWake = 0;   // lastWake: the last gesture (performance.now)
+const IDLE_MS = 14000;   // no gesture for this long on an idle screen: the audio device may sleep
 function audio() {
+  lastWake = performance.now();
   if (!actx) { try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
   if (!actx) return;
   watchContext();
@@ -125,7 +127,8 @@ function watchContext() { if (actx && !actx.onstatechange) actx.onstatechange = 
 const playLoopOn = () => !!playTimer;
 
 const isMuted = () => muted;
-// let the audio device sleep on long idle screens; audio() wakes it on the next input
-function idleAudio() { if (actx && actx.state === 'running') actx.suspend().catch(() => {}); }
+// let the audio device sleep on long idle screens (not just after a gesture: a jingle or the tune must play out);
+// audio() wakes it on the next input
+function idleAudio() { if (actx && actx.state === 'running' && performance.now() - lastWake > IDLE_MS) actx.suspend().catch(() => {}); }
 
 export { audio, idleAudio, isMuted, muted, playLayers, playLoopOn, setMuted, sfx, startPlayLoop, startTune, stopPlayLoop, stopTune, tuneOn };

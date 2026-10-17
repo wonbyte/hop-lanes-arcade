@@ -1,9 +1,9 @@
 import { audio, isMuted, setMuted, sfx, startPlayLoop, stopPlayLoop, stopTune } from './audio.js';
-import { $, COUNTDOWN, G, GO_TIME, MODES, PRIZE_COST, RESULTS_DELAY, SCORES_TOKEN, SCORES_URL, WIPE_MS } from './core.js';
+import { $, COUNTDOWN, FIXED_SEED, G, GO_TIME, MODES, PRIZE_COST, RESULTS_DELAY, SCORES_TOKEN, SCORES_URL, WIPE_MS } from './core.js';
 import { nextLang, setLang, t } from './i18n.js';
 import { DAILY, DAILY_REWARD, MISSIONS, MISSION_REWARD, advanceMissions, dailyDoneText, dailyMissions, doneDaily, doneMissions, emptyStats, missionsText, parseDailyDone, parseMissions } from './missions.js';
 import { encodeReplay } from './replay.js';
-import { RULES, dayBefore, hatFor, streakAfter, traitOf } from './rules.js';
+import { DAY_PREFIX, RULES, dailySeedFor, dayBefore, hatFor, streakAfter, traitOf } from './rules.js';
 import { runOver, topScore, winnerOf } from './sim.js';
 import { keepAwake } from './device.js';
 import { reduceMotion, resetFrameWatch, touchQuery } from './gfx.js';
@@ -36,9 +36,14 @@ function setCard(i) {
   if (p.shownChar !== ch.key) { drawPix($('pic' + (i + 1)), PIX[ch.key]); p.shownChar = ch.key; }
   const head = c.querySelector('.head'), st = c.querySelector('.state');
   if (p.joined) { head.textContent = t('READY!'); st.textContent = t('PLAYER {n}', { n: i + 1 }); }
-  else if (locked) { head.textContent = G.bank >= ch.price ? t('TAP TO BUY') : t('NEED {n} COINS', { n: ch.price }); st.textContent = t('{name} · {n} COINS', { name: t(ch.name), n: ch.price }); }
+  else if (locked) { const [h, sub] = lockedText(ch); head.textContent = h; st.textContent = sub; }
   else { head.textContent = joinText(); st.textContent = t(ch.name) + ' \u00b7 ' + t(traitOf(ch.key).text || 'BALANCED'); }
   for (const b of /** @type {NodeListOf<HTMLButtonElement>} */ (c.querySelectorAll('.cyc'))) b.disabled = p.joined;
+}
+// a locked card: a prize animal comes only from the prize machine; the others are bought with coins
+function lockedText(ch) {
+  if (ch.prize) return [t('PRIZE MACHINE\nONLY'), t('{name} · A PRIZE', { name: t(ch.name) })];
+  return [G.bank >= ch.price ? t('TAP TO BUY') : t('NEED {n} COINS', { n: ch.price }), t('{name} · {n} COINS', { name: t(ch.name), n: ch.price })];
 }
 function cycleChar(i, d) {
   const p = players[i];
@@ -64,12 +69,25 @@ function setMode(mode) {
   G.mode = mode;
   save(MODE_KEY, mode);
   setModeLabel();
-  if (G.state === 'attract') resetWorld();   // daily and room modes have their own seeds
+  if (G.state === 'attract') buildWorld();   // daily and room modes have their own seeds
 }
+// a new world, and the day its daily seed was made for ('' when it is not a daily world): a daily run started on a
+// title world built before midnight belongs to that day (the score server checks the seed against the posted day)
+function buildWorld() {
+  resetWorld();
+  const seed = getSeed();
+  G.worldDay = G.mode !== 'daily' ? '' : [today(), dayBefore()].find(d => dailySeedFor(d) === seed) || '';
+}
+const runDay = () => G.worldDay || today();
+// the day changed (storage.js): today's missions are new, and a daily title world is rebuilt as the new day's world
+document.addEventListener('hoplanes:day', () => {
+  showDailyMissions();
+  if (G.state === 'attract' && !G.restarting && G.mode === 'daily' && G.worldDay && G.worldDay !== today()) buildWorld();
+});
 // an unlocked look (settings): the land starts as a far biome or at night; the title world is built again in it
 function setLook(key) {
   G.look = key;
-  if (G.state === 'attract') resetWorld();
+  if (G.state === 'attract') buildWorld();
 }
 // room mode: two phones that enter the same code play the same world (seed = the code)
 const randomCode = () => Array.from({ length: 4 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ'[Math.floor(Math.random() * 24)]).join('');
@@ -127,22 +145,33 @@ function payDaily() {   // at game over: which of today's missions this run fini
   return t('DAILY MISSION DONE +{n}', { n: DAILY_REWARD * done.length }) + ': ' + done.map(k => missionLabel(DAILY[picks[k]])).join(' + ') + '. ';
 }
 // the best 10 runs on this device (panels.js lists them): the first run that makes it asks for the player's initials
-// (never inside a game step: the first time, the question waits until the results panel is up, so the death plays out)
-let askedInitials = false;
-function enterLocal(name, score, now = false) {
+// (never inside a game step: the first time, the question waits until the results panel is up, so the death plays out;
+// a restart before that leaves it for the next results, never over a countdown)
+let askedInitials = false, initialsTimer = 0;
+const waitingLocal = [];   // entries that wait for the initials
+function saveLocal(entry, initials) {
   const list = parseLocal(loadText(LOCAL_KEY));
-  if (!entersLocal(list, score)) return;
-  let initials = cleanInitials(loadText(INITIALS_KEY));
-  if (!initials) {
-    if (!now) { setTimeout(() => enterLocal(name, score, true), RESULTS_DELAY * 1000 + 800); return; }
-    if (!askedInitials) {   // once per session; a cancelled question is not saved, so it can be answered another day
+  if (entersLocal(list, entry.score)) save(LOCAL_KEY, JSON.stringify(localTop(list, { ...entry, name: initials + ' ' + entry.name })));
+}
+function enterLocal(name, score) {
+  if (!entersLocal(parseLocal(loadText(LOCAL_KEY)), score)) return;
+  const entry = { name, score, day: runDay(), mode: G.mode }, initials = cleanInitials(loadText(INITIALS_KEY));
+  if (initials) saveLocal(entry, initials); else waitingLocal.push(entry);
+}
+// on the results of game over n: ask for the initials once, then save every entry that waited for them
+function askInitialsLater(n) {
+  if (!waitingLocal.length) return;
+  clearTimeout(initialsTimer);
+  initialsTimer = setTimeout(() => {
+    if (G.state !== 'over' || n !== overN) return;   // a restart came first: the next results ask
+    let initials = cleanInitials(loadText(INITIALS_KEY));
+    if (!initials && !askedInitials) {   // once per session; a cancelled question is not saved, so it can be answered another day
       askedInitials = true;
       try { initials = cleanInitials(window.prompt(t('YOUR INITIALS (3 LETTERS)'), deviceTag.slice(0, 3))); } catch (e) {}
       if (initials) save(INITIALS_KEY, initials);
     }
-    if (!initials) initials = deviceTag.slice(0, 3);
-  }
-  save(LOCAL_KEY, JSON.stringify(localTop(list, { name: initials + ' ' + name, score, day: today(), mode: G.mode })));
+    for (const e of waitingLocal.splice(0)) saveLocal(e, initials || deviceTag.slice(0, 3));
+  }, RESULTS_DELAY * 1000 + 800);
 }
 function payMissions() {   // at game over: which missions this run finished; returns the note text
   const done = doneMissions(missions, G.run);
@@ -231,12 +260,15 @@ function confetti() {
 }
 
 function toAttract() {
-  G.state = 'attract'; G.stateT = 0; G.camRow = 0;
+  G.state = 'attract'; G.stateT = 0; G.camRow = 0; G.biomeBlock = 0;
+  // a restart from the pause menu skips endPlay: the run's coins are saved and the play look ends here too
+  flushBank(); stopPlayLoop(); keepAwake(false); G.hint = false;
+  $('app').classList.remove('playing');
   players.forEach(p => { p.joined = false; despawn(p); });
   G.twoUp = false;
   resetRules();   // no bomb carries over (its rocks go before the lanes do)
   stopGhost();
-  resetWorld();
+  buildWorld();
   refreshBests();
   resultsEl.hidden = true; $('logo').hidden = false;
   $('score1').hidden = $('score2').hidden = true;
@@ -272,13 +304,16 @@ function join(i) {
   if (p.joined) return;
   const ch = charOf(p);
   if (!isOwned(ch) && !G.replay) {                      // a locked character: buy it with coins, or no join
-    if (G.bank < ch.price) { sfx.nope(); shakeCard(i); return; }
+    if (ch.prize || G.bank < ch.price) { sfx.nope(); shakeCard(i); return; }   // a prize comes only from the prize machine
     setBank(G.bank - ch.price);
     owned.add(ch.key); save(OWNED_KEY, [...owned].join(','));
     sfx.buy();
   }
   p.joined = true; sfx.join();
   stopTune();
+  // the handicap of this run is fixed at the first join: a later change in the settings is for the next game
+  if (G.state === 'attract') G.runHandicap = G.replay ? G.replay.handicap : G.handicap;
+  document.dispatchEvent(new Event('hoplanes:join'));   // panels.js closes an open dialog
   spawn(p);
   if (players[0].joined && players[1].joined) { G.twoUp = true; refreshPowerLooks(); }
   if (G.state === 'attract') { G.state = 'countdown'; G.countdown = COUNTDOWN; }
@@ -287,7 +322,7 @@ function join(i) {
   setCards();
 }
 function startPlay() {
-  G.state = 'play'; G.playT = 0; G.playTick = 0; G.goT = GO_TIME; sfx.go();
+  G.state = 'play'; G.playT = 0; G.playTick = 0; G.goT = GO_TIME; G.biomeBlock = 0; sfx.go();
   G.run = emptyStats(); G.record = [];
   // the world clock at the start is part of the run: a replay starts on the same tick
   if (G.replay) { G.replay.i = 0; G.worldTick = G.replay.startTick; }
@@ -305,17 +340,18 @@ function startPlay() {
   setCards();
 }
 // this run as a replay code: the seed, the mode, the animals, the handicap, the start tick and every hop
-const runCode = () => encodeReplay({ version: G.rules, seed: getSeed(), mode: G.mode, chars: players.map(q => charOf(q).key), joined: players.map(q => q.joined), handicap: G.handicap, startTick: G.startTick, events: G.record });
+const runCode = () => encodeReplay({ version: G.rules, seed: getSeed(), mode: G.mode, chars: players.map(q => charOf(q).key), joined: players.map(q => q.joined), handicap: G.runHandicap, startTick: G.startTick, events: G.record });
 let overN = 0;   // which game over this is: a server answer that comes late must not label the next game's results
 // the records this run set: the all-time best, today's best, the daily challenge best, the streak; returns the note
 function saveRecords(top) {
   let note = '';
   {
     if (top > G.bestAll) { G.bestAll = top; save(BEST_KEY, top); note = 'NEW ALL TIME BEST!'; }
-    if (G.mode === 'daily') save(STREAK_KEY, streakAfter(loadText(STREAK_KEY), today(), dayBefore()));
+    const day = runDay();   // a daily run counts for the day of its world
+    if (G.mode === 'daily') save(STREAK_KEY, streakAfter(loadText(STREAK_KEY), day, dayBefore(new Date(day + 'T12:00:00'))));
     if (top > load(dayKey())) { save(dayKey(), top); note = note || 'NEW BEST TODAY!'; }
     if (G.mode === 'daily') {
-      const k = DAILY_KEY + dayKey();
+      const k = DAILY_KEY + DAY_PREFIX + day;
       if (top > load(k)) { save(k, top); if (!note.includes('ALL TIME')) note = 'NEW DAILY CHALLENGE BEST!'; }   // an all-time best keeps its confetti
       else note = t('DAILY CHALLENGE BEST {n}.', { n: load(k) }) + ' ' + note;
     }
@@ -336,6 +372,7 @@ function shareTexts(hero, top, replay) {
 // the run has ended: play stops (the results come after RESULTS_DELAY)
 function endPlay() {
   G.state = 'over'; G.stateT = 0; overN++;
+  G.overTick = G.tick;   // players.js: the rest of this step still runs the rules, as sim.js does
   flushBank();
   stopPlayLoop();
   G.hint = false;
@@ -353,6 +390,28 @@ function showBest(note, top) {
   return note.replace(best[0], '').replace(/^ +| +$/g, '');
 }
 const resultTitle = (replay, both, winner) => replay ? t('REPLAY OVER') : !both ? t('GAME OVER') : !winner ? t('TIE GAME!') : t('{name} WINS!', { name: t(charOf(winner).name) });
+// the player who set the posted score (sim.js topScore: the higher score, also when the other one won a coin war or a
+// race): the online name, the share text, the local top 10 and the ghost credit that animal with those rows
+function scorerOf(players, top, winner) {
+  if (winner && winner.score === top) return winner;
+  return players.find(p => p.joined && p.score === top) || players[0];
+}
+// the results texts that depend on the mode: the coin count of a coin war, the gap of a race
+function modeNote(note, both, winner) {
+  const [p1, p2] = players;
+  if (both && G.mode === 'coinwar') note = t('COINS {a} - {b}.', { a: p1.coins, b: p2.coins }) + ' ' + note;
+  if (G.mode === 'race' && winner) note = t('BY {n} ROWS.', { n: Math.abs(p1.score - p2.score) }) + ' ' + note;
+  return note;
+}
+function showResults(note) {
+  const [p1, p2] = players;
+  $('res1').hidden = !p1.joined; $('res2').hidden = !p2.joined;
+  $('res1').querySelector('span').textContent = t(charOf(p1).name);
+  $('res2').querySelector('span').textContent = t(charOf(p2).name);
+  $('res1').querySelector('b').textContent = p1.score;
+  $('res2').querySelector('b').textContent = p2.score;
+  $('resNote').textContent = (note ? note + ' ' : '') + t('PRESS TAP TO PLAY AGAIN');
+}
 function checkOver() {
   if (G.state !== 'play') return;
   if (!runOver(players, G.mode)) return;   // sim.js: a race ends at the first death, otherwise when nobody is left
@@ -365,45 +424,42 @@ function checkOver() {
   let note = replay ? '' : saveRecords(top);
   // who wins: in a race the one still standing (or the higher score), otherwise the higher score
   const winner = winnerOf(players, G.mode);   // sim.js: race, coin war or the higher score
-  if (both && G.mode === 'coinwar') note = t('COINS {a} - {b}.', { a: p1.coins, b: p2.coins }) + ' ' + note;
+  note = modeNote(note, both, winner);
   $('resTitle').textContent = resultTitle(replay, both, winner);
-  if (G.mode === 'race' && winner) note = t('BY {n} ROWS.', { n: Math.abs(p1.score - p2.score) }) + ' ' + note;
-  const hero = winner || (p1.joined ? p1 : p2);
-  const code = shareTexts(hero, top, replay);   // the replay code: the seed, the animals and every hop of this run
-  saveGhost(code, top, hero.id);   // daily and room worlds: the best run comes back as a ghost
+  const scorer = scorerOf(players, top, winner);
+  const code = shareTexts(scorer, top, replay);   // the replay code: the seed, the animals and every hop of this run
+  saveGhost(code, top, scorer.id);   // daily and room worlds: the best run comes back as a ghost
   note = showBest(note, top);
   if (!replay) note = payMissions() + payDaily() + note;
-  if (!replay) enterLocal(charOf(hero).name, top);
+  if (!replay) enterLocal(charOf(scorer).name, top);
+  askInitialsLater(overN);   // a first entry waits for the initials until the results are up
   const hat = hatFor(G.bestAll);
   if (!replay && hat && hat !== hatBefore) note = t('NEW HAT: {name}!', { name: t(hat.name) }) + ' ' + note;
-  $('res1').hidden = !p1.joined; $('res2').hidden = !p2.joined;
-  $('res1').querySelector('span').textContent = t(charOf(p1).name);
-  $('res2').querySelector('span').textContent = t(charOf(p2).name);
   $('world').hidden = true;
-  if (!replay) postScore(charOf(hero).name + ' ' + deviceTag, top, code || runCode(), overN);   // the server keeps one entry per name
-  $('res1').querySelector('b').textContent = p1.score;
-  $('res2').querySelector('b').textContent = p2.score;
-  $('resNote').textContent = (note ? note + ' ' : '') + t('PRESS TAP TO PLAY AGAIN');
+  if (!replay && canPost()) postScore(charOf(scorer).name + ' ' + deviceTag, top, code || runCode(), overN);   // the server keeps one entry per name
+  showResults(note);
 }
 
+// a fixed world (#seed-N) or a handicap shield is not a fair run for the online list: it stays on this device
+const canPost = () => FIXED_SEED === null && G.runHandicap === 0;
 // optional online score list: silent when no server is set or it can not be reached
 async function postScore(name, score, code, gameN) {
   if (!SCORES_URL || !window.fetch) return;
   try {
     const ctrl = new AbortController();
     setTimeout(() => ctrl.abort(), 4000);
-    const daily = G.mode === 'daily';
+    const daily = G.mode === 'daily', day = runDay();   // a daily run is posted with the day of its world
     const res = await fetch(SCORES_URL, {
       method: 'POST', headers: { 'Content-Type': 'application/json', ...(SCORES_TOKEN ? { 'X-Hop-Token': SCORES_TOKEN } : {}) },
       // the run's replay code (the one in the replay link): a server with VERIFY=1 plays it again to check the score
-      body: JSON.stringify({ name, score, day: today(), mode: G.mode, replay: code }), signal: ctrl.signal
+      body: JSON.stringify({ name, score, day, mode: G.mode, replay: code }), signal: ctrl.signal
     });
     if (!res.ok) return;
     let top = (await res.json()).top;
     // daily mode compares with everyone who played today's world
     if (daily) {
       const u = new URL(SCORES_URL, location.href);   // the server address may carry a query of its own
-      u.searchParams.set('day', today()); u.searchParams.set('mode', 'daily');
+      u.searchParams.set('day', day); u.searchParams.set('mode', 'daily');
       top = (await (await fetch(u, { signal: ctrl.signal })).json()).top;
     }
     if (Array.isArray(top) && top.length && G.state === 'over' && gameN === overN) {   // still the game that posted

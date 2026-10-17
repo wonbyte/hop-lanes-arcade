@@ -383,8 +383,5 @@ function makeCharacter(boxesFn, key, hat = '') {
 // light is painted per instance with a LIGHT_TINT; its glow (8th value) makes it twice as bright at night
 const lightBoxes = () => [[0.38, 0.2, 0.14, 0xffffff, 0, 0, 0, 1]];
 const LIGHT_TINT = { off: 0x331111, on: 0xff2222, red: 0xff2a2a, blue: 0x3a7bff };
-// a plain (non-voxel) material and geometry: app.js draws one box with them at boot to warm the shader
-const LIGHT_OFF = new THREE.MeshLambertMaterial({ color: 0x331111 });
-const lightGeo = new THREE.BoxGeometry(0.38, 0.2, 0.14);
 
-export { CHARACTERS, COLORS, blockBoxes, bombBoxes, tileBoxes, twisterBoxes, LIGHT_OFF, LIGHT_TINT, PIX, PRIZES, boulderBoxes, coinBoxes, drawPix, eagleBoxes, isOwned, lightBoxes, lightGeo, logBoxes, magnetBoxes, makeCharacter, plankBoxes, policeBoxes, shieldBoxes, trainBoxes, vehicleBoxes };
+export { CHARACTERS, COLORS, blockBoxes, bombBoxes, tileBoxes, twisterBoxes, LIGHT_TINT, PIX, PRIZES, boulderBoxes, coinBoxes, drawPix, eagleBoxes, isOwned, lightBoxes, logBoxes, magnetBoxes, makeCharacter, plankBoxes, policeBoxes, shieldBoxes, trainBoxes, vehicleBoxes };

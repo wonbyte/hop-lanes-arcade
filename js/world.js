@@ -322,7 +322,7 @@ function addLane(r) {
   worldGroup.add(lane.group);
   lanes.set(r, lane);
   maxRow = Math.max(maxRow, r);
-  mergeChunk(Math.floor(r / CHUNK));
+  if (r - Math.floor(r / CHUNK) * CHUNK === CHUNK - 1) pendingChunks.add(Math.floor(r / CHUNK));   // the chunk's last row: join it
 }
 
 // ---------- ground chunks: 8 rows of ground drawn as one mesh (two: one that casts shadows, one that does not) ----------
@@ -331,6 +331,12 @@ function addLane(r) {
 // the chunk is freed once every one of its rows is dropped, so dropping rows never rebuilds meshes.
 const CHUNK = 8;
 const chunks = new Map();   // chunk index -> { meshes, rows }
+// A chunk is joined in a drawn frame, at most one a frame (mergePending), not in the game step that built its last
+// row: a step may run several times in one frame, and the join (about 2 ms in node for 8 rail rows) would land there.
+const pendingChunks = new Set();
+function mergePending(all) {
+  for (const k of pendingChunks) { pendingChunks.delete(k); mergeChunk(k); if (!all) return; }
+}
 function joinGeos(geos) {
   let verts = 0, idx = 0;
   for (const g of geos) { verts += g.attributes.position.count; idx += g.index.count; }
@@ -487,6 +493,7 @@ function updateLanes(players = null) {
 // once per drawn frame, before placeCamera(): the lanes no player can touch. A hidden lane gets no position
 // writes (its rail schedule still advances, so a train is not announced late when the lane scrolls in).
 function updateFarLanes() {
+  mergePending(false);
   const w = G.worldTick * STEP;
   for (const lane of lanes.values()) if (!hot.has(lane.r)) updateLane(lane, w, lane.shown);
 }
@@ -527,6 +534,7 @@ function resetWorld() {
   worldGen = createWorldGen(worldSeed);
   maxRow = Math.min(FIRST_ROW, firstNeededRow()) - 1;
   while (maxRow < lastNeededRow()) addLane(maxRow + 1);
+  mergePending(true);   // a new world: join what is built now
 }
 function ensureLanes() {
   while (maxRow < lastNeededRow()) addLane(maxRow + 1);

@@ -67,6 +67,33 @@ row without compiled code, and the nightly soak gates on it. The heap after each
 The first run of each soak is slower because the ladder is still stepping down during it (it ended at pixel ratio 1,
 shadow map 256, shadows every other frame).
 
+### The review fixes of 17 Oct 2026 (performance)
+
+| Measure | Before | After | How |
+|---|---|---|---|
+| Drawn frames on a 90 Hz screen | 11.1 / 22.2 ms in turn (p95 22.2) | 11.1 ms every frame (p95 11.4) | a copy of the scheduler fed with screen frames (0.3 ms jitter) |
+| ... 144 Hz | 13.9 / 20.8 ms in turn (p95 20.8) | 13.9 ms (p95 14.3) | the same |
+| ... 75 / 100 / 165 / 240 Hz | uneven (75 Hz: 13.3 / 26.7) | 13.3 / 10.0 / 12.1 / 16.7 ms, even | the same; 60, 120 and 30 Hz unchanged |
+| The modules over the network (gzip -9) | 83 641 bytes | 48 447 bytes | `tools/assemble-site.sh` (each module minified, imports kept); the minified site plays (a browser check) |
+| Shader programs built before the first title frame | 4 (one, the old rail light, unused) | 0: 3 built after it, in the background (`compileAsync`) | `js/app.js` `warmShaders` |
+| Ghost catch-up in the GO step | createSim + 361 countdown steps (1.2-5.3 ms in node) | the few steps the countdown has left | `primeGhost` steps it along the countdown |
+| Ground chunk joins in a game step | up to 1 every 8 rows (1.0-1.8 ms in node for 8 rail rows) | 0: one a drawn frame | `mergePending` |
+| The weather layer (390 x 760 at 2x) | (W+280) x (H+560): 3.5 Mpx | (W+60) x (H+140): 1.6 Mpx; moves 60 times a second (rain), 30 (snow) | `css/style.css` |
+| The ghost's shadow | a solid shadow, one more shadow draw | none | `js/ghost.js` |
+
+### The review fixes of 17 Oct 2026 (score server; Node 22, 4 cores)
+
+| Measure | Before | After |
+|---|---|---|
+| A POST that saves at once, full table (18000 entries, 7.2 MB): p50 / p95 / max | 56 / 102 / 167 ms | 3 / 9 / 90 ms (one file per day; only the changed day is written) |
+| The worst GET while POSTs come every 50 ms (max / p99) | 163 / 22 ms | 31 / 5 ms |
+| Replay check in a fresh process, 92 s run | 52-87 ms cold (a 5-minute run about 170-290 ms: over the 300 ms limit at times, then 400) | warm before it listens (140-190 ms at start): 11-15 ms; out of time is a 503 with `Retry-After` |
+| The same run posted again under another name or day | 200 | 409 |
+| A padded replay (2.3 KB run padded to 32 KB) | stored as posted | stored as the applied hops only |
+
+The fresh code of the applied hops played the same, every field, on 16000 random runs and every saved run.
+`tools/fuzz-server.mjs` 60 s (seed 42): 0 findings. `tools/load-server.mjs --short`: 200 seeded, 0 failed.
+
 ## Hazards and fairness (rules 3)
 
 A player reported an animal that fell into the water while riding a wooden board. `tools/hazard-audit.mjs` (random

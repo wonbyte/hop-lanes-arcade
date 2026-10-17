@@ -56,21 +56,22 @@ and every scanner's result.
 | `js/gfx.js` | Renderer, camera, light, `resize()`, the adaptive quality ladder (`watchFrameTime`) |
 | `js/world.js` | Lanes: `LANE_BUILDERS` per kind, traffic, trains, coins, the instanced fleet (`Inst`), ground chunks (`mergeChunk`), the biomes (`BIOMES`, `biomeAt(r)`: colors only, a new one every `BIOME_ROWS`; an unlocked look `G.look` shifts the start), the tutorial seed on the first classic game. Lanes are a `Map` by row |
 | `js/players.js` | Spawn, queued moves (`queueMove` / `applyMoves`, the replay feed), and the effect hooks `makeRules` calls (meshes, sounds, particles) for hops, landings, hazards, deaths, coins, combos, power-ups and the eagle |
-| `js/ghost.js` | The ghost: in daily and room modes the best run on this world (`hoplanes.ghost.<seed>`: score, hero, time, replay code; newest 6 worlds kept) is replayed by `createSim` one step per game step and drawn see-through (`ghostMat`); `saveGhost` at game over, `startGhost` at play, `stopGhost` on the title |
+| `js/ghost.js` | The ghost: in daily and room modes the best run on this world (`hoplanes.ghost.<seed>`: score, hero, time, replay code; newest 6 worlds kept) is replayed by `createSim` one step per game step and drawn see-through (`ghostMat`); `saveGhost` at game over, `primeGhost` each countdown step (the ghost's own countdown runs along, so GO has nothing to catch up), `startGhost` at play, `stopGhost` on the title |
 | `js/screens.js` | Join cards and shop, title menu (modes incl. room code, prize machine, handicap, language, missions), countdown, results (share, replay link, confetti), restart, pause, first-run help, online score post |
 | `js/panels.js` | The dialogs (`.dialog` in CSS, one open at a time: `openDialog`/`closeDialog`, Escape closes): SETTINGS (sound, vibration `hoplanes.buzz`, language, handicap, less motion `hoplanes.motion`, read at boot by `gfx.js`, the look `#look`: cycles the looks the all-time best unlocked, `LOOKS` in core.js), the pause menu (`#pauseBox`, shown by `pauseGame`), TOP 10 (`#board`; `#boardScope` cycles this device / all time / today / this week; the online scopes only with a score server; a `.watch` button reloads the page as that entry's replay), photo mode (`#snapBtn` in the pause menu: the field with the score drawn on it, shared as a file or downloaded as `hop-lanes.png`), and the screen-reader announcer (`#live`, `announceFrame` per frame). Listens for `hoplanes:lang` and `hoplanes:pause` events from screens.js |
 | `js/input.js` | Keyboard, on-screen buttons, taps and swipes on the field, `pollGamepads()`. Side-effect only (imported by `app.js` for that) |
 | `js/app.js` | The frame loop (fixed `STEP` of 1/120 s), the `window.hopLanes` test hook, replay boot, the first-run guided hints (`placeHint`, `hintText`, `hoplanes.hint`), the near-miss view nudge (`G.shakeT`), the landing dip (`G.landT`), the game-over show (`overFx`: slow motion `G.slowT`, zoom, the view slides to `G.lastDead`), the biome banner |
 | `tools/build-standalone.sh` | Inlines CSS, the modules (in `tools/bundle-order.json` order, minified with esbuild), `vendor/three.min.js` and fonts into one offline HTML with a hash-based CSP |
-| `.github/workflows/ci.yml` | On every push and pull request (Node 22): the tests, lint + types + module graph + copies, the security scanners, CodeQL (security-extended, fails on any result), an OWASP ZAP API scan of the score server (`server/openapi.yaml`, accepted alerts in `server/zap-rules.tsv`), the device bench against `tools/bench-budgets.json`, the fuzzer, the stale-build checks |
-| `.github/workflows/deploy.yml` | Deploys `main` to GitHub Pages after the tests pass (Settings → Pages → Source: GitHub Actions, once), then checks the live page: the MDN HTTP Observatory (`tools/check-live-site.mjs`, its own lockfile in `tools/observatory/`) and the Slow 4G load (`tools/bench-budgets-live.json`) |
+| `.github/workflows/ci.yml` | On every push and pull request (Node 22; on `main` it runs as the first job of `deploy.yml`): the tests, lint + types + module graph + copies, the security scanners, CodeQL (security-extended, fails on any result), an OWASP ZAP API scan of the score server (`server/openapi.yaml`, accepted alerts in `server/zap-rules.tsv`), the device bench against `tools/bench-budgets.json`, the fuzzer, the stale-build checks |
+| `.github/workflows/deploy.yml` | Runs all of `ci.yml`, and deploys `main` to GitHub Pages only when every job passed (Settings → Pages → Source: GitHub Actions, once); the site is `tools/assemble-site.sh` (an include list, each module minified by the pinned esbuild, imports kept); then checks the live page: the MDN HTTP Observatory (`tools/check-live-site.mjs`, its own lockfile in `tools/observatory/`) and the Slow 4G load (`tools/bench-budgets-live.json`) |
 | `.github/workflows/soak.yml` | Nightly: 30 minutes of the bench replay in one page against `tools/bench-budgets-soak.json` (the game's objects, GPU objects, frame times must not drift) |
+| `tools/assemble-site.sh` | Builds `_site/` as Pages serves it (deploy.yml); run it to check the minified modules locally |
 | `tools/device-bench.mjs` | The device bench (see Commands). `tools/make-bench-replay.mjs` made `tests/bench-replay.txt` by a search over `createSim` (never edit the file by hand: `tests/replay.test.mjs` pins it and the link in `docs/budgets.md`) |
 | `tools/lib.mjs` | Helpers the fuzzers and the load test share (the flag parser, the game's seeded rng, the animals) |
 | `tests/serve.mjs` | Tiny static server for the tests: browsers refuse ES modules from `file://` |
 | `tests/property.test.mjs` | Property tests with fast-check: the codec round trip, a deterministic, bounded, total `simulate()` on random replays, a cut replay, and random play in the real page against `simulate()` (part 2 needs the browser) |
 | `tests/browser.mjs` | The shared browser-test helpers: `launch`, `open(browser, url, opts)`, `waitState`, and the waits on the game's own clock (`settle`, `waitTicks`, `hopKey`): never a fixed sleep |
-| `server/` | Optional dependency-free score server (every posted score is replayed unless `VERIFY=0`; every reply sends `nosniff` and a CSP that allows nothing); wired by `<meta name="hop-lanes-scores">` (and `hop-lanes-token` for its `POST_TOKEN`). Set `TRUST_PROXY=1` behind a proxy (only a real IP in `X-Forwarded-For` is trusted). `VERIFY_BUDGET_MS` caps the replay CPU per minute (503 past it), `GET_RATE_MAX` throttles reads; the top lists are cached (at most `GET_CACHE_MAX` keys) until the next post; a request target the URL parser rejects is a 400. UI test 6b runs it against the real page (`tests/serve.mjs` overrides `/index.html` with the meta and `connect-src` filled in) |
+| `server/` | Optional dependency-free score server (every posted score is replayed unless `VERIFY=0`; every reply sends `nosniff` and a CSP that allows nothing); wired by `<meta name="hop-lanes-scores">` (and `hop-lanes-token` for its `POST_TOKEN`). Set `TRUST_PROXY=1` behind a proxy (only a real IP in `X-Forwarded-For` is trusted). `VERIFY_BUDGET_MS` caps the replay CPU per minute (503 past it), `GET_RATE_MAX` throttles reads; the top lists are cached (at most `GET_CACHE_MAX` keys) until the next post; a request target the URL parser rejects is a 400. One run, one place: a fingerprint of the applied hops (`simulate(rp, { onHop })`) refuses the same run again (409), and only those hops are stored; a POST's day is the UTC date ±1; `MIN_RULES` (default `RULES`); no handicap runs; one place per seed in classic, race, coinwar and tag; POST needs `application/json`, and a foreign `Origin` is 403 when `ALLOW_ORIGIN` is set (production: the game's origin); `VERIFY_CLIENT_MS` caps replay CPU per /56; one file per day in `DAYS_DIR`. UI test 6b runs it against the real page (`tests/serve.mjs` overrides `/index.html` with the meta and `connect-src` filled in) |
 
 ## Conventions
 
@@ -84,7 +85,15 @@ and every scanner's result.
   (`LOG_SLACK_BODY` 0.3, was `LOG_SLACK` 0.05), a forward or back hop from a log that the edge refused (|x| > 4.5) goes to
   the last column, and a broken plank or tile drops only a player standing on it (not one in the first half of
   a hop off it). Run `npm run audit:hazards` after any rule change.
-- Shared mutable state goes in `G` (`js/core.js`). Modules never assign to an imported binding.
+- Shared mutable state goes in `G` (`js/core.js`). Modules never assign to an imported binding. A run's own settings
+  are fixed when it starts: `G.runHandicap` (the first join; the replay code and spawn use it, not the live
+  `G.handicap`), `G.worldDay` (the day the daily seed was made for: posts, bests and the streak use it), `G.overTick`
+  (the play tick the run ended on: players.js steps the rules only in countdown and play, plus the rest of that step,
+  as sim.js does). Events: `hoplanes:join` (a join closes any open dialog), `hoplanes:day` (the date changed: today's
+  missions, and a daily title world is rebuilt). While SETTINGS or TOP 10 is open, field taps, swipes and pads do not join.
+- The game posts online only a run with handicap 0 on a world that is not fixed (`#seed-N`) (`canPost` in screens.js);
+  a prize animal joins only once won (`lockedText`); the online name, share text and local top 10 name the animal that
+  set the posted score (`scorerOf`).
 - Every model is a list of `[w, h, d, color, x, y, z]` boxes (y = bottom). Characters face `-z` (forward).
 - World generation uses `rowRng` (gen.js), seeded from the world seed and the row number, so a row is the same
   whatever rows were built before it (only the chain state of the row before feeds in). Effects use `fxRand` /
@@ -147,7 +156,7 @@ and every scanner's result.
 ## Gotchas
 
 - Vehicle and character models face `-x` / `-z`; rotations were inverted once. Check the screenshot, not the math.
-- The draw loop caps at 60 draws/s on fast screens and skips every other frame on the menus unless the screen is already at 30 Hz (iOS Low Power Mode); judge performance from drawn frames only (`watchFrameTime`).
+- The draw loop measures the screen (the median of 32 frame intervals) and in play draws every n-th screen frame, the largest n that still draws at least 60 a second (90 and 100 Hz: every frame; 120, 144, 165 Hz: every 2nd; 240 Hz: every 4th), so drawn frames stay even; the menus draw half as often again unless the screen is already at 30 Hz (iOS Low Power Mode); judge performance from drawn frames only (`watchFrameTime`).
 - The quality ladder must not change `renderer.shadowMap.type`: that rebuilds every shader mid-game (a visible hitch).
   It judges each 2 s window by its mean frame time and counts frames up to 0.5 s (a longer one is a stall): a device that
   draws under 10 frames a second must still step down (the bench showed it never did).
@@ -164,7 +173,7 @@ and every scanner's result.
   it. A geometry without it reads 0 and draws black. A box's 8th value is a night glow (headlights): `ao` above 1,
   scaled by the `glow` uniform that `setNight` sets.
 - The shadow box and the haze (`scene.fog`) are fitted to the visible ground in `fitView()` on every resize.
-- Lane ground is joined into 8-row chunks (`CHUNK`) once all 8 rows exist: one mesh that casts shadows, one that does not.
+- Lane ground is joined into 8-row chunks (`CHUNK`) once all 8 rows exist, in the next drawn frame (`mergePending`, one chunk a frame, never in a game step; `resetWorld` joins all at once): one mesh that casts shadows, one that does not.
   The lane keeps its own ground mesh (out of the scene while merged); a dropped row stays in the chunk (it is off
   screen) and the chunk is freed with its last row (`releaseChunk`), so no mesh is rebuilt while scrolling.
   Anything added to `lane.ground` after the lane is built will not show while the chunk is merged.

@@ -12,25 +12,19 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
-    name: Tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npx playwright install --with-deps chromium
-      - run: npm test
+  ci:
+    name: CI
+    # the whole of ci.yml (tests, lint, scanners, CodeQL, ZAP, bench, fuzz, the stale-build checks): nothing goes
+    # live while any of it fails (a hand-edited vendor/three.min.js or a stale standalone file included)
+    uses: ./.github/workflows/ci.yml   # zizmor: ignore[self-repository] -- the documented form for a reusable workflow of this repository at this commit; actionlint checks it
+    permissions:
+      contents: read
+      actions: read
+      security-events: write   # CodeQL uploads its results
 
   deploy:
     name: Deploy
-    needs: test
+    needs: ci
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -49,11 +43,13 @@ jobs:
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
         with:
           enablement: true   # turns Pages on (source: GitHub Actions) the first time; a no-op after that
-      - name: Assemble site
-        run: |
-          mkdir _site
-          # only what the page needs (an include list, so a stray new file is never published)
-          cp -r index.html manifest.webmanifest hop-lanes-standalone.html css js vendor fonts icons _site/
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts   # the pinned esbuild only (its binary comes as an optional package)
+      - name: Assemble site (an include list; the modules minified)
+        run: ./tools/assemble-site.sh
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: _site

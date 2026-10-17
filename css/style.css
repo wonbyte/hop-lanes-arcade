@@ -177,17 +177,17 @@ body {
 /* weather: rain streaks and snow flakes drawn with gradients, no images. The pattern sits on an oversized
    layer that moves with transform (done by the compositor), so the screen is not repainted every frame. */
 #weather { position: absolute; inset: 0; z-index: 2; pointer-events: none; opacity: 0; transition: opacity 1s; overflow: hidden; }
-#weather::before { content: ''; position: absolute; inset: -280px -140px; }
+#weather::before { content: ''; position: absolute; inset: -140px -60px 0 0; }   /* one tile more than the loop moves: up and right */
 #weather.rain::before, #weather.snow::before { will-change: transform; }   /* its own layer only while it animates */
 #weather.rain { opacity: .5; }
 #weather.rain::before {
   background: repeating-linear-gradient(100deg, transparent 0 14px, rgba(220,235,255,.45) 14px 15px, transparent 15px 26px);
-  background-size: 60px 140px; animation: rain .5s linear infinite;
+  background-size: 60px 140px; animation: rain .5s steps(30) infinite;   /* 60 moves a second, not one per screen frame */
 }
 #weather.snow { opacity: .8; }
 #weather.snow::before {
   background: radial-gradient(circle, #fff 1.5px, transparent 2px) 0 0 / 46px 46px, radial-gradient(circle, #fff 1px, transparent 1.6px) 23px 23px / 69px 69px;
-  animation: snow 18s linear infinite;
+  animation: snow 18s steps(540) infinite;   /* 30 moves a second: snow is slow */
 }
 /* each loop moves the layer by whole tiles, so it repeats without a jump (rain 60x140; snow 46 and 69: 138 is a multiple of both) */
 @keyframes rain { to { transform: translate(-60px, 140px); } }

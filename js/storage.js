@@ -101,7 +101,14 @@ function refreshBests() {
 }
 dropOldDays();
 setBank(G.bank);
-// a game left open past midnight starts a new "today"
-setInterval(() => { if (dayKey() !== shownDay) { dropOldDays(); refreshBests(); } }, 60000);
+// a game left open past midnight starts a new "today" (screens.js hears it: new daily missions, a new daily world)
+let checkedDay = today();
+function checkDay() {
+  if (today() === checkedDay) return;
+  checkedDay = today();
+  dropOldDays(); refreshBests();
+  document.dispatchEvent(new Event('hoplanes:day'));
+}
+setInterval(checkDay, 60000);
 
 export { BEST_KEY, LOOK_KEY, DAILY_KEY, DAILYDONE_KEY, DAY_PREFIX, HANDICAP_KEY, HINT_KEY, HOWTO_KEY, INITIALS_KEY, LOCAL_KEY, STREAK_KEY, INSTALL_KEY, MISSIONS_KEY, MOTION_KEY, ROOM_KEY, MODE_KEY, MUTE_KEY, OWNED_KEY, PICK_KEY, cleanInitials, dailySeed, dayKey, deviceTag, entersLocal, flushBank, load, loadText, localTop, owned, parseLocal, refreshBests, save, savedMode, setBank, today };

@@ -222,6 +222,31 @@ test('5c. a replay link plays the same run again, across traffic, on another scr
   } finally { await again.context.close(); }
 });
 
+// Links made with the rules of version 2 (tests/sim.test.mjs BROWSER_RUNS: a race with the P1 shield, a classic run):
+// the browser plays them with their own rules and ends them where sim.js does
+const V2_RUNS = [
+  'MnwxNzI3MDE3NTQzfHJhY2V8ZnJvZyxmb3h8M3wxfDQ0MHw1YVUyMmJVMzJhVTM0YlUyOWFVMjJiVTI0YVUzMmJVMzVhVTEzYlUzMGFSMzFiVThhUjI3YlUxMWFVMjFiRDE0YVUyMWJSMTFhVTI5YkQyM2FVMzdiUjI2YVUxNGJVMTRhVTI1YlUyNWFVMTJiVTlhUjE3YkQyMmFE',
+  'MnwxMjA1NjkwMjUwfGNsYXNzaWN8ZnJvZyxmb3h8MXwxfDY2Mnw1YVUyMWFVMTZhVTM2YVUyNGFVMzNhVTMyYVUyNWFVMTBhVTEyYVUxNWFVMzNhVTM3YVUyOGFVMzBhUjhhVTI5YVUxM2FVOGFVMTNhVTMyYVUzN2FVMzVhVTE5YVUxNWFVMjlhVTE4YVUxMWFVMzJhVTMxYVUyOGFVMjlhVTM0YVU5YVUzM2FV'
+];
+test('5c2. an old link (rules version 2) plays in the browser as sim.js plays it', { timeout: 240000 }, async () => {
+  for (const code of V2_RUNS) {
+    const rp = decodeReplay(code);
+    assert.equal(rp.version, 2, 'a version 2 code');
+    const sim = simulate(rp);
+    const { context, page, errors } = await open({ viewport: { width: 1280, height: 800 } }, `${INDEX}#debug-replay-${code}`);
+    try {
+      await page.waitForFunction(() => window.hopLanes && window.hopLanes.state === 'over', null, { timeout: 120000 });
+      const end = await page.evaluate(() => { const h = window.hopLanes; return { rules: h.replay.version, tick: h.playTick, players: h.players.map(p => ({ row: p.row, score: p.score, cause: p.cause, alive: p.alive })) }; });
+      assert.equal(end.rules, 2);
+      assert.deepEqual({ tick: end.tick, row: end.players[0].row, cause: end.players[0].cause },
+        { tick: sim.endTick, row: sim.row, cause: sim.cause }, 'the browser ends the old run where sim.js does (' + rp.mode + ')');
+      for (const [i, p] of sim.players.entries()) if (p.joined) assert.equal(end.players[i].score, p.score, 'player ' + (i + 1) + ' score');
+      assert.match(await page.locator('#resTitle').textContent(), /REPLAY OVER/);
+      assert.deepEqual(errors, []);
+    } finally { await context.close(); }
+  }
+});
+
 test('5d. shield and safe time: one free hit, but water never holds you', async () => {
   const { context, page, errors } = await open({}, `${INDEX}#debug-seed-42`);
   try {

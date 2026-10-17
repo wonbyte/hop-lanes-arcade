@@ -359,7 +359,10 @@ function winnerOf(players, mode) {
 // step() advances one fixed STEP and returns false once the game is over. players[i] are the live player states
 // (row, x, alive, score, hop { t, dur, fromRow, fx, fz, tx, tz } or null, log, cause): a renderer can draw a ghost
 // from them. end is set at game over: { score (the higher score, as posted), scores, coins, endTick (play ticks), winner (index or null) }.
-function createSim(rp) {
+// onHop(tick, player, dx, dr), optional: told of every hop the rules started from a move (fx.hop: not a refused or
+// overwritten move, not an ice slide or a rescue), at the play tick it started; dr is the move (1 for a spring's
+// two-row hop). The score server stores only these. It changes nothing in the run.
+function createSim(rp, { onHop = null } = {}) {
   const gen = createWorldGen(rp.seed);
   const lanes = new Map();
   const lane = r => {
@@ -375,6 +378,7 @@ function createSim(rp) {
   const players = [0, 1].map(id => ({ id, joined: !!rp.joined[id], alive: false, row: 0, x: 0, score: 0, coins: 0, hop: null, cause: '', trait: traitOf(rp.chars[id]) }));
   const rules = makeRules({
     G: S, lane, coins() {}, players,
+    fx: onHop ? { hop: p => onHop(playTick, p.id, p.hop.dx, p.hop.high ? 1 : p.hop.dr) } : null,
     over() {
       if (S.state !== 'play' || !runOver(players, rp.mode)) return;
       S.state = 'over';
@@ -420,9 +424,9 @@ function createSim(rp) {
 // Play a decoded replay (replay.js) to game over. Returns { score (the higher score, as posted), scores, endTick
 // (play ticks), row, cause (of the first joined player), over, players: [{ joined, row, x, score, alive, cause }] },
 // or null when the run does not end within maxTicks play ticks or takes longer than maxMs of wall-clock time.
-// until: stop at that play tick if the run is still on (over: false).
-function simulate(rp, { maxTicks = MAX_RUN_TICKS, maxMs = Infinity, until = Infinity } = {}) {
-  const sim = createSim(rp);
+// until: stop at that play tick if the run is still on (over: false). onHop: as for createSim.
+function simulate(rp, { maxTicks = MAX_RUN_TICKS, maxMs = Infinity, until = Infinity, onHop = null } = {}) {
+  const sim = createSim(rp, { onHop });
   const t0 = maxMs < Infinity ? Date.now() : 0;
   let res;
   for (let n = 1; ; n++) {

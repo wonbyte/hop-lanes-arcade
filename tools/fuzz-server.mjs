@@ -54,13 +54,13 @@ const oddValue = (depth = 0) => {
 let valid = 0;
 function validBody() {
   for (;;) {
-    const mode = pick(MODES), day = chance(0.6) ? dayAgo(int(0, 10)) : undefined;
+    const mode = pick(MODES), day = chance(0.6) ? dayAgo(int(0, chance(0.9) ? 1 : 10)) : undefined;   // mostly a day the server takes
     const seed = mode === 'daily' ? dailySeedFor(day || today()) : int(0, 4294967295);
     const joined = [true, chance(0.4)];
     const events = [];
     let t = 0;
     for (let i = int(3, 60); i > 0; i--) { t += int(10, 500); const d = chance(0.8) ? DIRS[0] : pick(DIRS); events.push([t, joined[1] && chance(0.5) ? 1 : 0, d[0], d[1]]); }
-    const rp = { seed, mode, chars: [pick(ANIMALS), pick(ANIMALS)], joined, handicap: int(0, 2), startTick: int(0, 2000), events };
+    const rp = { seed, mode, chars: [pick(ANIMALS), pick(ANIMALS)], joined, handicap: chance(0.9) ? 0 : int(1, 2), startTick: int(0, 2000), events };
     const run = simulate(rp, { maxMs: 300 });
     if (!run || !run.over || run.score > 5000) continue;
     valid++;

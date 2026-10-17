@@ -20,7 +20,7 @@ const nodeGlobals = { process: 'readonly', console: 'readonly', Buffer: 'readonl
   performance: 'readonly', fetch: 'readonly', structuredClone: 'readonly', queueMicrotask: 'readonly', TextEncoder: 'readonly', TextDecoder: 'readonly' };
 
 export default [
-  { ignores: ['vendor/**', 'hop-lanes-standalone.html', '**/node_modules/**', 'reports/**', '.stryker-tmp/**', '.scan-tools/**', 'bench/**'] },
+  { ignores: ['vendor/**', 'hop-lanes-standalone.html', '**/node_modules/**', 'reports/**', '.stryker-tmp/**', '.scan-tools/**', 'bench/**', '_site/**'] },
   js.configs.recommended,
   security.configs.recommended,
   {

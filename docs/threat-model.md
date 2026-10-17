@@ -23,7 +23,8 @@ bests, picks), the online score lists and the score server host, the published s
 ## 2. The score server (optional, `server/`)
 
 - **Attacker**: any client on the internet.
-- **Gain**: fake scores; scores under another player's name; the server down (CPU, memory, disk); a crash.
+- **Gain**: fake scores; scores under another player's name; someone else's run posted as one's own; the boards
+  filled with one run; the server down (CPU, memory, disk); a crash.
 - **Controls**: body cap 40 KB; name, day, week and mode patterns; a score cap; per-IP (IPv6 per /64) rate limits for
   POST and GET; a global CPU budget for replay checks (503 past it); request and header timeouts; at most 200 entries
   per bucket and 14 days kept; a capped GET cache; atomic file writes; `VERIFY` (on by default) replays every posted run
@@ -31,18 +32,32 @@ bests, picks), the online score lists and the score server host, the published s
   `tools/load-server.mjs` loads it. Every reply sends `nosniff` and a CSP that allows nothing. CI runs CodeQL
   (security-extended) on the code and an OWASP ZAP API scan (`server/openapi.yaml`) against a running server on every
   push.
+- **Controls for the runs** (17 Oct 2026, from the security review):
+  - Every accepted run is fingerprinted: seed, mode, start tick, the joined animals, handicap, and the hops the rules
+    applied (the fox and the pig count as the frog: their traits pay coins only). A run already on the boards, or
+    dropped from them in the last 60 days, is refused (409), so a replay taken from a GET cannot be posted again under
+    another name or on another day. Only the applied hops are stored (a fresh code), so padding cannot grow the lists.
+  - A POST's day must be the server's UTC date, the day before or the day after (time zones).
+  - The replay's rules version must be `MIN_RULES` or newer (default: the current `RULES`): a run cannot pick older
+    rules that score its hops higher. Old versions still play as links and ghosts.
+  - Handicap runs (a free shield) and unknown animals are refused; the game does not post them.
+  - In classic, race, coin war and tag one seed holds one place per board and per view, so a world learned by heart
+    (`#seed-42`, which the game no longer posts) fills one place at most. Daily and room worlds are shared on purpose.
+  - Cross-site: a POST must be `application/json` (415), which a browser cannot send from another page without a
+    CORS preflight. With `ALLOW_ORIGIN` set (production: `https://wonbyte.github.io`), a foreign `Origin` is 403.
+  - Rate keys: an IPv6 address is expanded before the /64 cut; an IPv4-mapped address counts as IPv4. Replay CPU is
+    capped for everyone (`VERIFY_BUDGET_MS`, 503) and per /56 (`VERIFY_CLIENT_MS`, 429). The server warms the
+    simulator before it listens, and a check that runs out of time is a 503 with `Retry-After`, not a refusal.
 - **Accepted risk**:
   - With `VERIFY=0` a posted score is a claim. The default is on; turn it off only on a private server.
   - A verified run is legal, not human: the rules are public, so a bot can search for a long run offline and post it.
   - A name is not an account: anyone can post as `FROG ABCD`.
-  - A replay keeps its rules version (2 or 3, `js/replay.js`) and is checked with those rules, so a run can be posted
-    under the older rules. Both are rule sets the game shipped, and the old one is not the easier one: each change in
-    version 3 makes a landing or a hop succeed where version 2 failed it (a wider log landing, a hop in from the river
-    edge, no fall in the air).
+  - At most 5000 dropped fingerprints are kept per day: under a flood of distinct verified runs the oldest go first.
+    A run with one hop changed that still scores is a new run (it was played, by someone or a bot).
   - Many IP addresses (a botnet) get past the per-IP limits; the global verify budget then answers 503 to everyone for
     up to a minute. Availability gives way so the host stays up.
-  - `ALLOW_ORIGIN` is `*` by default: the lists are public, and no cookie or credential is ever sent, so a foreign page
-    that posts gains nothing a script could not do directly.
+  - `ALLOW_ORIGIN` is `*` by default (set it in production). A client that is not a browser sends no `Origin`; the
+    token, the rate limits and `VERIFY` still apply to it.
 
 ## 3. The POST token (`hop-lanes-token` meta)
 
@@ -62,7 +77,10 @@ package by the pinned `esbuild`. Every other package is for tests and tools only
   `vendor/three.min.js` or `hop-lanes-standalone.html` that reaches players.
 - **Controls**: exact versions in `package.json`; `package-lock.json` with integrity hashes; `npm ci` in CI; CI rebuilds
   `vendor/three.min.js` and the standalone file and fails on any difference from the committed files; CI scans the lock
-  file for known vulnerable versions (OSV-Scanner, `npm audit`).
+  file for known vulnerable versions (OSV-Scanner, `npm audit`). The deploy runs the whole of `ci.yml` first (a
+  reusable workflow) and goes live only when every job passed, the rebuild checks and the scanners included (it used
+  to wait for the tests only, so a hand-edited vendor file went live while CI failed beside it). The modules it
+  publishes are minified by the same pinned esbuild (`tools/assemble-site.sh`).
 - **Accepted risk**: a package that is malicious but not yet known as such still runs in CI and on a developer
   machine when it is installed. The CI jobs hold no secrets and a read-only token, which limits what it can take.
 
@@ -98,6 +116,12 @@ GitHub Pages does not let a site set its own HTTP headers.
     game. The game has no account, payment or setting of value outside its own origin, so a framed game can only be
     played.
   - No CSP violation reports (`report-to` does not work from a meta tag).
+  - The origin `https://wonbyte.github.io` is shared by every GitHub Pages project of the owner. `script-src 'self'`
+    allows a script from any of them, and they share the game's localStorage (`hoplanes.*`): another project page of
+    the same owner can rewrite the local data (section 7: it never counts online) or, if one served a file an attacker
+    can choose, run script under the game's CSP. Today no other project of the owner serves uploads or JSONP. The
+    control is the owner's: no project on this origin serves files that others can choose. The fix is a custom
+    (sub)domain for the game (its own origin): the owner's choice (it needs DNS).
 
 ## 7. Local data (localStorage)
 

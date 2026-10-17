@@ -4,3 +4,5 @@ reports/
 .stryker-tmp/
 bench/
 .scan-tools/
+_site/
+server/scores.days/

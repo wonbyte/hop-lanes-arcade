@@ -1,5 +1,5 @@
 import { sfx } from './audio.js';
-import { $, G, LAND_DIP, TAU, TRAIN_SPEED } from './core.js';
+import { $, G, LAND_DIP, PLAY_HALF, TAU, TRAIN_SPEED } from './core.js';
 import { t } from './i18n.js';
 import { hatFor, isWater, traitOf } from './rules.js';
 import { feedReplay, makeRules, resetPlayer } from './sim.js';
@@ -41,8 +41,9 @@ function spawn(p) {
   p.breath = p.id * 1.7; p.label = '';
   p.mesh.position.set(p.x, 0, 0);
   p.scoreEl.textContent = '0';
+  p.hot = false; p.scoreEl.classList.remove('hot'); p.restT = 0;   // the gold tint of the last game's combo goes
   setLabel(p);
-  if ((G.replay ? G.replay.handicap : G.handicap) === p.id + 1) giveShield(p);   // the handicap: a shield to start with
+  if (G.runHandicap === p.id + 1) giveShield(p);   // the handicap of this run (screens.js join): a shield to start with
 }
 // the score number bounces when it grows; a combo of five or more bounces bigger (Web Animations: no layout work)
 // (transform only: it stays on the compositor; the gold tint of a hot combo is a class)
@@ -172,105 +173,115 @@ function animateDeath(p, dt) {
 let overHook = () => {};
 const onGameOver = fn => { overHook = fn; };
 // what the rules do, shown: meshes, sounds, particles. Called by sim.js makeRules at the points where things happen.
-const playRules = makeRules({
-  G, lane: r => lanes.get(r), coins: addCoins, over: () => overHook(), players,
-  fx: {
-    near(p) {   // a car just missed: a whoosh, a nudge of the view and a flash of dust
-      sfx.whoosh(); buzz(12);
-      G.shakeT = 0.18;
-      if (!reduceMotion) burst(p.x, -p.row, NEAR_FX, 5, 0.5);
-      setLabel(p);
-    },
-    lives(p) { sfx.cheer(); },   // the cat's extra life
-    hop(p) {
-      popScore(p);
-      setLabel(p);
-      if (p.hop.dx) G.hintTurn = true;   // the first-run TURN hint is done
-      if (p.hop.high) sfx.bounce(); else if (p.hop.mud) sfx.mud(); else sfx.hop(p.id);
-      buzz(8);
-    },
-    teleport(p, lane, fromX) {   // in one ring, out of the other
-      sfx.teleport(); buzz(20);
-      burst(fromX, -lane.r, PORTAL_FX, 8, 0.6); burst(p.x, -lane.r, PORTAL_FX, 8, 0.6);
-      p.mesh.position.x = p.x;
-    },
-    bomb(p, other, lane, x) {   // the picker's bomb drops a rock in front of the other player
-      sfx.bomb(); buzz(60);
-      blockColumn(lane, x);
-      burst(x, -lane.r, DUST, 12, 0.8);
-      G.shakeT = 0.25;
-    },
-    unbomb: unblockColumn,
-    combo(p) { sfx.coin(); burst(p.x, -p.row, COIN_FX, 4); },
-    kill(p, cause) {
-      buzz(70);
-      G.lastDead = p;   // the game-over view closes in on it (app.js)
-      (DEATH_SOUND[cause] || sfx.squash)();
-      const { x, z } = p.mesh.position;
-      if (cause === 'squash') { p.mesh.position.y = 0; p.mesh.userData.body.scale.set(1.35, 0.15, 1.35); }
-      else if (cause === 'splash') burst(x, z, SPLASH, 12);
-      else if (cause === 'slow' || cause === 'twister') burst(x, z, DUST, 8);
-      if (cause === 'twister') sfx.wind();
-      else if (cause === 'fall') sfx.crack();
-    },
-    rescue(p) {   // the hop back starts where the animal is drawn
-      const bubble = p.mesh.userData.bubble;   // none yet when the cat's extra life saves it
-      if (bubble) bubble.visible = false;
-      p.hop.fz = p.mesh.position.z;
-      sfx.eagle(); buzz(40);
-      burst(p.mesh.position.x, p.mesh.position.z, SPLASH, 10);
-    },
-    shield: showBubble,
-    power(p, lane, pw) {
-      dropSpinner(pw.s);
-      sfx.prize(); buzz(20);
-      burst(p.x, -p.row, pw.kind === 'shield' ? SPLASH : COIN_FX, 8);
-    },
-    coin(p, lane, x, coin, secret) {
-      dropSpinner(coin);
-      sfx.coin();
-      buzz(15);
-      burst(x, -lane.r, COIN_FX, secret ? 14 : 6);
-    },
-    land(p, lane) {
-      p.mesh.userData.body.scale.set(1.3, 0.62, 1.3);   // a squash on landing; stand() eases it back
-      // a small puff where the feet land: dust on land, mud in mud, a splash on a log or a pad; the view dips a hair
-      const wet = lane && isWater(lane.kind) && lane.kind !== 'cliff';   // a cliff counts as water for rescues, but it is stone
-      if (!reduceMotion) { burst(p.x, -p.row, wet ? SPLASH : lane && lane.kind === 'mud' ? MUD_FX : DUST, 4, 0.45); G.landT = LAND_DIP; }
-      if (lane && (lane.kind === 'bridge' || lane.kind === 'cliff')) sfx.crack();   // the plank or tile starts to give
-    },
-    edge(p) {   // a log carried the rider past the last column: the rapids are near, hop
-      sfx.warn(); buzz(30);
-      if (!reduceMotion) burst(p.x, -p.row, EDGE_FX, 6, 0.5);
-    },
-    hopPose(p, t) {
-      const h = p.hop, m = p.mesh;
-      m.position.set(p.x, h.slide ? 0 : Math.sin(t * Math.PI) * (h.high ? 1.1 : 0.45), h.fz + (h.tz - h.fz) * t);   // an ice slide stays on the ground; a spring hop flies high
-      const stretch = h.slide ? 0 : Math.sin(t * Math.PI) * 0.16;   // taller in the air, a little thinner
-      m.userData.body.scale.set(1 - stretch * 0.5, 1 + stretch, 1 - stretch * 0.5);
-    },
-    stand(p, dt) {   // standing still (or riding a log)
-      const m = p.mesh;
-      m.userData.body.scale.lerp(ONE, Math.min(1, dt * 16));
-      p.breath += dt;
-      m.userData.body.scale.y += Math.sin(p.breath * 5) * 0.02;   // a slow breath while standing
-      if (!p.log) { m.position.y = 0; return; }
-      m.position.x = p.x; m.position.y = 0.1;
-    },
-    warn() { sfx.warn(); },   // move, or the eagle comes
-    eagle: sendEagle,
-    swoop,
-    label: setLabel
-  }
-});
+const fx = {
+  near(p) {   // a car just missed: a whoosh, a nudge of the view and a flash of dust
+    sfx.whoosh(); buzz(12);
+    G.shakeT = 0.18;
+    if (!reduceMotion) burst(p.x, -p.row, NEAR_FX, 5, 0.5);
+    setLabel(p);
+  },
+  lives(p) { sfx.cheer(); },   // the cat's extra life
+  hop(p) {
+    popScore(p);
+    setLabel(p);
+    if (p.hop.dx) G.hintTurn = true;   // the first-run TURN hint is done
+    if (p.hop.high) sfx.bounce(); else if (p.hop.mud) sfx.mud(); else sfx.hop(p.id);
+    buzz(8);
+  },
+  teleport(p, lane, fromX) {   // in one ring, out of the other
+    sfx.teleport(); buzz(20);
+    burst(fromX, -lane.r, PORTAL_FX, 8, 0.6); burst(p.x, -lane.r, PORTAL_FX, 8, 0.6);
+    p.mesh.position.x = p.x;
+  },
+  bomb(p, other, lane, x) {   // the picker's bomb drops a rock in front of the other player
+    sfx.bomb(); buzz(60);
+    blockColumn(lane, x);
+    burst(x, -lane.r, DUST, 12, 0.8);
+    G.shakeT = 0.25;
+  },
+  unbomb: unblockColumn,
+  combo(p) { sfx.coin(); burst(p.x, -p.row, COIN_FX, 4); },
+  kill(p, cause) {
+    buzz(70);
+    G.lastDead = p;   // the game-over view closes in on it (app.js)
+    (DEATH_SOUND[cause] || sfx.squash)();
+    const { x, z } = p.mesh.position;
+    if (cause === 'squash') { p.mesh.position.y = 0; p.mesh.userData.body.scale.set(1.35, 0.15, 1.35); }
+    else if (cause === 'splash') burst(x, z, SPLASH, 12);
+    else if (cause === 'slow' || cause === 'twister') burst(x, z, DUST, 8);
+    if (cause === 'twister') sfx.wind();
+    else if (cause === 'fall') sfx.crack();
+  },
+  rescue(p) {   // the hop back starts where the animal is drawn
+    const bubble = p.mesh.userData.bubble;   // none yet when the cat's extra life saves it
+    if (bubble) bubble.visible = false;
+    p.hop.fz = p.mesh.position.z;
+    sfx.eagle(); buzz(40);
+    burst(p.mesh.position.x, p.mesh.position.z, SPLASH, 10);
+  },
+  shield: showBubble,
+  power(p, lane, pw) {
+    dropSpinner(pw.s);
+    sfx.prize(); buzz(20);
+    burst(p.x, -p.row, pw.kind === 'shield' ? SPLASH : COIN_FX, 8);
+  },
+  coin(p, lane, x, coin, secret) {
+    dropSpinner(coin);
+    sfx.coin();
+    buzz(15);
+    burst(x, -lane.r, COIN_FX, secret ? 14 : 6);
+  },
+  land(p, lane) {
+    p.mesh.userData.body.scale.set(1.3, 0.62, 1.3);   // a squash on landing; stand() eases it back
+    // a small puff where the feet land: dust on land, mud in mud, a splash on a log or a pad; the view dips a hair
+    const wet = lane && isWater(lane.kind) && lane.kind !== 'cliff';   // a cliff counts as water for rescues, but it is stone
+    if (!reduceMotion) { burst(p.x, -p.row, wet ? SPLASH : lane && lane.kind === 'mud' ? MUD_FX : DUST, 4, 0.45); G.landT = LAND_DIP; }
+    if (lane && (lane.kind === 'bridge' || lane.kind === 'cliff')) sfx.crack();   // the plank or tile starts to give
+  },
+  edge(p) {   // a log carried the rider past the last column: the rapids are near, hop
+    sfx.warn(); buzz(30);
+    if (!reduceMotion) burst(p.x, -p.row, EDGE_FX, 6, 0.5);
+  },
+  hopPose(p, t) {
+    const h = p.hop, m = p.mesh;
+    m.position.set(p.x, h.slide ? 0 : Math.sin(t * Math.PI) * (h.high ? 1.1 : 0.45), h.fz + (h.tz - h.fz) * t);   // an ice slide stays on the ground; a spring hop flies high
+    const stretch = h.slide ? 0 : Math.sin(t * Math.PI) * 0.16;   // taller in the air, a little thinner
+    m.userData.body.scale.set(1 - stretch * 0.5, 1 + stretch, 1 - stretch * 0.5);
+  },
+  stand(p, dt) {   // standing still (or riding a log)
+    const m = p.mesh;
+    m.userData.body.scale.lerp(ONE, Math.min(1, dt * 16));
+    p.breath += dt;
+    m.userData.body.scale.y += Math.sin(p.breath * 5) * 0.02;   // a slow breath while standing
+    if (!p.log) { m.position.y = 0; return; }
+    m.position.x = p.x; m.position.y = 0.1;
+  },
+  warn() { sfx.warn(); },   // move, or the eagle comes
+  eagle: sendEagle,
+  swoop,
+  label: setLabel
+};
+const playRules = makeRules({ G, lane: r => lanes.get(r), coins: addCoins, over: () => overHook(), players, fx });
 const { giveShield, kill, tryMove } = playRules;
 const resetRules = playRules.reset;   // screens.js toAttract: no bomb carries into the next game
 
-// one fixed step: the rules (sim.js) move the player; a dead one is carried off by its death animation
+// one fixed step: the rules (sim.js) move the player; a dead one is carried off by its death animation.
+// The rules run in the countdown and in play, and to the end of the step the run ended in (sim.js steps every player
+// in that step too); after that a survivor only stands: no log carries it off, no car or coin counts in the results.
 function updatePlayer(p, dt) {
   if (!p.mesh) return;
   if (!p.alive) { if (p.eagle) flyOff(p, dt); else animateDeath(p, dt); return; }
-  playRules.stepPlayer(p, dt);
+  if (G.state === 'play' || G.state === 'countdown' || G.tick === G.overTick) playRules.stepPlayer(p, dt);
+  else restAfterRun(p, dt);
+}
+// a survivor at game over (looks only, the run is decided): a hop in the air lands, a rider drifts on with its log
+// as far as the edge of the field, and it breathes
+const REST_EDGE = PLAY_HALF + 0.5;
+function restAfterRun(p, dt) {
+  const h = p.hop;
+  if (h && p.restT < 1) { p.restT = Math.min(1, Math.max(p.restT, h.t) + dt / h.dur); fx.hopPose(p, p.restT); return; }
+  fx.stand(p, dt);
+  if (p.log && !h) p.mesh.position.x = Math.max(-REST_EDGE, Math.min(REST_EDGE, p.log.x + p.logOff));
 }
 // once per drawn frame, looks only: the turn toward the way it faces, the idle look-around, the safe-time blink
 // and the shadow blob under a hop (nothing here changes the run)

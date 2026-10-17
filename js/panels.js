@@ -23,6 +23,7 @@ function closeDialog() {
   return true;
 }
 const dialogOpen = () => !!openBox && !openBox.hidden;
+document.addEventListener('hoplanes:join', closeDialog);   // screens.js join: the game starts, a panel left open goes
 
 // ---------- settings: sound, vibration, language, handicap, motion ----------
 const motionLess = () => loadText(MOTION_KEY) === '1';
@@ -178,8 +179,9 @@ function announce(text) {
 let lastState = '', lastRows = [0, 0];
 function announceFrame() {
   if (G.state !== lastState) {
+    const from = lastState;
     lastState = G.state;
-    if (G.state === 'play') { lastRows = [0, 0]; announce(t('GO!')); }
+    if (G.state === 'play') { if (from === 'countdown') { lastRows = [0, 0]; announce(t('GO!')); } }   // a resume from pause goes on counting
     else if (G.state === 'over') {
       const parts = players.filter(p => p.joined).map(p => t('PLAYER {n}', { n: p.id + 1 }) + ' ' + p.score);
       announce(t('GAME OVER') + '. ' + parts.join(', ') + '. ' + $('resNote').textContent);
