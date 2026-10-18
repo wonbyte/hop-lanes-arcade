@@ -14,7 +14,7 @@
     "lint": "eslint . --max-warnings 0 && node tools/check-exports.mjs",
     "test:property": "PROP_RUNS=20 node tests/property.test.mjs",
     "mutate": "stryker run",
-    "fuzz": "node tools/fuzz-replay.mjs --seconds 300",
+    "fuzz": "node tools/fuzz-replay.mjs --seconds 300 && node tools/fuzz-server.mjs --seconds 120",
     "audit:hazards": "node tools/hazard-audit.mjs --runs 20000",
     "profile": "node tools/profile-game.mjs",
     "load": "node tools/load-server.mjs",

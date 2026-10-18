@@ -33,10 +33,13 @@ bests, picks), the online score lists and the score server host, the published s
   (security-extended) on the code and an OWASP ZAP API scan (`server/openapi.yaml`) against a running server on every
   push.
 - **Controls for the runs** (17 Oct 2026, from the security review):
-  - Every accepted run is fingerprinted: seed, mode, start tick, the joined animals, handicap, and the hops the rules
-    applied (the fox and the pig count as the frog: their traits pay coins only). A run already on the boards, or
-    dropped from them in the last 60 days, is refused (409), so a replay taken from a GET cannot be posted again under
-    another name or on another day. Only the applied hops are stored (a fresh code), so padding cannot grow the lists.
+  - Every accepted run is fingerprinted by what decides it: seed, start tick, who joined, handicap, and the hops the
+    rules applied. Its labels (the mode, the animals) are not in it (18 Oct 2026: they were, and a stolen one-player
+    code relabelled as another mode or animal played the same and took a place on every other board): a trait or mode
+    that did change the run changed its applied hops or its end too. A run already on the boards, or dropped from them
+    in the last 60 days, is refused (409), so a replay taken from a GET cannot be posted again under another name, on
+    another day, on another board or as another animal. Only the applied hops are stored (a fresh code), so padding
+    cannot grow the lists.
   - A POST's day must be the server's UTC date, the day before or the day after (time zones).
   - The replay's rules version must be `MIN_RULES` or newer (default: the current `RULES`, 4): a run cannot pick older
     rules that score its hops higher. Old versions still play as links and ghosts.
@@ -118,8 +121,8 @@ GitHub Pages does not let a site set its own HTTP headers.
   - No CSP violation reports (`report-to` does not work from a meta tag).
   - The origin `https://wonbyte.github.io` is shared by every GitHub Pages project of the owner. `script-src 'self'`
     allows a script from any of them, and they share the game's localStorage (`hoplanes.*`): another project page of
-    the same owner can rewrite the local data (section 7: it never counts online) or, if one served a file an attacker
-    can choose, run script under the game's CSP. Today no other project of the owner serves uploads or JSONP. The
+    the same owner can rewrite the local data (section 7: it never counts online, and every read falls back, so a
+    bad value cannot stop the game) or, if one served a file an attacker can choose, run script under the game's CSP. Today no other project of the owner serves uploads or JSONP. The
     control is the owner's: no project on this origin serves files that others can choose. The fix is a custom
     (sub)domain for the game (its own origin): the owner's choice (it needs DNS).
 
@@ -127,7 +130,9 @@ GitHub Pages does not let a site set its own HTTP headers.
 
 - **Attacker**: the player (or anyone with the device).
 - **Gain**: more coins, a higher local best, every animal and paint job, the come-back bonus every day.
-- **Controls**: every read is checked and falls back to a default (`storage.js`); bad JSON is ignored.
+- **Controls**: every read is checked and falls back to a default (`storage.js`; the tips object, the paint keys and
+  the saved pixel ratio too, 18 Oct 2026: a primitive, an unknown key or a ratio outside the ladder read as nothing);
+  bad JSON is ignored.
 - **Accepted risk**: local data is the player's own. It never counts online: the server checks the replay, not the
   local best.
 

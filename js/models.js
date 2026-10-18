@@ -305,7 +305,7 @@ const CHARACTERS = [
 const PRIZES = CHARACTERS.filter(c => c.prize).map(c => c.key);
 const isOwned = ch => (ch.price === 0 && !ch.prize) || owned.has(ch.key);
 // paint jobs (the coin sink): a new main color for an animal, bought once per animal (paint.js). 'classic' is the
-// animal's own color. A paint changes the look only: the rules, the replay code and the online name never see it
+// animal's own color. The keys are core.js PAINT_KEYS, in this order (storage.js wears only those). A paint changes the look only: the rules, the replay code and the online name never see it
 const PAINTS = [
   { key: 'classic', name: 'CLASSIC', price: 0, color: 0 },
   { key: 'gold', name: 'GOLD', price: 25, color: 0xffd84a },

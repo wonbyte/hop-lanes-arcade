@@ -1,7 +1,6 @@
 /* fonts are served from fonts/ (SIL Open Font License 1.1, see fonts/OFL-*.txt); no third-party requests */
 @font-face { font-family: "Press Start 2P"; font-weight: 400; font-display: swap; src: url("../fonts/press-start-2p-latin-400-normal.woff2") format("woff2"); }
 @font-face { font-family: "Rubik"; font-weight: 500; font-display: swap; src: url("../fonts/rubik-latin-500-normal.woff2") format("woff2"); }
-@font-face { font-family: "Rubik"; font-weight: 800; font-display: swap; src: url("../fonts/rubik-latin-800-normal.woff2") format("woff2"); }
 
 /* Layout: full-bleed 3D playfield, marquee bar on top, two-player control deck at the bottom. Single arcade look. */
 :root {
@@ -170,7 +169,7 @@ body {
 #modeList button b { font-size: 10px; line-height: 1.4; }
 #modeList button small { font: 500 11px/1.4 var(--font-ui); color: #fff; opacity: .85; }
 #modeList button i { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); padding: 4px 6px; border-radius: 6px; font-style: normal; font-size: 8px; background: rgba(255,255,255,.12); color: #c9d2ea; }
-#modeList button[aria-pressed="true"] { outline: 2px solid var(--gold); background: rgba(255,216,74,.12); }
+#modeList button[aria-checked="true"] { outline: 2px solid var(--gold); background: rgba(255,216,74,.12); }
 /* the paint shop: the animal in its paint between two arrows, the paint jobs as swatches (a color chip, the name, the price) */
 #paintBox .pickrow { margin-bottom: 4px; }
 #paintPic { width: 64px; height: 64px; image-rendering: pixelated; }
@@ -183,7 +182,7 @@ body {
 #swatches button i { width: 22px; height: 22px; border-radius: 6px; box-shadow: inset 0 0 0 2px rgba(255,255,255,.25); }
 #swatches button small { font-size: 8px; color: #c9d2ea; }
 #swatches button.locked { color: #c9d2ea; } #swatches button.locked i { opacity: .6; }
-#swatches button[aria-pressed="true"] { outline: 2px solid var(--gold); background: rgba(255,216,74,.12); }
+#swatches button[aria-checked="true"] { outline: 2px solid var(--gold); background: rgba(255,216,74,.12); }
 #paintNote { font-size: 11px !important; opacity: .85; }
 /* the letter slots of a question: a 44px button up, the letter, a 44px button down */
 #slots { display: flex; justify-content: center; gap: 8px; margin: 0 0 14px; }
@@ -245,7 +244,6 @@ body {
 #boardList li::before { content: counter(rank) '.'; color: var(--gold); min-width: 2.2em; }
 #boardList li span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #boardList li b { font-variant-numeric: tabular-nums; }
-#world { color: var(--gold); }
 
 /* title menu: mode and prize machine, under the logo */
 /* top: under the logo (its two lines, the small line and the tilt come to about 3 logo sizes), never over it */
@@ -392,7 +390,7 @@ body {
 #results .r1 { color: var(--p1-glow); } #results .r2 { color: var(--p2-glow); }
 #results p { margin: 0; font: 500 13px/1.45 var(--font-ui); white-space: pre-line; }
 #results p:empty { display: none; }
-#resCause { font-weight: 800 !important; color: #ffb3a8; letter-spacing: .02em; }
+#resCause { font-weight: 700 !important; color: #ffb3a8; letter-spacing: .02em; }   /* bold is made from the 500 face: no third font file */
 #resTip { color: #10131c; background: #9fd89a; border-radius: 8px; padding: 4px 8px; }
 #resStats { color: #c9d2ea; }
 #world { color: var(--gold); }

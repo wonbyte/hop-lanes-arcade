@@ -7,14 +7,13 @@
 // The rate limits are raised (one client IP), the verify budget stays at its default so 503s show up when it is spent.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
-import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import autocannon from 'autocannon';
 import { encodeReplay } from '../js/replay.js';
 import { simulate } from '../js/sim.js';
-import { MODES, dailySeedFor } from '../js/rules.js';
-import { ANIMALS, DIRS, SERVER, dayAgo, flagArg, seededRng, today } from './lib.mjs';
+import { MODES, dailySeedFor, isoWeek } from '../js/rules.js';
+import { ANIMALS, DIRS, SERVER, dayAgo, flagArg, freePort, rssMB, seededRng, today } from './lib.mjs';
 
 const args = process.argv.slice(2);
 const flag = flagArg;
@@ -51,10 +50,6 @@ function validBody(name) {
   }
 }
 
-const freePort = () => new Promise(r => { const s = net.createServer().listen(0, () => { const p = s.address().port; s.close(() => r(p)); }); });
-function rssMB(pid) {
-  try { const m = /VmRSS:\s+(\d+)/.exec(fs.readFileSync(`/proc/${pid}/status`, 'utf8')); return m ? +(m[1] / 1024).toFixed(1) : null; } catch { return null; }
-}
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hop-load-'));
 const port = await freePort();
@@ -86,13 +81,7 @@ for (let i = 0; i < n1; i++) pool1.push(validBody(`Mix${i}`));
 for (let i = 0; i < n2; i++) pool2.push(validBody(`Post${i}`));
 console.log(`built ${n1 + n2} POST bodies (${built} runs simulated) in ${Date.now() - t0} ms`);
 
-const QUERIES = ['', '?mode=classic', '?mode=daily', '?mode=race', '?mode=coinwar', '?mode=tag', '?mode=room', () => `?day=${dayAgo(int(0, 12))}`, () => `?day=${dayAgo(int(0, 12))}&mode=daily`, () => `?week=${isoWeekOf(dayAgo(int(0, 12)))}`, () => `?week=${isoWeekOf(dayAgo(int(0, 12)))}&mode=classic`];
-function isoWeekOf(day) {   // ISO week of a YYYY-MM-DD (the same as rules.js isoWeek)
-  const d = new Date(day + 'T00:00:00Z'), dow = (d.getUTCDay() + 6) % 7;
-  d.setUTCDate(d.getUTCDate() - dow + 3);
-  const y = d.getUTCFullYear(), jan4 = new Date(Date.UTC(y, 0, 4)), wk = 1 + Math.round(((d - jan4) / 86_400_000 - 3 + ((jan4.getUTCDay() + 6) % 7)) / 7);
-  return `${y}-W${String(wk).padStart(2, '0')}`;
-}
+const QUERIES = ['', '?mode=classic', '?mode=daily', '?mode=race', '?mode=coinwar', '?mode=tag', '?mode=room', () => `?day=${dayAgo(int(0, 12))}`, () => `?day=${dayAgo(int(0, 12))}&mode=daily`, () => `?week=${isoWeek(dayAgo(int(0, 12)))}`, () => `?week=${isoWeek(dayAgo(int(0, 12)))}&mode=classic`];
 
 function summarize(label, res, rssBefore, rssAfter) {
   const codes = Object.fromEntries(Object.entries(res.statusCodeStats || {}).map(([k, v]) => [k, v.count]));

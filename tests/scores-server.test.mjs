@@ -9,6 +9,7 @@ import http from 'node:http';
 import net from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { decodeReplay, encodeReplay } from '../js/replay.js';
+import { freePort } from '../tools/lib.mjs';
 import { RULES, dailySeedFor, hashString } from '../js/rules.js';
 import { createSim, simulate } from '../js/sim.js';
 import { addrKey, getCacheSize, isoWeek, topJson } from '../server/scores.mjs';
@@ -34,7 +35,6 @@ const stop = p => new Promise(r => { if (p.exitCode !== null) return r(); p.once
 const utcDay = n => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
 const TODAY = utcDay(0), YESTERDAY = utcDay(-1), TOMORROW = utcDay(1);
 
-const freePort = () => new Promise(r => { const s = net.createServer().listen(0, () => { const p = s.address().port; s.close(() => r(p)); }); });
 const post = (body, raw) => fetch(base + '/scores', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: raw ?? JSON.stringify(body) });
 
 test.before(async () => {
@@ -67,7 +67,7 @@ test('valid scores are ordered; invalid are rejected', async () => {
   const { top } = await (await fetch(base + '/scores')).json();
   assert.deepEqual(top.map(e => [e.name, e.score]), [['Bob 2', 90], ['Cy', 70], ['Ann', 50]]);
   assert.ok(top[0].at);
-  assert.ok(fs.existsSync(path.join(dir, new URL(base).port ? `s${new URL(base).port}.json` : 's.json')), 'persisted');
+  assert.ok(fs.existsSync(path.join(dir, `s${new URL(base).port}.json`)), 'persisted');
 });
 
 test('per-day boards: day and mode on POST, filters on GET', async () => {
@@ -450,7 +450,10 @@ test('GET cache: bounded, whatever days and weeks the queries ask for', () => {
 const MODES_ALL = ['classic', 'race', 'coinwar', 'tag', 'daily', 'room'];
 
 // ---- finding 1: replay theft and board flooding --------------------------------------------------------------
-test('fingerprint: the same run again is 409, under another name, on another day, padded or with another coat', async () => {
+// the hops the rules apply for a code, as the server fingerprints them: a relabel that keeps them is the same run
+const appliedHops = code => { const hops = []; simulate(decodeReplay(code), { onHop: (...h) => hops.push(h) }); return JSON.stringify(hops); };
+test('fingerprint: the same run again is 409, under another name, on another day, padded, relabelled or with another coat', async () => {
+  const sameHops = code => appliedHops(code) === appliedHops(LONG.code);
   const srv = await start({ RATE_MAX: '1000', VERIFY: '1' });
   const sp = poster(srv);
   assert.equal((await sp({ name: 'Ann', score: LONG.score, mode: 'classic', day: TODAY, replay: LONG.code })).status, 200);
@@ -465,12 +468,18 @@ test('fingerprint: the same run again is 409, under another name, on another day
     [{ day: TODAY, replay: pad.code }, 'padded: hops for the absent player, after the end, replaced in the queue'],
     [{ day: TODAY, replay: encodeReplay({ ...LONG.rp, chars: ['frog', 'cat'] }) }, 'another animal for the player who never joined'],
     [{ day: TODAY, replay: encodeReplay({ ...LONG.rp, chars: ['fox', 'fox'] }) }, 'the fox: its trait pays coins only, the run is the same'],
-  ];
+    // a stolen one-player code relabelled: every mode plays the same alone, a trait that never fired changed nothing
+    ...['race', 'coinwar', 'tag', 'room'].map(mode => [{ day: TODAY, mode, replay: encodeReplay({ ...LONG.rp, mode }) }, 'the same run posted as ' + mode]),
+    ...['robot', 'cat', 'penguin', 'turtle'].map(k => [{ day: TODAY, mode: 'room', replay: encodeReplay({ ...LONG.rp, mode: 'room', chars: [k, 'fox'] }) }, 'the same run as the ' + k + ' on the room board']),
+  ].filter(([b]) => sameHops(b.replay));
   for (const [b, why] of copies) {
     const r = await sp({ name: 'Thief', score: LONG.score, mode: 'classic', ...b });
     assert.equal(r.status, 409, why);
     assert.deepEqual(await r.json(), { error: 'this run is already on the boards' });
   }
+  // a trait that fires makes another run by the rules' own records (the cat lives through LONG's splash): its hops differ, so it is not a copy
+  const cat = encodeReplay({ ...LONG.rp, mode: 'room', chars: ['cat', 'fox'] });
+  assert.equal(sameHops(cat), LONG.run.cause !== 'splash', 'the cat changes a run that ended in the water, and only that');
   assert.equal((await sp({ name: 'Bo', score: HI.score, mode: 'classic', day: TODAY, replay: HI.code })).status, 200, 'another run is welcome');
   assert.deepEqual((await board(srv)).map(e => e.name).sort(), ['Ann', 'Bo']);
 });
@@ -632,12 +641,18 @@ test('classic, race, coin war and tag keep one entry per seed per board; daily a
   const names = async q => (await board(srv, q)).map(e => e.name);
   assert.deepEqual(await names(`?day=${TODAY}&mode=classic`), ['Hi'], 'the better run of the world holds its one place');
   assert.equal((await sp('Lo2', LO, 'classic')).status, 409, 'the dropped run stays refused under another name');
-  assert.equal((await sp('Rc', HI, 'race')).status, 200, 'race is another board');
-  assert.deepEqual(await names(`?day=${TODAY}&mode=race`), ['Rc']);
-  assert.equal((await sp('R1', LO, 'room')).status, 200);
-  assert.equal((await sp('R2', HI, 'room')).status, 200);
+  assert.equal((await sp('Rc', HI, 'race')).status, 409, 'the same run on another board is a copy: one run, one place');
+  // other runs on the same world: the HI run cut short (it ends in traffic there), two per board
+  const cut = n => asNow(HI.code, { events: HI.rp.events.slice(0, n) });
+  const [r40, r80, r120, r160] = [40, 80, 120, 160].map(cut);
+  assert.ok(r40.score < r80.score && r80.score < r120.score && r120.score < r160.score && r160.score < HI.score, 'four other runs on one world, each a different score');
+  assert.equal((await sp('Rc', r40, 'race')).status, 200, 'race is another board');
+  assert.equal((await sp('Rc2', r80, 'race')).status, 200);
+  assert.deepEqual(await names(`?day=${TODAY}&mode=race`), ['Rc2'], 'one place per world on the race board too');
+  assert.equal((await sp('R1', r120, 'room')).status, 200);
+  assert.equal((await sp('R2', r160, 'room')).status, 200);
   assert.deepEqual(await names(`?day=${TODAY}&mode=room`), ['R2', 'R1'], 'a room world is shared on purpose: every run counts');
-  assert.deepEqual(await names('?day=' + TODAY), ['Hi', 'R2', 'R1'], 'a view of several boards: the world still holds one place (Rc is the same seed)');
+  assert.deepEqual(await names('?day=' + TODAY), ['Hi', 'R2', 'R1'], 'a view of several boards: the world still holds one place among classic, race, coin war and tag (Rc2 is the same seed as Hi)');
   assert.deepEqual(await names(''), ['Hi', 'R2', 'R1']);
 });
 
@@ -690,4 +705,35 @@ test('store: a full bucket costs one insert, and the lowest entry goes', async (
   assert.equal(list.length, 200);
   assert.ok(list.some(e => e.name === 'Mid') && !list.some(e => e.name === 'F199'), 'the lowest went');
   assert.ok(list.slice(10).every(e => e.replay === null) && list.every((e, i) => i === 0 || list[i - 1].score >= e.score), 'sorted; no replay past rank 10');
+});
+
+// ---- the fingerprint memory: SEEN_DAYS (60) behind the newest day a run is forgotten; a day remembers GONE_MAX (5000) dropped runs ----
+import crypto from 'node:crypto';
+// the server's fingerprint of a code (scores.mjs fingerprint): what decides the run, and the hops the rules applied
+function fpOf(code) {
+  const rp = decodeReplay(code), hops = [];
+  simulate(rp, { onHop: (...h) => hops.push(h) });
+  return crypto.createHash('sha256').update(JSON.stringify([rp.seed, rp.startTick, rp.joined, rp.handicap, hops])).digest('base64url').slice(0, 22);
+}
+const dayFile = (daysDir, day, gone) => fs.writeFileSync(path.join(daysDir, day + '.json'), JSON.stringify({ format: 2, day, entries: [], gone }));
+test('fingerprint memory: a run dropped 30 days ago is still refused, one dropped 61 days ago is not', async () => {
+  const file = path.join(dir, 'seen.json'), daysDir = file.replace(/\.json$/, '.days');
+  fs.mkdirSync(daysDir, { recursive: true });
+  dayFile(daysDir, utcDay(-61), [fpOf(LO.code)]);
+  dayFile(daysDir, utcDay(-30), [fpOf(LONG.code)]);
+  const srv = await start({ RATE_MAX: '1000', VERIFY: '1', DATA_FILE: file });
+  const sp = poster(srv);
+  assert.equal((await sp({ name: 'Ann', score: HI.score, mode: 'room', day: TODAY, replay: encodeReplay({ ...HI.rp, mode: 'room' }) })).status, 200, 'today becomes the newest day');
+  assert.equal((await sp({ name: 'Bo', score: LONG.score, mode: 'room', day: TODAY, replay: encodeReplay({ ...LONG.rp, mode: 'room' }) })).status, 409, '30 days: remembered');
+  assert.equal((await sp({ name: 'Cy', score: LO.score, mode: 'room', day: TODAY, replay: encodeReplay({ ...LO.rp, mode: 'room' }) })).status, 200, '61 days: forgotten');
+});
+test('fingerprint memory: a day keeps the newest 5000 dropped runs, the oldest go first', async () => {
+  const file = path.join(dir, 'gone.json'), daysDir = file.replace(/\.json$/, '.days');
+  fs.mkdirSync(daysDir, { recursive: true });
+  const junk = Array.from({ length: 5000 }, (_, i) => 'junk' + String(i).padStart(18, '0'));
+  dayFile(daysDir, utcDay(-2), [fpOf(LO.code), ...junk, fpOf(LONG.code)]);   // 5002: the oldest two must go
+  const srv = await start({ RATE_MAX: '1000', VERIFY: '1', DATA_FILE: file });
+  const sp = poster(srv);
+  assert.equal((await sp({ name: 'Bo', score: LONG.score, mode: 'room', day: TODAY, replay: encodeReplay({ ...LONG.rp, mode: 'room' }) })).status, 409, 'the newest is remembered');
+  assert.equal((await sp({ name: 'Cy', score: LO.score, mode: 'room', day: TODAY, replay: encodeReplay({ ...LO.rp, mode: 'room' }) })).status, 200, 'the oldest was let go');
 });

@@ -22,6 +22,8 @@ html = (root / 'index.html').read_text(encoding='utf-8')
 css = (root / 'css/style.css').read_text(encoding='utf-8')
 # the ES modules become one classic script: imports/exports stripped, concatenated in dependency order
 order = json.loads((root / 'tools/bundle-order.json').read_text(encoding='utf-8'))
+modules = {p.stem for p in (root / 'js').glob('*.js')} - {'main'}   # main.js only loads app.js
+need(set(order) == modules, f'tools/bundle-order.json and js/ disagree: {sorted(set(order) ^ modules)}')
 def module_body(name):
     text = (root / 'js' / f'{name}.js').read_text(encoding='utf-8')
     text = re.sub(r'^import (?:\{[^}]*\} from )?\'[^\']+\';[^\n]*\n', '', text, flags=re.M)
@@ -56,7 +58,7 @@ def font_uri(m):
     need(path.is_file(), f'missing font {path}')
     return f'url(data:font/woff2;base64,{b64(path.read_bytes())})'
 css, n = re.subn(r'url\("\.\./fonts/([\w.-]+\.woff2)"\)', font_uri, css)
-need(n == 3, f'expected 3 font files in css/style.css, found {n}')
+need(n == 2, f'expected 2 font files in css/style.css, found {n}')
 
 def swap(pattern, repl, text, label):
     out, n = re.subn(pattern, lambda m: repl, text, count=1)

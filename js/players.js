@@ -26,8 +26,8 @@ function chipOf(n) {
 // a replay picks its own animals; after it each slot goes back to its saved pick
 function restorePicks() { players.forEach((p, i) => { p.charIndex = pickIndex(i, i); }); }
 const players = [
-  { id: 0, charIndex: pickIndex(0, 0), startX: -2, joined: false, scoreEl: $('score1').querySelector('b'), chip: chipOf(1) },
-  { id: 1, charIndex: pickIndex(1, 1), startX: 2, joined: false, scoreEl: $('score2').querySelector('b'), chip: chipOf(2) }
+  { id: 0, charIndex: pickIndex(0, 0), joined: false, scoreEl: $('score1').querySelector('b'), chip: chipOf(1) },
+  { id: 1, charIndex: pickIndex(1, 1), joined: false, scoreEl: $('score2').querySelector('b'), chip: chipOf(2) }
 ];
 const charOf = p => CHARACTERS[p.charIndex];
 // a soft dark spot on the ground under an animal in the air: it shows where the hop lands
@@ -91,7 +91,7 @@ function magnetBar(p) {
 function alarm(p) {
   const el = p.chip.el, cls = reduceMotion ? 'steady' : 'alarm';
   el.classList.remove('alarm', 'steady');
-  void el.offsetWidth;   // restart the flash
+  if (el.getAnimations) for (const a of el.getAnimations()) a.cancel();   // restart the flash without a layout read (this runs in a game step)
   el.classList.add(cls);
   clearTimeout(p.alarmT);
   p.alarmT = setTimeout(() => el.classList.remove(cls), reduceMotion ? 1200 : 400);
@@ -224,18 +224,16 @@ function applyMoves() {
   for (const [i, dx, dr] of moveQ) {
     const p = players[i];
     if (!p.joined || !p.alive) continue;
-    G.record.push([G.playTick, i, dx, dr]);
-    tryMove(p, dx, dr);
+    G.moves++;
+    tryMove(p, dx, dr);   // fx.hop records the hop if the rules took it
   }
   moveQ.length = 0;
 }
-const DEATH_SOUND = { splash: sfx.splash, slow: sfx.fall, eagle: sfx.fall, fall: sfx.fall, twister: sfx.fall };
+const DEATH_SOUND = { splash: sfx.splash, swept: sfx.splash, slow: sfx.fall, eagle: sfx.fall, fall: sfx.fall, twister: sfx.fall };
 const NEAR_FX = 0xfff2a8, PORTAL_FX = 0xd9a5ff, EDGE_FX = 0xff5a4a;
 
-// small particle bursts: water for splashes, dust when a player is left behind
-// the meshes are pooled: a death makes no garbage, so no collector pause
-// Every particle is an instance of one small white box, tinted per particle: one draw call for all of them.
-// The handles are pooled, so a burst makes no garbage.
+// small particle bursts: water for splashes, dust when a player is left behind. Every particle is an instance of one
+// small white box, tinted per particle: one draw call for all of them. The handles are pooled, so a burst makes no garbage.
 const parts = [], partPool = [];
 const SPLASH = 0xffffff, DUST = 0xd8d2c4, MUD_FX = 0x6b4a2c, COIN_FX = COLORS.coin.face;
 const partBoxes = () => [[0.14, 0.14, 0.14, 0xffffff, 0, -0.07, 0]];
@@ -306,6 +304,9 @@ const fx = {
   },
   lives(p) { sfx.cheer(); },   // the cat's extra life
   hop(p) {
+    // the replay code holds the hops the rules applied, as sim.js records them for the server (a spring hop as the
+    // forward hop it was pressed as): a refused tap (a tree, the edge) or a queued move that was replaced is not a hop
+    if (!G.replay) G.record.push([G.playTick, p.id, p.hop.dx, p.hop.high ? 1 : p.hop.dr]);
     popScore(p);
     setLabel(p);
     if (p.hop.dx) G.hintTurn = true;   // the first-run TURN hint is done
@@ -424,4 +425,4 @@ function dressPlayer(p, dt) {
   if (air) p.blob.position.set(p.mesh.position.x, 0.02, p.mesh.position.z);
 }
 
-export { blobGeo, blobMat, bubbleGeo, bubbleMat, charOf, crouch, despawn, fx, placeBubbles, dressPlayer, onGameOver, restorePicks, giveShield, kill, players, queueMove, applyMoves, resetRules, spawn, tryMove, updateParts, updatePlayer };
+export { blobGeo, blobMat, bubbleGeo, bubbleMat, charOf, crouch, despawn, fx, placeBubbles, dressPlayer, onGameOver, restorePicks, giveShield, kill, players, queueMove, applyMoves, resetRules, spawn, updateParts, updatePlayer };

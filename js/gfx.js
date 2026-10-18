@@ -4,14 +4,14 @@ import { glowU } from './voxel.js';
 
 // Three.js renderer, camera, light, resize handling and the adaptive quality ladder.
 // ---------- three.js setup ----------
-const lowGpu = matchMedia('(pointer: coarse)').matches;              // phones/tablets: cheaper shadows and resolution
+const coarsePointer = matchMedia('(pointer: coarse)').matches;      // a touch screen (phones, tablets): cheaper shadows and resolution
 const touchQuery = matchMedia('(pointer: coarse)');                  // touch hints follow the current input
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches || loadText(MOTION_KEY) === '1';   // the settings panel can ask for less
 const BLINK_STEPS = reduceMotion ? 2.5 : 8;                          // rail light on/off changes per second
 const stage = $('stage'), marquee = $('marquee');
 let renderer;
 // on high-density phone screens edges are already fine, and multisampling costs a lot of fill
-try { renderer = new THREE.WebGLRenderer({ antialias: !(lowGpu && (window.devicePixelRatio || 1) >= 2) }); }
+try { renderer = new THREE.WebGLRenderer({ antialias: !(coarsePointer && (window.devicePixelRatio || 1) >= 2) }); }
 catch (e) { fail('This browser can not show 3D graphics. Turn on WebGL or try another browser.'); throw new Error('no-webgl'); }
 // dense phone screens start at 2 (no multisampling there, so the resolution is what makes edges sharp); the ladder
 // drops to 1.5 first if frames get slow. Elsewhere 1.5 is enough for voxels: 2 would draw almost twice the pixels
@@ -19,8 +19,10 @@ catch (e) { fail('This browser can not show 3D graphics. Turn on WebGL or try an
 // is kept for the next load (RATIO_KEY), so a slow phone does not pay the slow first seconds every time.
 const phoneSized = window.innerWidth * window.innerHeight * 4 < 3.5e6;
 const RATIO_KEY = 'hoplanes.ratio';
-const savedRatio = Number(loadText(RATIO_KEY)) || Infinity;
-let pixelRatio = Math.min(lowGpu && phoneSized ? 2 : 1.5, window.devicePixelRatio || 1, savedRatio);
+const saved = Number(loadText(RATIO_KEY));
+const savedRatio = saved >= 1 && saved <= 2 ? saved : Infinity;   // only a ratio the ladder could have set
+let pixelRatio = Math.min(coarsePointer && phoneSized ? 2 : 1.5, window.devicePixelRatio || 1, savedRatio);
+const startRatio = pixelRatio;   // a ratio under it was lowered by the ladder
 renderer.setPixelRatio(pixelRatio);
 renderer.shadowMap.enabled = true;
 // PCF everywhere: the GPU compares and filters the shadow depth (r186 stores it in a depth texture). The one-sample
@@ -47,7 +49,7 @@ const hemi = new THREE.HemisphereLight(0xffffff, 0x8899aa, 0.65 * Math.PI);
 scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xffffff, 0.6 * Math.PI);
 sun.castShadow = true;
-sun.shadow.mapSize.setScalar(lowGpu ? 512 : 1024);   // phone screens are small: 512 looks the same there and costs a quarter
+sun.shadow.mapSize.setScalar(coarsePointer ? 512 : 1024);   // phone screens are small: 512 looks the same there and costs a quarter
 Object.assign(sun.shadow.camera, { top: 15, bottom: -15, near: 1, far: 50 });   // fitted to the view in resize()
 // Against self-shadowing (acne): a surface's own depth, read back from the map, is only as exact as a map texel, and
 // the depth pass keeps the back faces, so a flat lane is covered by its own far edge. The receiver is lifted along its
@@ -121,14 +123,16 @@ function fitView(halfW, halfH) {
   fitShadowBias();
 }
 
+// the score chips and the logo sit just under the top bar, whatever its height (one layout read: on a resize and when
+// the bar changes with the state, screens.js)
+const fitTopBar = () => stage.style.setProperty('--marquee-h', marquee.offsetHeight + 'px');
 const viewSize = { w: 1, h: 1 };   // the canvas size in CSS pixels, as of the last resize
 function resize() {
   const w = stage.clientWidth, h = stage.clientHeight;
   if (!w || !h) return;
   viewSize.w = w; viewSize.h = h;   // read here once, so no frame needs a layout read
   renderer.setSize(w, h, false);
-  // the score and the logo sit just under the top bar, whatever its height
-  stage.style.setProperty('--marquee-h', marquee.offsetHeight + 'px');
+  fitTopBar();
   const aspect = w / h;
   // wide screens (a phone held sideways) zoom out so enough rows stay visible,
   // and aim lower so the players sit above the floating buttons
@@ -155,17 +159,30 @@ resize();
 // Each step is judged after 2 s of play: a step that helped is kept and its rung is tried again (the pixel ratio
 // can go 1.5 -> 1.25 -> 1); a step that did not help is undone and the next rung is tried; a rung with nothing
 // left to lower is passed over. Once past every rung, the ladder stops (a phone capped at 30 fps keeps its quality).
-// Each 2 s window is judged by its mean frame time. (It was a moving average that starts at 1/60 s: on a device that draws
+// Each 2 s window is judged by the mean of its frames without the slowest tenth (a trimmed mean): the first second of
+// play holds a few long frames (the fleets' first uploads, the chunk joins), and a plain mean of them took a step on a
+// device that was fine, judged the next clean window a gain against that baseline, and kept it. The first window of a
+// game is not judged at all (the same warm-up). (It was a moving average that starts at 1/60 s: on a device that draws
 // 7 frames a second a window holds about 15 frames, the average was still climbing when a step was judged, so every
 // step looked like no gain and was undone; tools/device-bench.mjs showed the ladder ending where it began.)
-const perf = { sum: 0, n: 0, t: 0, undo: null, before: 0, tried: 0 };   // tried: the rung being tried next
+const WINDOW_MAX = 512;   // frames a 2 s window can hold (240 Hz at most)
+const perf = { frames: new Float32Array(WINDOW_MAX), n: 0, t: 0, undo: null, before: 0, tried: 0, skip: true, kept: false, rest: 0, lastRatio: 0 };   // tried: the rung being tried next
 const holdFrameWatch = () => { perf.held = true; };   // tests: the drawn frames stop feeding the ladder
+// at the start of a game (screens.js startPlay)
 function resetFrameWatch() {
   perf.undo = null;    // a step taken just before game over stays: it was never judged, and it is cheap
-  perf.sum = 0; perf.n = 0; perf.t = 0;
-  perf.tried = 0;      // the next game climbs the ladder again from the first rung
+  perf.n = 0; perf.t = 0;
+  perf.skip = true;    // the first window of a game is warm-up: not judged
+  // a lowered pixel ratio is saved for the next load only once two games in a row ended on it (one noisy game is no verdict)
+  if (perf.lastRatio === pixelRatio && pixelRatio < startRatio) try { localStorage.setItem(RATIO_KEY, String(pixelRatio)); } catch (e) {}
+  perf.lastRatio = pixelRatio;
+  // a game that tried every rung and kept none (a CPU-bound device: no rung helps) rests two games before trying again,
+  // instead of flipping the resolution and the shadow map for 12 s at the start of every game
+  if (perf.tried >= LADDER.length && !perf.kept) perf.rest = 2;
+  if (perf.rest > 0) perf.rest--; else perf.tried = 0;   // the next game climbs the ladder again from the first rung
+  perf.kept = false;
 }
-function setRatio(r) { pixelRatio = r; renderer.setPixelRatio(r); resize(); try { localStorage.setItem(RATIO_KEY, String(r)); } catch (e) {} }
+function setRatio(r) { pixelRatio = r; renderer.setPixelRatio(r); resize(); }
 function setShadowMapSize(n) {
   sun.shadow.mapSize.setScalar(n);
   fitShadowBias();
@@ -192,6 +209,13 @@ const LADDER = [
   }
 ];
 const BAD_FRAME = 0.022;   // slower than ~45 fps: lower quality
+// the mean of the frames without the slowest tenth (a hitch or two says nothing about the device)
+function trimmedMean(frames, n) {
+  const sorted = frames.subarray(0, n).slice().sort(), keep = Math.max(1, n - Math.floor(n / 10));
+  let sum = 0;
+  for (let i = 0; i < keep; i++) sum += sorted[i];
+  return sum / keep;
+}
 // A frame longer than this is a tab switch or a stall, not the speed of the device. (It was 0.1 s: a device that drew
 // under 10 frames a second was never judged, so the slowest devices kept the highest quality; tools/device-bench.mjs.)
 const STALL = 0.5;
@@ -201,13 +225,15 @@ function watchFrameTime(frameT, fed = false) {
   if (perf.held && !fed) return;
   if (perf.tried >= LADDER.length && !perf.undo) return;
   if (G.state !== 'play' || frameT > STALL) return;       // ignore menus, tab switches and stalls
-  perf.sum += frameT; perf.n++;
+  if (perf.n < WINDOW_MAX) perf.frames[perf.n++] = frameT;
   if ((perf.t += frameT) < 2) return;
-  const mean = perf.sum / perf.n;
-  perf.t = 0; perf.sum = 0; perf.n = 0;
+  const mean = trimmedMean(perf.frames, perf.n);
+  perf.t = 0; perf.n = 0;
+  if (perf.skip) { perf.skip = false; return; }         // the first window of a game: warm-up, not a verdict
   if (perf.undo) {                                       // judge the last step
     if (mean > perf.before * 0.9) { perf.undo(); perf.tried++; }   // no real gain: put it back, move on to the next rung
-    perf.undo = null;                                    // (a step that helped keeps its rung: it is tried again)
+    else perf.kept = true;                               // a step that helped keeps its rung: it is tried again
+    perf.undo = null;
   }
   if (mean < BAD_FRAME) return;
   // the first rung with something left to lower takes a step; a rung that returns null is passed over
@@ -230,4 +256,4 @@ function shadowCadence(idle) {
 // test hook: how the view was fitted
 const viewInfo = () => { const sc = sun.shadow.camera; return { shadowW: sc.right - sc.left, shadowH: sc.top - sc.bottom, fogNear: sceneFog.near, fogFar: sceneFog.far, mapSize: sun.shadow.mapSize.x, shadowHalf, shadowType: renderer.shadowMap.type === THREE.PCFShadowMap ? 'pcf' : 'basic', normalBias: sun.shadow.normalBias, bias: sun.shadow.bias }; };
 
-export { BLINK_STEPS, CAM_OFF, SUN_OFF, ONE, camera, focus, getPixelRatio, holdFrameWatch, marquee, reduceMotion, renderer, resetFrameWatch, resize, scene, setNight, setZoom, shadowCadence, stage, sun, touchQuery, viewInfo, viewSize, watchFrameTime };
+export { BLINK_STEPS, CAM_OFF, SUN_OFF, ONE, camera, fitTopBar, focus, getPixelRatio, holdFrameWatch, reduceMotion, renderer, resetFrameWatch, scene, setNight, setZoom, shadowCadence, stage, sun, touchQuery, viewInfo, viewSize, watchFrameTime };

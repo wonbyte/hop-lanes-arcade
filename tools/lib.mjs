@@ -1,7 +1,9 @@
 // Helpers shared by the fuzzers and the load test (tools/fuzz-replay.mjs, tools/fuzz-server.mjs, tools/load-server.mjs).
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { TRAITS, mulberry32 } from '../js/rules.js';
+import net from 'node:net';
+import fs from 'node:fs';
+import { TRAITS, dayBefore, isoDay, mulberry32 } from '../js/rules.js';
 
 export const SERVER = path.join(path.dirname(fileURLToPath(import.meta.url)), '../server/scores.mjs');
 
@@ -21,5 +23,13 @@ export function seededRng(seed) {
 
 export const ANIMALS = [...new Set(['frog', ...Object.keys(TRAITS)])];
 export const DIRS = [[0, 1], [0, -1], [-1, 0], [1, 0]];
-export const today = () => new Date().toISOString().slice(0, 10);
-export const dayAgo = n => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
+// the game's local day (rules.js isoDay): what the page posts (the server takes the UTC day plus or minus one)
+export const today = () => isoDay();
+export const dayAgo = n => { const d = new Date(); d.setDate(d.getDate() - n); return isoDay(d); };
+export { dayBefore };
+// a free TCP port for a server under test
+export const freePort = () => new Promise(r => { const s = net.createServer().listen(0, () => { const p = /** @type {import('node:net').AddressInfo} */ (s.address()).port; s.close(() => r(p)); }); });
+// the resident memory of a process in MB (Linux: /proc), or null
+export function rssMB(pid) {
+  try { const m = /VmRSS:\s+(\d+)/.exec(fs.readFileSync(`/proc/${pid}/status`, 'utf8')); return m ? +(m[1] / 1024).toFixed(1) : null; } catch { return null; }
+}

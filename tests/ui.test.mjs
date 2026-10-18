@@ -8,9 +8,9 @@ import { ROOT, T, launch, open as openPage, waitState, settle, waitTicks } from 
 import { spawn } from 'node:child_process';
 import os from 'node:os';
 import net from 'node:net';
-import { STEP, dailySeedFor } from '../js/rules.js';
+import { RULES, STEP, dailySeedFor, isoDay } from '../js/rules.js';
 import { dailyMissions } from '../js/missions.js';
-import { decodeReplay } from '../js/replay.js';
+import { decodeReplay, encodeReplay } from '../js/replay.js';
 
 const SLOW = 120000; // whole-test budget for tests that wait through a game
 
@@ -130,7 +130,7 @@ test('1c. missions show on the title; the language button switches the texts', a
 });
 
 test('1d. daily missions show on the title: three a day, a paid one is checked', async () => {
-  const d = new Date(), today = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const today = isoDay();
   const { context, page, errors } = await open(INDEX, { storage: { 'hoplanes.dailydone': today + '|2' } });   // the second one is paid
   try {
     await waitState(page, 'attract');
@@ -214,7 +214,7 @@ test('3. the mode picker lists every mode with a line on it; a pick persists; a 
     assert.match(await page.locator('#modeList button[data-mode="race"] small').textContent(), /FIRST TO FALL LOSES/);
     assert.equal(await page.locator('#modeList button[data-mode="race"] i').textContent(), '2 PLAYERS', 'the two-player modes say so');
     assert.equal(await page.locator('#modeList button[data-mode="daily"] i').count(), 0);
-    assert.equal(await page.locator('#modeList button[aria-pressed="true"]').getAttribute('data-mode'), 'classic', 'the current mode is marked');
+    assert.equal(await page.locator('#modeList button[aria-checked="true"]').getAttribute('data-mode'), 'classic', 'the current mode is marked');
     await page.click('#modeList button[data-mode="race"]');
     assert.equal(await page.locator('#modeBox').isHidden(), true, 'a pick closes the dialog');
     assert.equal(await hop(page, () => window.hopLanes.mode), 'race');
@@ -235,7 +235,7 @@ test('3. the mode picker lists every mode with a line on it; a pick persists; a 
     assert.equal(await page.evaluate(() => localStorage.getItem('hoplanes.mode')), 'daily');
     await page.click('#mode');
     await page.locator('#modeBox').waitFor({ state: 'visible', timeout: T });
-    assert.equal(await page.locator('#modeList button[aria-pressed="true"]').getAttribute('data-mode'), 'daily');
+    assert.equal(await page.locator('#modeList button[aria-checked="true"]').getAttribute('data-mode'), 'daily');
     await page.keyboard.press('Escape');
     assert.equal(await page.locator('#modeBox').isHidden(), true, 'Escape closes the picker');
     assert.equal(await hop(page, () => window.hopLanes.mode), 'daily', 'and changes nothing');
@@ -284,8 +284,9 @@ test('5. race mode: idle P1 is taken by the eagle, P2 wins', { timeout: 180000 }
     const p2alive = await hop(page, () => window.hopLanes.players[1].alive);
     await page.locator('#resTitle').waitFor({ state: 'visible', timeout: T });
     const title = await page.locator('#resTitle').textContent();
-    if (p2alive) assert.match(title, /WINS/);
-    else assert.match(title, /WINS|TIE/);
+    assert.equal(p2alive, true, 'the hopping fox outlives the idle frog');
+    assert.match(title, /FOX WINS/);
+    assert.equal(await hop(page, () => window.hopLanes.players[0].cause), 'eagle', 'the idle frog went to the eagle');
     assert.deepEqual(errors, []);
   } finally { await context.close(); }
 });
@@ -348,7 +349,7 @@ test('6b. a finished game posts its score (today, mode) and the world best shows
     assert.equal(top[0].score, score);
     assert.match(top[0].name, /^FROG [A-Z2-9]{4}$/, 'character plus device tag');
     assert.equal(top[0].mode, 'classic');
-    const d = new Date(), today = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    const today = isoDay();
     assert.equal(top[0].day, today, 'the day is a plain YYYY-MM-DD');
     assert.match(await page.locator('#world').textContent(), new RegExp('WORLD BEST ' + score + ' · FROG')); // eslint-disable-line security/detect-non-literal-regexp -- the score is a number
     // back on the title the TOP 10 button lists the same score
@@ -497,6 +498,7 @@ test('8d. the quality ladder lowers the pixel ratio twice when it helps, and kee
     await page.keyboard.press('KeyW');
     await waitState(page, 'play', 120000);
     // slow frames: the first rung (pixel ratio -0.25); then faster ones: the rung helped, so it is taken again
+    await hop(page, () => { const L = window.hopLanes.ladder; for (let i = 0; i < 40; i++) L.feed(0.05); });   // the first 2 s window of a game is warm-up: not judged
     assert.equal(await hop(page, () => { const L = window.hopLanes.ladder; for (let i = 0; i < 60; i++) L.feed(0.05); return L.ratio; }), 1.25);
     assert.equal(await hop(page, () => { const L = window.hopLanes.ladder; for (let i = 0; i < 90; i++) L.feed(0.03); return L.ratio; }), 1);
     // still slow with nothing left on the pixel ratio: the shadow map rung is tried (no gain here, so put back),
@@ -528,6 +530,7 @@ test('8d2. a dense phone screen starts at 2x and the ladder drops it to 1.5 firs
     const box = await page.locator('#stage').boundingBox();
     await page.touchscreen.tap(box.x + box.width * 0.25, box.y + box.height * 0.62);
     await waitState(page, 'play', 120000);
+    await hop(page, () => { const L = window.hopLanes.ladder; for (let i = 0; i < 40; i++) L.feed(0.05); });   // the warm-up window
     assert.equal(await hop(page, () => { const L = window.hopLanes.ladder; for (let i = 0; i < 60; i++) L.feed(0.05); return L.ratio; }), 1.5);
     assert.equal(await hop(page, () => { const L = window.hopLanes.ladder; for (let i = 0; i < 90; i++) L.feed(0.03); return L.ratio; }), 1.25);
     assert.deepEqual(errors, []);
@@ -1108,14 +1111,14 @@ test('15a. the paint shop: a paint is bought once per animal with coins, worn at
     await page.locator('#paintBox').waitFor({ state: 'visible', timeout: T });
     assert.match(await page.locator('#paintName').textContent(), /FROG · CLASSIC/, 'opens on player 1\'s animal');
     assert.equal(await page.locator('#swatches button').count(), 7);
-    assert.equal(await page.locator('#swatches button[aria-pressed="true"]').getAttribute('data-i'), '0', 'classic is worn');
+    assert.equal(await page.locator('#swatches button[aria-checked="true"]').getAttribute('data-i'), '0', 'classic is worn');
     assert.match(await page.locator('#swatches button[data-i="1"]').textContent(), /GOLD · 25/, 'a locked paint shows its price');
     assert.match(await page.locator('#paintNote').textContent(), /YOU HAVE 40 COINS/);
     await page.click('#swatches button[data-i="5"]');   // LAVA costs 40: the whole bank
     assert.equal(await hop(page, () => window.hopLanes.bank), 0, 'LAVA cost 40');
     assert.equal(await hop(page, () => window.hopLanes.paintOf('frog')), 'lava');
     assert.match(await page.locator('#paintName').textContent(), /FROG · LAVA/);
-    assert.equal(await page.locator('#swatches button[aria-pressed="true"]').getAttribute('data-i'), '5');
+    assert.equal(await page.locator('#swatches button[aria-checked="true"]').getAttribute('data-i'), '5');
     assert.doesNotMatch(await page.locator('#swatches button[data-i="5"]').textContent(), /40/, 'a bought paint shows no price');
     await page.click('#swatches button[data-i="6"]');   // NIGHT: no coins left
     assert.match(await page.locator('#paintNote').textContent(), /NEED 40 COINS/);
@@ -1208,4 +1211,106 @@ test('15c. the come-back bonus: the first title of a day pays coins, more for da
     assert.equal(await fresh.page.evaluate(() => localStorage.getItem('hoplanes.visit')), today + '|1', 'but the count starts');
     assert.deepEqual(fresh.errors, []);
   } finally { await fresh.context.close(); }
+});
+
+// ---- the review's gaps (18 Oct 2026) ----
+test('16a. NEW BEST TODAY gets its ribbon and jingle, in the player\'s language', { timeout: SLOW }, async () => {
+  const { context, page, errors } = await open(INDEX, { storage: { 'hoplanes.best': '50', 'hoplanes.lang': 'es' } });
+  try {
+    await waitState(page, 'attract');
+    await page.keyboard.press('KeyW');
+    await waitState(page, 'play');
+    await hop(page, () => { const h = window.hopLanes; h.players[0].score = 12; h.kill(h.players[0], 'test'); });
+    await waitState(page, 'over');
+    await resultsVisible(page);
+    assert.equal(await page.locator('#resBest').isVisible(), true, 'today\'s best has the ribbon');
+    assert.equal(await page.locator('#resBest').textContent(), '¡MEJOR DE HOY!', 'translated, not the English key');
+    assert.doesNotMatch(await page.locator('#resNote').textContent(), /BEST/, 'and it is not in the note');
+    assert.equal(await page.locator('#confetti').evaluate(c => c.children.length), 0, 'no confetti: not an all-time best');
+    assert.deepEqual(errors, []);
+  } finally { await context.close(); }
+});
+
+test('16b. a paint the game does not know reads as classic; two animals keep their paints over a reload', async () => {
+  const { context, page, errors } = await open(INDEX, { storage: { 'hoplanes.paints': 'frog:zzz,fox:sky', 'hoplanes.painted': 'frog=zzz,fox=sky', 'hoplanes.tips': '5' } });
+  try {
+    await waitState(page, 'attract');
+    assert.equal(await hop(page, () => window.hopLanes.paintOf('frog')), 'classic', 'an unknown paint is not worn');
+    assert.equal(await hop(page, () => window.hopLanes.paintOf('fox')), 'sky');
+    await page.click('#paintBtn');
+    await page.locator('#paintBox').waitFor({ state: 'visible', timeout: T });
+    assert.match(await page.locator('#paintName').textContent(), /FROG · CLASSIC/);
+    await page.click('#paintNext');
+    assert.match(await page.locator('#paintName').textContent(), /FOX · SKY/);
+    await page.keyboard.press('Escape');
+    await page.reload();
+    await waitState(page, 'attract');
+    assert.equal(await hop(page, () => window.hopLanes.paintOf('fox')), 'sky', 'kept');
+    // a tampered tips value does not stop a game over (it is read in the game step that ends the run)
+    await page.keyboard.press('KeyW');
+    await waitState(page, 'play');
+    await hop(page, () => { const h = window.hopLanes; h.kill(h.players[0], 'squash'); });
+    await waitState(page, 'over');
+    await resultsVisible(page);
+    assert.deepEqual(errors, []);
+  } finally { await context.close(); }
+});
+
+test('16c. a replay link: no come-back bonus while it plays; a key on its results goes to the title, where the bonus is paid', { timeout: SLOW }, async () => {
+  const day = d => d.toISOString().slice(0, 10), yesterday = day(new Date(Date.now() - 86400000));
+  const code = encodeReplay({ version: RULES, seed: 42, mode: 'classic', chars: ['frog', 'fox'], joined: [true, false], handicap: 0, startTick: 0, events: [[12, 0, 0, 1]] });
+  const { context, page, errors } = await open(INDEX + '-replay-' + code, { storage: { 'hoplanes.best': '20', 'hoplanes.visit': yesterday + '|1' }, context: { timezoneId: 'UTC' } });
+  try {
+    await waitState(page, 'play', 120000);
+    assert.equal(await hop(page, () => !!window.hopLanes.replay), true);
+    assert.equal(await hop(page, () => window.hopLanes.bank), 0, 'nothing paid while the replay runs');
+    await waitState(page, 'over', 120000);   // one hop, then the eagle
+    await resultsVisible(page);
+    assert.equal(await page.locator('#again').textContent(), 'MENU');
+    await page.keyboard.press('KeyW');   // a player's key: the title, not a new game
+    await waitState(page, 'attract');
+    await settle(page, 300);
+    assert.equal(await hop(page, () => window.hopLanes.state), 'attract', 'no join from the replay\'s results');
+    assert.equal(await hop(page, () => !!window.hopLanes.replay), false);
+    assert.equal(await hop(page, () => window.hopLanes.bank), 15, 'the bonus came with the title: day 2');
+    assert.deepEqual(errors, []);
+  } finally { await context.close(); }
+});
+
+test('16d. the mode button and the paint shop do nothing in play; a saved pixel ratio outside the ladder is ignored', async () => {
+  const { context, page, errors } = await open(INDEX, { scale: 1.5, storage: { 'hoplanes.ratio': '0.3' } });
+  try {
+    await waitState(page, 'attract');
+    assert.equal(await hop(page, () => window.hopLanes.pixelRatio), 1.5, 'not 0.3');
+    await page.keyboard.press('KeyW');
+    await waitState(page, 'play');
+    await page.evaluate(() => { document.getElementById('mode').click(); document.getElementById('paintBtn').click(); });
+    await settle(page, 200);
+    assert.equal(await page.locator('#modeBox').isHidden(), true);
+    assert.equal(await page.locator('#paintBox').isHidden(), true);
+    assert.equal(await hop(page, () => window.hopLanes.state), 'play');
+    assert.deepEqual(errors, []);
+  } finally { await context.close(); }
+});
+
+test('16e. a crash with a dialog open hides the dialog under the notice; Tab stays inside an open dialog', async () => {
+  const { context, page, errors } = await open(INDEX);
+  try {
+    await waitState(page, 'attract');
+    await page.click('#settings');
+    await page.locator('#settingsBox').waitFor({ state: 'visible', timeout: T });
+    for (let i = 0; i < 12; i++) {   // more Tabs than buttons: the focus never leaves the box
+      await page.keyboard.press('Tab');
+      assert.equal(await page.evaluate(() => !!document.activeElement.closest('#settingsBox')), true, 'Tab ' + i);
+    }
+    await page.keyboard.press('Shift+Tab');
+    assert.equal(await page.evaluate(() => !!document.activeElement.closest('#settingsBox')), true);
+    await page.keyboard.press('Escape');
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'settings', 'the focus goes back to the button that opened it');
+    await page.click('#settings');
+    await hop(page, () => window.hopLanes.boom());
+    await page.waitForFunction(() => /SOMETHING BROKE/.test(document.querySelector('#banner h2').textContent), null, { timeout: T });
+    assert.equal(await page.locator('#settingsBox').isHidden(), true);
+    assert.equal(errors.length, 1);
+  } finally { await context.close(); }
 });

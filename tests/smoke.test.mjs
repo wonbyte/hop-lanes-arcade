@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { serve } from './serve.mjs';
-import { ROOT, T, launch, open as openPage, waitState, settle, hopKey } from './browser.mjs';
+import { ROOT, T, launch, open as openPage, waitState, settle, hopKey, snapP1 } from './browser.mjs';
 import { decodeReplay, encodeReplay } from '../js/replay.js';
 import { simulate } from '../js/sim.js';
 
@@ -193,7 +193,7 @@ test('5b. draw calls stay low far into the world (instanced traffic)', async () 
 
 test('5c. a replay link plays the same run again, across traffic, on another screen size', async () => {
   const { context, page, errors } = await open({ viewport: { width: 1280, height: 800 } }, `${INDEX}#debug-seed-42`);
-  const snap = () => page.evaluate(() => { const h = window.hopLanes, p = h.players[0]; return { row: p.row, score: p.score, cause: p.cause, x: Math.round(p.x * 1000), seed: h.seed, tick: h.playTick }; });
+  const snap = () => snapP1(page);
   let first, code, bank;
   try {
     await waitState(page, 'attract');

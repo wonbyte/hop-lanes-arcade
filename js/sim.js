@@ -181,7 +181,6 @@ function makeRules(W) {
   }
   // where a hop lands (rules.js hopTarget), or null. Rules 3: a log can carry the rider past the last column; a forward
   // or back hop from there goes to the last column (rules 2 refused it, and the rider was swept away)
-  // rules 3: a forward or back hop from a log that the edge refuses starts from the last column instead
   function hopTo(p, dx, dr) {
     const lane = W.lane(p.row + dr);
     const tx = hopTarget(lane, p.x, dx, PLAY_HALF);

@@ -1,5 +1,5 @@
 import { sfx } from './audio.js';
-import { BIOME_ROWS, FIRST_ROW, FIXED_SEED, G, LANES_AHEAD, LANES_BEHIND, PLAY_HALF, STEP, TUTORIAL_SEED } from './core.js';
+import { BEST_MIN, BIOME_ROWS, FIRST_ROW, FIXED_SEED, G, LANES_AHEAD, LANES_BEHIND, PLAY_HALF, STEP, TUTORIAL_SEED } from './core.js';
 import { EDGE_DEATH, PLANK_BREAK, RULES, hashString, isBombPower, isBombRow, plankState } from './rules.js';
 import { createWorldGen, railStep, trafficX, wetAt, wetChunk, standGroups } from './gen.js';
 import { touchRows } from './sim.js';
@@ -34,6 +34,7 @@ function fleetMesh(geo, cap, cast) {
   mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3).fill(1), 3);
   mesh.castShadow = cast; mesh.receiveShadow = true;
   mesh.frustumCulled = false;   // instances spread over many rows; the camera decides per vertex
+  mesh.matrixAutoUpdate = false; mesh.updateMatrix();   // the mesh itself never moves (its instances do)
   mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   mesh.count = 0;
   scene.add(mesh);
@@ -195,12 +196,12 @@ function rapids(ground, z, water) {
 // One builder per lane type: the look of a row gen.js made. Each adds its static boxes to `ground` (merged into one
 // mesh later) and its moving parts to lane.objs. No random draws here: everything random is in the lane data.
 const LANE_BUILDERS = {
-  grass(lane, { r, z, ground, B }) {
+  grass(lane, { r, z, ground, cast, B }) {
     const snow = weatherAt(r) === 'snow';
     // r & 1, not r % 2: a row behind the start (r < 0) gives -1 there, no color, and drew black
     ground.push([40, 0.3, 1, snow ? (r & 1 ? 0xe6eef7 : 0xdbe6f2) : B.grass[r & 1], 0, -0.3, z]);
     const [tw, th] = B.tree;
-    for (const [x, h] of lane.treeH) ground.push([0.3, 0.3, 0.3, B.trunk, x, 0, z], [tw, h * th, tw, snow ? 0xd4e6ec : B.leaf, x, 0.3, z]);
+    for (const [x, h] of lane.treeH) cast.push([0.3, 0.3, 0.3, B.trunk, x, 0, z], [tw, h * th, tw, snow ? 0xd4e6ec : B.leaf, x, 0.3, z]);
     // the grass boss: a twister wanders across (gen.js lane.twister); darker, torn ground under its path
     if (lane.twister) { edgeLines(ground, z, 0x6a6a5a, 0.01); placeTraffic(lane, z, () => new Inst('twister', twisterBoxes, true)); }
   },
@@ -245,10 +246,10 @@ const LANE_BUILDERS = {
       else ground.push([m.w, 0.02, 0.5, 0x5e3f24, m.x, 0, z + m.dz]);      // puddles
   },
   // ice: pale blue, with light sheen stripes (so it differs from grass by shape too) and snowy trees
-  ice(lane, { r, z, ground, B }) {
+  ice(lane, { r, z, ground, cast, B }) {
     ground.push([40, 0.3, 1, B.ice[r & 1], 0, -0.3, z]);
     for (let x = -12; x <= 12; x += 2.5) ground.push([1.1, 0.02, 0.07, 0xf6fcff, x + (r % 3) * 0.6, 0, z - 0.22], [0.6, 0.02, 0.07, 0xf6fcff, x + 0.4 + (r % 3) * 0.6, 0, z + 0.12]);
-    for (const [x, h] of lane.treeH) ground.push([0.3, 0.3, 0.3, 0x7a4b2a, x, 0, z], [0.6, h, 0.6, 0xe3f0f5, x, 0.3, z]);
+    for (const [x, h] of lane.treeH) cast.push([0.3, 0.3, 0.3, 0x7a4b2a, x, 0, z], [0.6, h, 0.6, 0xe3f0f5, x, 0.3, z]);
   },
   // a bridge: water with a run of planks (instances: a plank drops when it breaks), posts at both ends and rope rails
   bridge(lane, { z, ground, B }) {
@@ -269,19 +270,19 @@ const LANE_BUILDERS = {
     placeTraffic(lane, z, () => new Inst('boulder', boulderBoxes, true));
   },
   // a spring row: grass with a trampoline on every play column; a forward hop from here flies two rows (sim.js)
-  spring(lane, { r, z, ground, B }) {
+  spring(lane, { r, z, ground, cast, B }) {
     ground.push([40, 0.3, 1, B.grass[r & 1], 0, -0.3, z]);
     for (let x = -PLAY_HALF; x <= PLAY_HALF; x++) ground.push([0.8, 0.08, 0.8, 0xe05a3a, x, 0, z], [0.56, 0.05, 0.56, 0xffd84a, x, 0.08, z], [0.3, 0.05, 0.3, 0xe05a3a, x, 0.13, z]);
-    for (let x = -12; x <= 12; x++) if (Math.abs(x) > PLAY_HALF && (x + r) % 3 === 0) ground.push([0.3, 0.3, 0.3, B.trunk, x, 0, z], [0.6, 0.9, 0.6, B.leaf, x, 0.3, z]);
+    for (let x = -12; x <= 12; x++) if (Math.abs(x) > PLAY_HALF && (x + r) % 3 === 0) cast.push([0.3, 0.3, 0.3, B.trunk, x, 0, z], [0.6, 0.9, 0.6, B.leaf, x, 0.3, z]);
   },
   // a portal row: stone ground with two glowing rings; landing in one puts you in the other (sim.js lane.portals)
-  portal(lane, { z, ground }) {
+  portal(lane, { z, ground, cast }) {
     ground.push([40, 0.3, 1, 0x5c5670, 0, -0.3, z]);
     for (const x of lane.portals) {
       for (const [dx, dz, w, d] of [[0, -0.4, 0.9, 0.1], [0, 0.4, 0.9, 0.1], [-0.4, 0, 0.1, 0.9], [0.4, 0, 0.1, 0.9]]) ground.push([w, 0.12, d, 0xb455ff, x + dx, 0, z + dz, 0.8]);
       ground.push([0.6, 0.02, 0.6, 0xe0b8ff, x, 0, z, 1.2]);
     }
-    for (let x = -12; x <= 12; x += 2) if (Math.abs(x) > PLAY_HALF) ground.push([0.5, 0.6 + (x % 3) * 0.2, 0.5, 0x7c75a0, x, 0, z]);   // standing stones
+    for (let x = -12; x <= 12; x += 2) if (Math.abs(x) > PLAY_HALF) cast.push([0.5, 0.6 + (x % 3) * 0.2, 0.5, 0x7c75a0, x, 0, z]);   // standing stones
   },
   // a cliff row: stone tiles over a dark chasm; a tile drops for good once it breaks (plank instances, placePlanks)
   cliff(lane, { z, ground }) {
@@ -291,12 +292,12 @@ const LANE_BUILDERS = {
     const cols = [...lane.planks.keys()].sort((p, q) => p - q);
     lane.plankInst = cols.map(x => { const i = new Inst('tile', tileBoxes, true); i.set(x, 0, z); return { x, i, y: 0, rot: 0 }; });
   },
-  rail(lane, { z, ground, B }) {
+  rail(lane, { z, ground, cast, B }) {
     ground.push([40, 0.3, 1, B.rail, 0, -0.3, z]);
-    // the first rail past each 100 rows carries the boss train (lane.boss): twice as long, faster, more warning
+    // the first rail of each boss block (rules.js bossRows: 100 rows, rules 4: 50) carries the boss train (lane.boss): twice as long, faster, more warning
     for (let x = -14; x <= 14; x += 0.7) ground.push([0.18, 0.06, 0.9, 0x5a3d2a, x, 0, z]);
-    ground.push([40, 0.06, 0.08, 0x9aa3b5, 0, 0.05, z - 0.28], [40, 0.06, 0.08, 0x9aa3b5, 0, 0.05, z + 0.28],
-                [0.12, 1.3, 0.12, 0xeeeeee, POLE_X, 0, z + POLE_DZ]);
+    ground.push([40, 0.06, 0.08, 0x9aa3b5, 0, 0.05, z - 0.28], [40, 0.06, 0.08, 0x9aa3b5, 0, 0.05, z + 0.28]);
+    cast.push([0.12, 1.3, 0.12, 0xeeeeee, POLE_X, 0, z + POLE_DZ]);   // the signal pole
     lane.light = newLight('off'); lane.lightOn = false; lane.lightWant = false;   // lightOn: as painted; lightWant: the schedule's state
     lane.light.set(POLE_X, LIGHT_Y_RAIL, z + POLE_DZ);
     lane.lastBell = -1;
@@ -308,7 +309,6 @@ const LANE_BUILDERS = {
 // ---------- the BEST ribbon: a gold line on the ground across the row of the all-time best ----------
 // Drawn with the row (part of its ground, so it costs no draw call): hop past it and the run is a new best. A look only:
 // no rng draw, nothing the rules see. On water it floats; a cliff row gets the two flags on its banks only
-const RIBBON_MIN = 10;   // like the results' BEST_MIN: a best of a few rows gets no line
 const RIBBON = 0xffd84a, RIBBON_INK = 0x7a3a10, PX = 0.14;
 const LETTERS = { B: ['111', '101', '110', '101', '111'], E: ['111', '100', '111', '100', '111'], S: ['111', '100', '111', '001', '111'], T: ['111', '010', '010', '010', '010'] };
 const WATER_KINDS = new Set(['river', 'lily', 'bridge']);
@@ -335,70 +335,106 @@ function addLane(r) {
   const lane = worldGen.lane(r), kind = lane.kind;
   lane.group = new THREE.Group(); lane.shown = true;
   lane.group.matrixAutoUpdate = false;   // never moves (identity): Three.js skips it in the per-draw matrix walk
-  const ground = [];
-  LANE_BUILDERS[kind](lane, { r, z: -r, ground, B: biomeAt(r) });   // nosemgrep: unsafe-dynamic-method -- kind is a gen.js lane kind (a fixed set)
-  if (r === G.bestAll && r >= RIBBON_MIN) { ribbonBoxes(ground, kind, -r); ribbonAt = r; }
+  const ground = [], cast = [];   // cast: what stands on the row (trees, the signal pole, standing stones): the only shadow casters
+  LANE_BUILDERS[kind](lane, { r, z: -r, ground, cast, B: biomeAt(r) });   // nosemgrep: unsafe-dynamic-method -- kind is a gen.js lane kind (a fixed set)
+  if (r === G.bestAll && r >= BEST_MIN) { ribbonBoxes(ground, kind, -r); ribbonAt = r; }
   placeCoins(lane, -r);
-  // unique per lane, disposed with the lane; flat ground does not cast shadows, trees and the rail pole do
-  lane.ground = voxelMesh(mergeBoxes(ground), kind === 'grass' || kind === 'ice' ? lane.trees.size > 0 : kind === 'rail');
+  // unique per lane, disposed with the lane: the flat ground (never a caster: the depth pass skips the 40-unit slab,
+  // and no slab shadows a slab) and, when the row has any, its casters
+  lane.ground = voxelMesh(mergeBoxes(ground), false);
   lane.ground.matrixAutoUpdate = false;
   lane.ground.updateMatrix();
   lane.group.add(lane.ground);
+  lane.casters = cast.length ? voxelMesh(mergeBoxes(cast), true) : null;
+  if (lane.casters) { lane.casters.matrixAutoUpdate = false; lane.casters.updateMatrix(); lane.group.add(lane.casters); }
   worldGroup.add(lane.group);
   lanes.set(r, lane);
   maxRow = Math.max(maxRow, r);
   if (r - Math.floor(r / CHUNK) * CHUNK === CHUNK - 1) pendingChunks.add(Math.floor(r / CHUNK));   // the chunk's last row: join it
 }
 
-// ---------- ground chunks: 8 rows of ground drawn as one mesh (two: one that casts shadows, one that does not) ----------
-// Each lane keeps its own ground mesh; once all 8 rows of a chunk exist their ground is joined into chunk meshes and
+// ---------- ground chunks: 8 rows of ground drawn as one mesh (two: the casters, and the ground that casts no shadow) ----------
+// Each lane keeps its own meshes; once all 8 rows of a chunk exist they are joined into the chunk meshes and
 // the lane meshes leave the scene. A dropped row (always off screen, behind the players) stays in the chunk meshes;
 // the chunk is freed once every one of its rows is dropped, so dropping rows never rebuilds meshes.
 const CHUNK = 8;
 const chunks = new Map();   // chunk index -> { meshes, rows }
-// A chunk is joined in a drawn frame, at most one a frame (mergePending), not in the game step that built its last
-// row: a step may run several times in one frame, and the join (about 2 ms in node for 8 rail rows) would land there.
+// A chunk is joined in drawn frames, never in the game step that built its last row (a step may run several times in
+// one frame). The copy of the rows' vertices is spread over the frames (JOIN_ROWS source geometries a frame: a whole
+// 8-row join is about 2 ms in node, more on a floor phone), and the chunk's meshes are made once the copy is complete.
 const pendingChunks = new Set();
+const JOIN_ROWS = 2;
+let joinJob = null;   // the chunk being joined, or null
 function mergePending(all) {
-  for (const k of pendingChunks) { pendingChunks.delete(k); mergeChunk(k); if (!all) return; }
+  for (;;) {
+    if (!joinJob) {
+      const first = pendingChunks.values().next();
+      if (first.done) return;
+      pendingChunks.delete(first.value);
+      joinJob = startJoin(first.value);
+      if (!joinJob) continue;
+    }
+    if (joinStep(joinJob, all)) joinJob = null;
+    if (!all) return;
+  }
 }
-function joinGeos(geos) {
+// the rows of chunk k and the arrays their geometries are copied into (one part per cast flag), or null if a row is gone
+function startJoin(k) {
+  if (chunks.has(k)) return null;
+  const rows = [];
+  for (let r = k * CHUNK; r < (k + 1) * CHUNK; r++) { const l = lanes.get(r); if (!l) return null; rows.push(l); }
+  const parts = [];
+  const casters = rows.map(l => l.casters).filter(Boolean).map(m => m.geometry);
+  if (casters.length) parts.push(joinArrays(casters, true));
+  parts.push(joinArrays(rows.map(l => l.ground.geometry), false));
+  return { k, rows, parts };
+}
+function joinArrays(geos, cast) {
   let verts = 0, idx = 0;
   for (const g of geos) { verts += g.attributes.position.count; idx += g.index.count; }
-  const pos = new Float32Array(verts * 3), nor = new Float32Array(verts * 3), col = new Float32Array(verts * 3), ao = new Float32Array(verts);
-  const index = new (verts > 65535 ? Uint32Array : Uint16Array)(idx);
-  let v = 0, i = 0;
-  for (const g of geos) {
-    pos.set(g.attributes.position.array, v * 3); nor.set(g.attributes.normal.array, v * 3); col.set(g.attributes.color.array, v * 3);
-    ao.set(g.attributes.ao.array, v);
-    const src = g.index.array;
-    for (let k = 0; k < src.length; k++) index[i + k] = src[k] + v;
-    v += g.attributes.position.count; i += src.length;
-  }
-  const out = new THREE.BufferGeometry();
-  out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
-  out.setAttribute('color', new THREE.BufferAttribute(col, 3));
-  out.setAttribute('ao', new THREE.BufferAttribute(ao, 1));
-  out.setIndex(new THREE.BufferAttribute(index, 1));
-  return out;
+  return { cast, geos, next: 0, v: 0, i: 0, pos: new Float32Array(verts * 3), nor: new Float32Array(verts * 3), col: new Float32Array(verts * 3), ao: new Float32Array(verts),
+    index: new (verts > 65535 ? Uint32Array : Uint16Array)(idx) };
 }
-function mergeChunk(k) {
-  if (chunks.has(k)) return;
-  const rows = [];
-  for (let r = k * CHUNK; r < (k + 1) * CHUNK; r++) { const l = lanes.get(r); if (!l) return; rows.push(l); }
-  const meshes = [];
-  for (const cast of [true, false]) {
-    const part = rows.filter(l => l.ground.castShadow === cast);
-    if (!part.length) continue;
-    const m = voxelMesh(joinGeos(part.map(l => l.ground.geometry)), cast);
-    m.matrixAutoUpdate = false; m.updateMatrix();
-    worldGroup.add(m); meshes.push(m);
+// one source geometry into the part's arrays
+function joinCopy(j) {
+  const g = j.geos[j.next++];
+  j.pos.set(g.attributes.position.array, j.v * 3); j.nor.set(g.attributes.normal.array, j.v * 3); j.col.set(g.attributes.color.array, j.v * 3);
+  j.ao.set(g.attributes.ao.array, j.v);
+  const src = g.index.array;
+  for (let k = 0; k < src.length; k++) j.index[j.i + k] = src[k] + j.v;
+  j.v += g.attributes.position.count; j.i += src.length;
+}
+function joinMesh(j) {
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.BufferAttribute(j.pos, 3));
+  out.setAttribute('normal', new THREE.BufferAttribute(j.nor, 3));
+  out.setAttribute('color', new THREE.BufferAttribute(j.col, 3));
+  out.setAttribute('ao', new THREE.BufferAttribute(j.ao, 1));
+  out.setIndex(new THREE.BufferAttribute(j.index, 1));
+  const m = voxelMesh(out, j.cast);
+  m.matrixAutoUpdate = false; m.updateMatrix();
+  return m;
+}
+// advances a join by JOIN_ROWS source geometries (all of them when `all`); true once the job is over: the chunk's
+// meshes are in the scene, or a row of it was dropped meanwhile (the rows keep their own meshes then)
+function joinStep(job, all) {
+  if (job.rows.some(l => lanes.get(l.r) !== l)) return true;
+  let n = all ? Infinity : JOIN_ROWS;
+  for (const part of job.parts) {
+    while (part.next < part.geos.length && n-- > 0) joinCopy(part);
+    if (part.next < part.geos.length) return false;
   }
-  // the chunk holds a copy: the row's own geometry (and its empty group, which the per-draw walk would still visit) can go
-  for (const l of rows) { l.group.remove(l.ground); l.ground.geometry.dispose(); worldGroup.remove(l.group); l.chunk = k; }
-  chunks.set(k, { meshes, rows });
-  showChunk(k);
+  const meshes = job.parts.map(joinMesh);
+  for (const m of meshes) worldGroup.add(m);
+  // the chunk holds a copy: the row's own geometries (and its empty group, which the per-draw walk would still visit) can go
+  for (const l of job.rows) {
+    l.group.remove(l.ground); l.ground.geometry.dispose();
+    if (l.casters) { l.group.remove(l.casters); l.casters.geometry.dispose(); }
+    worldGroup.remove(l.group); l.chunk = job.k;
+  }
+  chunks.set(job.k, { meshes, rows: job.rows });
+  showChunk(job.k);
+  return true;
 }
 // a row was dropped: the chunk stays while any of its rows is still built, and is freed with the last one
 function releaseChunk(k) {
@@ -417,6 +453,7 @@ function showChunk(k) {
 
 function dropLane(lane) {
   lanes.delete(lane.r);
+  if (lane.r === ribbonAt) ribbonAt = -1;
   lane.shown = false;   // a dropped row counts as off screen for its chunk
   worldGroup.remove(lane.group);
   for (const o of lane.objs) { o.inst.drop(); if (o.light) o.light.drop(); }
@@ -428,6 +465,7 @@ function dropLane(lane) {
   if (lane.power) dropSpinner(lane.power.s);
   for (const s of lane.coins.values()) dropSpinner(s);
   lane.ground.geometry.dispose();   // a merged chunk holds its own copy of this ground
+  if (lane.casters) lane.casters.geometry.dispose();
   if (lane.chunk != null) releaseChunk(lane.chunk);
 }
 
@@ -552,6 +590,7 @@ function resetWorld() {
     : G.mode === 'daily' ? dailySeed() : G.mode === 'room' ? hashString('room:' + G.room)
     : G.mode === 'classic' && loadText(HINT_KEY) !== '1' ? TUTORIAL_SEED : (Math.random() * 4294967296) >>> 0;
   for (const k of [...chunks.keys()]) releaseChunk(k);   // nothing should be left; frees any chunk that is
+  pendingChunks.clear(); joinJob = null;   // a join of the old world's rows goes with them
   hot.clear();
   ribbonAt = -1;
   G.worldTick = 0;
@@ -580,4 +619,4 @@ function laneKinds() {   // lane types for rows 0..30 (builds missing rows ahead
   return out;
 }
 
-export { Inst, biomeAt, biomeIndex, blockColumn, refreshPowerLooks, unblockColumn, chunks, dropSpinner, ensureLanes, fleet, fxRand, getSeed, laneCoins, laneKinds, lanes, near, resetWorld, ribbonRow, showLane, spinAll, updateFarLanes, updateLanes, weatherAt };
+export { Inst, biomeAt, biomeIndex, blockColumn, refreshPowerLooks, unblockColumn, dropSpinner, ensureLanes, fxRand, getSeed, laneCoins, laneKinds, lanes, resetWorld, ribbonRow, showLane, spinAll, updateFarLanes, updateLanes, weatherAt };

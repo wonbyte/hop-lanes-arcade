@@ -25,9 +25,11 @@
 <link rel="modulepreload" href="js/world.js">
 <link rel="modulepreload" href="js/players.js">
 <link rel="modulepreload" href="js/ghost.js">
+<link rel="modulepreload" href="js/missions-ui.js">
 <link rel="modulepreload" href="js/screens.js">
 <link rel="modulepreload" href="js/panels.js">
 <link rel="modulepreload" href="js/paint.js">
+<link rel="modulepreload" href="js/results.js">
 <link rel="modulepreload" href="js/input.js">
 <link rel="modulepreload" href="js/app.js">
 <meta name="mobile-web-app-capable" content="yes">
@@ -39,6 +41,8 @@
 <!-- optional online scores: put your server URL in content, and add its origin to connect-src above (see server/README.md) -->
 <meta name="hop-lanes-scores" content="">
 <meta name="hop-lanes-token" content="">
+<link rel="preload" as="font" type="font/woff2" crossorigin href="fonts/press-start-2p-latin-400-normal.woff2">
+<link rel="preload" as="font" type="font/woff2" crossorigin href="fonts/rubik-latin-500-normal.woff2">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -71,7 +75,7 @@
     <div id="fps" hidden aria-hidden="true"></div>
     <div id="hint" hidden aria-hidden="true"><span></span></div>
     <div id="confetti" aria-hidden="true"></div>
-    <div id="banner" hidden aria-live="polite"><h2></h2><p></p></div>
+    <div id="banner" hidden><h2></h2><p></p></div>
     <div id="howto" class="dialog" role="dialog" aria-modal="true" aria-label="HOW TO PLAY" data-i18n-label="HOW TO PLAY" hidden>
       <div class="box">
         <h2 data-i18n="HOW TO PLAY">HOW TO PLAY</h2>
@@ -115,7 +119,7 @@
     <div id="modeBox" class="dialog" role="dialog" aria-modal="true" aria-labelledby="modesTitle" hidden>
       <div class="box">
         <h2 id="modesTitle" data-i18n="GAME MODE">GAME MODE</h2>
-        <div id="modeList" class="opts"></div>
+        <div id="modeList" class="opts" role="radiogroup" aria-labelledby="modesTitle"></div>
         <button type="button" id="closeModes" class="go" data-i18n="CLOSE">CLOSE</button>
       </div>
     </div>
@@ -128,7 +132,7 @@
           <button type="button" class="pickbtn" id="paintNext" aria-label="NEXT ANIMAL" data-i18n-label="NEXT ANIMAL">&#9654;</button>
         </div>
         <p id="paintName">FROG</p>
-        <div id="swatches"></div>
+        <div id="swatches" role="radiogroup" aria-label="PAINT" data-i18n-label="PAINT"></div>
         <p id="paintNote"></p>
         <button type="button" id="closePaint" class="go" data-i18n="CLOSE">CLOSE</button>
       </div>
@@ -156,7 +160,7 @@
     </div>
     <div id="live" class="sr-only" aria-live="polite"></div>
     <div id="wipe" aria-hidden="true"></div>
-    <div id="results" hidden aria-live="polite">
+    <div id="results" hidden>
       <div class="resText">
       <p id="resBest" hidden></p>
       <h2 id="resTitle">GAME OVER</h2>

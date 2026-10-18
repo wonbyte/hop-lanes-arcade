@@ -172,7 +172,7 @@ const ROW_BUILDERS = {
     if (rng() < COIN_CHANCE.cliff) placeCoin(rng, lane, playColumns());
   },
   rail(rng, lane, seed) {
-    // the first rail past each 100 rows carries the boss train: twice as long, faster, more warning (set by the chain)
+    // the first rail of each boss block (bossRows: 100 rows, rules 4: 50) carries the boss train: twice as long, faster, more warning (set by the chain)
     lane.cars = lane.boss ? TRAIN_CARS * 2 : TRAIN_CARS;
     const len = trainLen(lane.cars);
     lane.speed = TRAIN_SPEED * (lane.boss ? 1.25 : 1);
@@ -230,12 +230,14 @@ function createWorldGen(seed, version = RULES) {
   const heads = [];   // heads[r - 1]: { kind, streak, dir, bossChunk, twisterChunk, floodChunk, stand, bare } after row r
   const GRASS = { kind: 'grass', streak: 1, dir: 1, bossChunk: 0, twisterChunk: 0, floodChunk: 0, stand: null, bare: 0 };
   const BOSS_ROWS = bossRows(version);
+  // the chain state after a row: what the next row's draws depend on
+  const headFrom = (lane, prev) => ({ kind: lane.kind, streak: lane.streak, dir: lane.dir, bossChunk: lane.bossChunk, twisterChunk: lane.twisterChunk, floodChunk: lane.floodChunk, stand: standColumns(lane),
+    bare: isStill(lane.kind) ? 0 : prev.bare + 1 });   // rows in a row without still ground (rules 4 caps it)
   const headOf = r => {
     if (r < 1) return GRASS;
     while (heads.length < r) {
-      const prev = heads.length ? heads[heads.length - 1] : GRASS, lane = build(heads.length + 1, prev);
-      heads.push({ kind: lane.kind, streak: lane.streak, dir: lane.dir, bossChunk: lane.bossChunk, twisterChunk: lane.twisterChunk, floodChunk: lane.floodChunk, stand: standColumns(lane),
-        bare: isStill(lane.kind) ? 0 : prev.bare + 1 });   // rows in a row without still ground (rules 4 caps it)
+      const prev = heads.length ? heads[heads.length - 1] : GRASS;
+      heads.push(headFrom(build(heads.length + 1, prev), prev));
     }
     return heads[r - 1];
   };
@@ -268,7 +270,9 @@ function createWorldGen(seed, version = RULES) {
   }
   return {
     seed, version,
-    lane: r => build(r, headOf(r - 1)),
+    // a row built in order records its own head: the next row's chain needs no second build of it (build is pure in
+    // seed, r and prev, so the head is the one headOf would make)
+    lane: r => { const prev = headOf(r - 1), lane = build(r, prev); if (r === heads.length + 1) heads.push(headFrom(lane, prev)); return lane; },
     kind: r => headOf(r).kind
   };
 }

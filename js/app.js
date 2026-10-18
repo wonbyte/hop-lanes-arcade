@@ -11,7 +11,8 @@ import './paint.js';   // the paint shop dialog (side effects only)
 import { keepAwake } from './device.js';
 import { flushBank } from './storage.js';
 import { applyMoves, blobGeo, blobMat, bubbleGeo, bubbleMat, charOf, fx, giveShield, kill, placeBubbles, players, dressPlayer, updateParts, updatePlayer } from './players.js';
-import { canRetry, join, resultsEl, revealResults, setBanner, setModeLabel, showHowto, startPlay, toAttract } from './screens.js';
+import { canRetry, join, resultsEl, setBanner, setModeLabel, showHowto, startPlay, toAttract } from './screens.js';
+import { revealResults } from './results.js';   // also wires the game-over hook
 import { HINT_KEY, HOWTO_KEY, dailySeed, loadText, owned, paintOf, save } from './storage.js';
 import { biomeAt, biomeIndex, ensureLanes, getSeed, laneCoins, laneKinds, lanes, ribbonRow, showLane, spinAll, updateFarLanes, updateLanes, weatherAt } from './world.js';
 import { applyLang, t } from './i18n.js';
@@ -57,7 +58,7 @@ function placeCamera() {
 // walk, one line per lane ahead, until row HINT_ROWS; on any other world a plain TAP (or key) hint until row 5.
 const hintEl = $('hint'), hintSpan = hintEl.firstElementChild;
 const hintPos = new THREE.Vector3();
-let hintX = -1, hintY = -1;
+let hintX = -1, hintY = -1, hintKey = '';   // hintKey: what the text was built from (it is rebuilt only on a change)
 const HINT_ROWS = 20;
 const LANE_HINT = { road: 'WAIT FOR A GAP', river: 'HOP ON A LOG', rail: 'MIND THE TRAIN', lily: 'PADS ONLY', mud: 'MUD IS SLOW: HOP OUT EARLY', bridge: 'PLANKS BREAK: KEEP MOVING' };
 function hintText(p) {
@@ -76,9 +77,9 @@ function placeHint() {
   hintPos.set(p.x, 1.5, p.mesh.position.z).project(camera);
   const x = Math.round((hintPos.x + 1) / 2 * viewSize.w), y = Math.round((1 - hintPos.y) / 2 * viewSize.h);
   if (x !== hintX || y !== hintY) { hintX = x; hintY = y; hintEl.style.transform = 'translate(' + x + 'px,' + y + 'px)'; }   // transform only: no layout
-  const text = hintText(p);
-  if (hintSpan.textContent !== text) hintSpan.textContent = text;
-  hintEl.hidden = false;
+  const key = p.id + '|' + p.row + '|' + p.score + '|' + G.hintTurn + '|' + touchQuery.matches;
+  if (key !== hintKey) { hintKey = key; hintSpan.textContent = hintText(p); }
+  if (hintEl.hidden) hintEl.hidden = false;
 }
 // game over: the world slows for a moment and the view closes in on the fallen player; the title puts it back
 const OVER_FX_T = 2;   // seconds the game-over view keeps moving
@@ -124,7 +125,8 @@ function crash(err) {
   crashed = true;
   try { console.error(err); } catch (e) {}
   try { stopTune(); keepAwake(false); flushBank(); } catch (e) {}
-  for (const id of ['cards', 'deck', 'menu', 'results', 'howto', 'settingsBox', 'boardBox', 'pauseBox']) { const el = $(id); if (el) el.hidden = true; }
+  for (const id of ['cards', 'deck', 'menu', 'results']) { const el = $(id); if (el) el.hidden = true; }
+  for (const el of /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll('.dialog'))) el.hidden = true;   // whichever dialog was open
   setBanner(t('SOMETHING BROKE'), t('TAP TO RESTART'));
   const again = () => location.reload();
   window.addEventListener('pointerdown', again, { once: true, capture: true });
@@ -181,10 +183,14 @@ function measurePace(rawDt) {
   const median = paceDt.slice().sort()[PACE_N >> 1];
   every = Math.max(1, Math.floor(PACE_MAX / median));
 }
+// a title nobody has touched for TITLE_IDLE_MS draws every 4th screen frame (battery; the traffic still moves)
+const TITLE_IDLE_MS = 30000;
+let lastInput = 0;
+for (const ev of ['pointerdown', 'keydown']) document.addEventListener(ev, () => { lastInput = performance.now(); }, { capture: true, passive: true });
 function shouldDraw(now, rawDt, idle) {
   measurePace(rawDt);
   screenN++;
-  if (idle) return rawDt > 0.025 || screenN % (every * 2) === 0;
+  if (idle) return rawDt > 0.025 || screenN % (every * (G.state === 'attract' && now - lastInput > TITLE_IDLE_MS ? 4 : 2)) === 0;
   return screenN % every === 0;
 }
 // the per-frame looks (never the rules), then the render; work0: when the frame began (#debug frame times)
@@ -262,6 +268,7 @@ if (DEBUG) {
     get dailySeed() { return dailySeed(); },
     get run() { return G.run; },
     get record() { return G.record.slice(); },
+    get moves() { return G.moves; },   // moves taken from the queue (applied or refused): tests/browser.mjs hopKey
     get playTick() { return G.playTick; },
     get startTick() { return G.startTick; },
     get replay() { return G.replay; },
@@ -278,7 +285,7 @@ if (DEBUG) {
     get zoom() { return camera.zoom; },
     get slowT() { return G.slowT; },
     get canRetry() { return canRetry(); },
-    get countdown() { return G.countdown; },   // seconds of the countdown left (a quick retry: 1)   // a tap or key on the results plays again now
+    get countdown() { return G.countdown; },   // seconds of the countdown left (a quick retry: 1)
     get hintText() { return hintEl.textContent; },
     boom() { G.boom = true; },   // throw inside the next step: the crash notice
     get frames() { return frames.slice(); },

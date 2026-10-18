@@ -16,7 +16,7 @@ const ownedChars = () => CHARACTERS.map((c, i) => (isOwned(c) ? i : -1)).filter(
 const swatches = $('swatches');
 PAINTS.forEach((p, i) => {
   const b = document.createElement('button');
-  b.type = 'button'; b.dataset.i = String(i);
+  b.type = 'button'; b.dataset.i = String(i); b.setAttribute('role', 'radio');
   b.append(document.createElement('i'), document.createElement('span'));   // the color chip, the name and price
   b.addEventListener('click', () => pickPaint(i));
   swatches.appendChild(b);
@@ -24,13 +24,13 @@ PAINTS.forEach((p, i) => {
 function showPaint() {
   const ch = CHARACTERS[animal], worn = paintOf(ch.key);
   $('paintTitle').textContent = t('PAINT SHOP'); $('closePaint').textContent = t('CLOSE');
-  $('paintName').textContent = t(ch.name) + ' · ' + t(PAINTS.find(p => p.key === worn).name);
+  $('paintName').textContent = t(ch.name) + ' · ' + t((PAINTS.find(p => p.key === worn) || PAINTS[0]).name);   // a paint storage does not know reads as classic
   drawPix($('paintPic'), paintedPix(ch.key, worn));
   for (const b of /** @type {HTMLCollectionOf<HTMLElement>} */ (swatches.children)) {
     const p = PAINTS[Number(b.dataset.i)], own = hasPaint(ch.key, p.key);
     /** @type {HTMLElement} */ (b.querySelector('i')).style.background = paintCss(ch.key, p.key);
     b.querySelector('span').textContent = t(p.name) + (own ? '' : ' \u00b7 ' + p.price);
-    b.setAttribute('aria-pressed', String(p.key === worn));
+    b.setAttribute('aria-checked', String(p.key === worn));
     b.classList.toggle('locked', !own);
   }
   $('paintNote').textContent = t('YOU HAVE {n} COINS', { n: G.bank });

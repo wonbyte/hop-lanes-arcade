@@ -14,7 +14,14 @@ const SEVERITY = Object.fromEntries(Object.entries(Severity).filter(([, v]) => t
 // (section 6: the site is static game files only, nothing uploaded, no JSONP, no AngularJS)
 const ACCEPTED = [{ directive: 'script-src', severity: 'MEDIUM_MAYBE', value: "'self'" }];
 // what the threat model relies on, in both files
-const REQUIRED = { 'default-src': ["'none'"], 'base-uri': ["'none'"], 'form-action': ["'none'"], 'connect-src': ["'none'"], 'worker-src': ["'none'"] };
+const REQUIRED = { 'default-src': ["'none'"], 'base-uri': ["'none'"], 'form-action': ["'none'"], 'worker-src': ["'none'"] };
+// connect-src: 'none', or exactly the https origin of a wired score server (the hop-lanes-scores meta; server/README.md)
+function allowedConnect(html) {
+  const m = /<meta name="hop-lanes-scores" content="([^"]*)"/.exec(html);
+  let origin = '';
+  try { origin = m && m[1] ? new URL(m[1]).origin : ''; } catch (e) { origin = ''; }
+  return origin.startsWith('https://') ? [origin] : ["'none'"];
+}
 const FORBIDDEN = ["'unsafe-inline'", "'unsafe-eval'", "'unsafe-hashes'", 'data:', '*', 'http:', 'https:'];
 
 let bad = 0;
@@ -29,12 +36,12 @@ for (const file of ['index.html', 'hop-lanes-standalone.html']) {
     console.log(`${ok ? 'ACCEPTED' : 'FAIL'}  ${file} ${f.directive} [${sev}] ${f.description}`);
     if (!ok) bad++;
   }
-  for (const [dir, want] of Object.entries(REQUIRED)) {
+  for (const [dir, want] of Object.entries({ ...REQUIRED, 'connect-src': allowedConnect(html) })) {
     const got = csp.directives[dir];
     if (!got || want.some(w => !got.includes(w)) || got.length !== want.length) { console.log(`FAIL  ${file} ${dir} must be ${want.join(' ')} (is ${got ? got.join(' ') : 'missing'})`); bad++; }
   }
   for (const [dir, vals] of Object.entries(csp.directives)) {
-    for (const v of vals) if (FORBIDDEN.includes(v) && !(dir === 'img-src' && v === 'data:') && !(dir === 'font-src' && v === 'data:')) { console.log(`FAIL  ${file} ${dir} allows ${v}`); bad++; }
+    for (const v of vals) if (FORBIDDEN.includes(v) && !(dir === 'img-src' && v === 'data:') && !(dir === 'font-src' && v === 'data:') && !(dir === 'connect-src' && allowedConnect(html).includes(v))) { console.log(`FAIL  ${file} ${dir} allows ${v}`); bad++; }
   }
 }
 if (bad) { console.error(`check-csp: ${bad} problem(s)`); process.exit(1); }

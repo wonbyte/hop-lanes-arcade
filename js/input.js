@@ -95,15 +95,20 @@ function fieldPlayer(clientX, r) {
   return clientX < r.left + r.width / 2 ? 0 : 1;
 }
 // a short ring where the field was touched, in the player's color, so the field reads as a control
+// The rings are pooled (a few taps a second during play): a hidden one is shown again, which restarts its animation
+const rings = [], ringT = new Map();
 function touchRing(clientX, clientY, i, r) {
-  const el = document.createElement('div');
+  let el = rings.find(e => e.hidden);
+  if (!el) {
+    if (rings.length >= 6) el = rings[0]; else { el = document.createElement('div'); rings.push(el); stage.appendChild(el); }
+    el.hidden = true;
+  }
   el.className = 'ring p' + (i + 1);
   el.style.left = (clientX - r.left) + 'px';
   el.style.top = (clientY - r.top) + 'px';
-  stage.appendChild(el);
-  const gone = () => el.remove();
-  el.addEventListener('animationend', gone);
-  setTimeout(gone, 500);   // also without animations (reduced motion)
+  el.hidden = false;
+  clearTimeout(ringT.get(el));
+  ringT.set(el, setTimeout(() => { el.hidden = true; }, 500));   // after the animation (also without one: reduced motion)
 }
 stage.addEventListener('pointerdown', e => {
   if (e.button > 0 || panelUp() || /** @type {HTMLElement} */ (e.target).closest('#cards, #howto, #menu, #results button, #results textarea, #marquee button, .dialog .box')) return;
@@ -167,4 +172,4 @@ const PAD_ACTS = [n => press(n, 0, 1), n => press(n, 0, -1), n => press(n, -1, 0
 function togglePause() { if (G.state === 'paused') { audio(); resumeGame(); } else pauseGame(); }
 $('app').addEventListener('contextmenu', e => e.preventDefault());
 
-export { pollGamepads, press };
+export { pollGamepads };

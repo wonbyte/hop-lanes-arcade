@@ -83,6 +83,9 @@ export async function open(browser, url, {
   return { context, page, errors, requests };
 }
 
+// player 1 as the page sees it: the row, score, cause, position, world and tick (the replay and property tests compare these)
+export const snapP1 = page => page.evaluate(() => { const h = window.hopLanes, p = h.players[0]; return { row: p.row, score: p.score, cause: p.cause, x: Math.round(p.x * 1000), seed: h.seed, tick: h.playTick }; });
+
 export const waitState = (page, s, timeout = T) =>
   page.waitForFunction(x => window.hopLanes && window.hopLanes.state === x, s, { timeout });
 
@@ -100,10 +103,11 @@ export async function waitTicks(page, n) {
   await page.waitForFunction(([t, k]) => window.hopLanes.state !== 'play' || window.hopLanes.playTick >= t + k, [t0, n], { timeout: T });
 }
 
-// Presses a move key for player 1 and waits until that hop was taken up (recorded) and landed, or the game ended.
+// Presses a move key for player 1 and waits until that move was taken up (applied or refused) and any hop landed, or
+// the game ended.
 export async function hopKey(page, key) {
-  const n = await page.evaluate(() => window.hopLanes.record.length);
+  const n = await page.evaluate(() => window.hopLanes.moves);
   await page.keyboard.press(key);
-  await page.waitForFunction(k => window.hopLanes.state !== 'play' || window.hopLanes.record.length > k, n, { timeout: T });
+  await page.waitForFunction(k => window.hopLanes.state !== 'play' || window.hopLanes.moves > k, n, { timeout: T });
   await page.waitForFunction(() => window.hopLanes.state !== 'play' || !window.hopLanes.players[0].hop, null, { timeout: T });
 }

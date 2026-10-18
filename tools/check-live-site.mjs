@@ -3,13 +3,14 @@
 // after each deploy (deploy.yml, Node 24: the Observatory's own requirement).
 // A failed test passes the check only when docs/threat-model.md accepts it (ACCEPTED below names the section).
 //   npm ci --prefix tools/observatory   (its own lockfile; OBSERVATORY_DIR points elsewhere)
-//   node tools/check-live-site.mjs [--host wonbyte.github.io] [--path /hop-lanes-arcade/] [--out file.json]
+//   node tools/check-live-site.mjs [--site https://host/path/] [--host wonbyte.github.io] [--path /hop-lanes-arcade/] [--out file.json]
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { flagArg } from './lib.mjs';
 
-const HOST = flagArg('--host', 'wonbyte.github.io'), PAGE = flagArg('--path', '/hop-lanes-arcade/'), OUT = flagArg('--out', '');
+const SITE = flagArg('--site', '') ? new URL(flagArg('--site', '')) : null;   // deploy.yml: the page GitHub Pages deployed (a fork audits its own site)
+const HOST = flagArg('--host', SITE ? SITE.host : 'wonbyte.github.io'), PAGE = flagArg('--path', SITE ? SITE.pathname : '/hop-lanes-arcade/'), OUT = flagArg('--out', '');
 const DIR = process.env.OBSERVATORY_DIR || path.resolve(path.dirname(new URL(import.meta.url).pathname), 'observatory/node_modules/@mdn/mdn-http-observatory');
 // failed tests that docs/threat-model.md accepts (GitHub Pages lets a site set no header)
 const ACCEPTED = {

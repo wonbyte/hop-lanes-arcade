@@ -1,4 +1,4 @@
-import { $, G, LOOKS } from './core.js';
+import { $, G, LOOKS, PAINT_KEYS } from './core.js';
 import { DAY_PREFIX, MODES, dailySeedFor, dayBefore, isoDay, streakCount } from './rules.js';
 
 // Saved data: best scores, coins, owned characters. Everything is best effort (private mode, blocked storage).
@@ -70,8 +70,8 @@ const owned = new Set(loadText(OWNED_KEY).split(',').filter(Boolean));
 const paints = new Set(loadText(PAINTS_KEY).split(',').filter(Boolean));   // 'animal:paint'
 const painted = new Map();   // animal -> the paint it wears
 for (const part of loadText(PAINTED_KEY).split(',')) { const [a, k] = part.split('='); if (a && k) painted.set(a, k); }
-const hasPaint = (animal, paint) => paint === 'classic' || paints.has(animal + ':' + paint);
-// the paint an animal wears: a bought one, or classic
+const hasPaint = (animal, paint) => paint === 'classic' || (PAINT_KEYS.includes(paint) && paints.has(animal + ':' + paint));
+// the paint an animal wears: a bought one the game knows (core.js PAINT_KEYS), or classic
 const paintOf = animal => { const k = painted.get(animal) || 'classic'; return hasPaint(animal, k) ? k : 'classic'; };
 function wearPaint(animal, paint) {
   painted.set(animal, paint);
@@ -132,4 +132,4 @@ function checkDay() {
 }
 setInterval(checkDay, 60000);
 
-export { BEST_KEY, LOOK_KEY, DAILY_KEY, DAILYDONE_KEY, DAY_PREFIX, HANDICAP_KEY, HINT_KEY, HOWTO_KEY, INITIALS_KEY, LOCAL_KEY, MCOINS_KEY, MDONE_KEY, STREAK_KEY, TIPS_KEY, VISIT_KEY, INSTALL_KEY, MISSIONS_KEY, MOTION_KEY, ROOM_KEY, MODE_KEY, MUTE_KEY, OWNED_KEY, PICK_KEY, addPaint, cleanInitials, dailySeed, dayKey, deviceTag, entersLocal, flushBank, hasPaint, load, loadText, localTop, owned, paintOf, parseLocal, refreshBests, save, savedMode, setBank, today, wearPaint };
+export { BEST_KEY, LOOK_KEY, DAILY_KEY, DAILYDONE_KEY, HANDICAP_KEY, HINT_KEY, HOWTO_KEY, INITIALS_KEY, LOCAL_KEY, MCOINS_KEY, MDONE_KEY, STREAK_KEY, TIPS_KEY, VISIT_KEY, INSTALL_KEY, MISSIONS_KEY, MOTION_KEY, ROOM_KEY, MODE_KEY, MUTE_KEY, OWNED_KEY, PICK_KEY, addPaint, cleanInitials, dailySeed, deviceTag, entersLocal, flushBank, hasPaint, load, loadText, localTop, owned, paintOf, parseLocal, refreshBests, save, savedMode, setBank, today, wearPaint };

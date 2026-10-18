@@ -7,7 +7,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fc from 'fast-check';
 import { serve } from './serve.mjs';
-import { ROOT, T, launch, open as openPage, waitState, settle, hopKey, waitTicks } from './browser.mjs';
+import { ROOT, T, launch, open as openPage, waitState, settle, hopKey, snapP1, waitTicks } from './browser.mjs';
 import { decodeReplay, encodeReplay } from '../js/replay.js';
 import { simulate } from '../js/sim.js';
 import { EDGE_DEATH, MAX_RUN_TICKS, MODES, RULES, TRAITS } from '../js/rules.js';
@@ -85,7 +85,7 @@ test.after(async () => { await browser?.close(); await site?.close(); });
 // a small seeded generator for the key sequence, so a failing case prints its seed and can be run again
 const lcg = s => () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 2 ** 32;
 const KEYS = ['KeyW', 'KeyW', 'KeyW', 'KeyW', 'KeyW', 'KeyW', 'KeyA', 'KeyD', 'KeyS', 'wait'];
-const snap = page => page.evaluate(() => { const h = window.hopLanes, p = h.players[0]; return { row: p.row, score: p.score, cause: p.cause, x: Math.round(p.x * 1000), tick: h.playTick, seed: h.seed }; });
+const snap = snapP1;
 
 for (let n = 0; n < BROWSER_RUNS; n++) {
   test(`P4.${n + 1} random play in the browser ends as sim.js says it does`, { timeout: 300000 }, async () => {

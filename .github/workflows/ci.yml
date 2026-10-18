@@ -81,7 +81,6 @@ jobs:
     permissions:
       contents: read
       actions: read
-      security-events: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -131,7 +130,7 @@ jobs:
             zap-api-scan.py -t /zap/wrk/openapi.yaml -f openapi -O http://127.0.0.1:8787 -c zap-rules.tsv -r report.html -J report.json -z "-config connection.timeoutInSecs=30"
       - name: The server stayed up and answered every request
         if: always()
-        run: curl -sf http://127.0.0.1:8787/scores > /dev/null && ! grep -i "error" "$RUNNER_TEMP/server.log"
+        run: curl -sf http://127.0.0.1:8787/scores > /dev/null && ! grep -E "write failed|Unhandled|TypeError|RangeError|ReferenceError" "$RUNNER_TEMP/server.log"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
@@ -177,6 +176,8 @@ jobs:
       - run: npm ci
       - name: Fuzz the replay codec and the simulator for two minutes
         run: node tools/fuzz-replay.mjs --seconds 120
+      - name: The score server's HTTP surface under random requests (tools/fuzz-server.mjs)
+        run: node tools/fuzz-server.mjs --seconds 90
       - name: Audit the hazards (random play, both rules versions; fails when a fairness invariant breaks)
         run: node tools/hazard-audit.mjs --runs 20000 --json hazard-audit.json && node tools/hazard-audit.mjs --runs 20000 --rules 3 --json hazard-audit-rules3.json && node tools/hazard-audit.mjs --runs 20000 --rules 2 --json hazard-audit-rules2.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

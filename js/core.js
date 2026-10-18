@@ -1,4 +1,4 @@
-import { COUNTDOWN, FIRST_ROW, HOP_TIME, MODES, PLAY_HALF, STEP, TRAIN_SPEED, WRAP } from './rules.js';
+import { COUNTDOWN, FIRST_ROW, MODES, PLAY_HALF, STEP, TRAIN_SPEED } from './rules.js';
 
 // Shared constants, the game state object and the one "can not load" screen.
 // ---------- tuning ----------
@@ -7,6 +7,7 @@ const LANES_AHEAD = 22, LANES_BEHIND = 12;
 const RESULTS_DELAY = 0.7;    // real seconds from the last death to the results panel (the slow motion does not stretch it)
 const RETRY_AFTER = 0.5;      // real seconds the results show before a tap or key plays again (no accidental retry)
 const SOLO_COUNTDOWN = 1;     // a quick retry of a one-player game counts down READY, GO! (rules.js COUNTDOWN: 3 s from the title)
+const JOIN_COUNTDOWN = 2.5;   // a second player joining during the countdown gives both at least this long
 const GO_TIME = 0.6;
 const WIPE_MS = 130;          // restart fade; the new world is built while the screen is covered
 const PRIZE_COST = 50;        // coins for one turn of the prize machine
@@ -15,7 +16,10 @@ const TUTORIAL_SEED = 21216;  // the very first classic game (rules 4 worlds): a
 const BIOME_ROWS = 50;        // the look of the land changes every this many rows (world.js biomeAt; looks only)
 const OVER_SLOW = 0.35, OVER_SLOW_T = 0.6;   // game over: the world runs this much slower for this long (real seconds)
 const OVER_ZOOM = 1.22;       // and the view closes in on the fallen player
+const BEST_MIN = 10;          // a best below this gets no ribbon on the results and none on the ground (a first run of 2 rows is no party)
 const LAND_DIP = 0.14;        // seconds of the small view dip after a landing (players.js sets G.landT, app.js draws it)
+// the paint jobs' keys (models.js PAINTS has their names, prices and colors in this order): storage.js wears only these
+const PAINT_KEYS = ['classic', 'gold', 'sky', 'pink', 'mint', 'lava', 'night'];
 // looks a player can unlock with the all-time best (screens.js): the land starts as that biome, or at night
 const LOOKS = [{ key: 'auto', at: 0 }, { key: 'desert', at: 40 }, { key: 'night', at: 70 }, { key: 'tundra', at: 100 }, { key: 'swamp', at: 150 }];
 const TAU = Math.PI * 2;
@@ -38,7 +42,8 @@ const G = {
   countKey: '',        // the countdown banner that is showing (cleared to redraw it, e.g. after a pause)
   redraw: false,       // paused: draw one frame (the pause banner, a resize)
   playTick: 0,         // fixed steps since play began (replay time base)
-  record: [],          // this run's hops: [playTick, player, dx, dr]
+  record: [],          // this run's hops as the rules applied them: [playTick, player, dx, dr] (the replay code)
+  moves: 0,            // moves taken from the queue this run, applied or refused (a test hook: tests/browser.mjs hopKey)
   replay: null,        // a decoded replay being played back, or null
   run: null,           // this run's stats (missions)
   handicap: 0,         // 0 = off, 1 / 2 = that player starts with a shield
@@ -82,6 +87,16 @@ const meta = name => /** @type {HTMLMetaElement | null} */ (document.querySelect
 const SCORES_URL = meta('hop-lanes-scores');
 const SCORES_TOKEN = meta('hop-lanes-token');   // sent as X-Hop-Token when the server asks for one
 
+// a JSON request that gives up after ms (the score server: a post, the top lists); throws on a bad status
+async function fetchJson(url, ms, init = {}) {
+  const ctrl = new AbortController(), timer = setTimeout(() => ctrl.abort(), ms);
+  try {
+    const res = await fetch(url, { ...init, signal: ctrl.signal });
+    if (!res.ok) throw new Error('http ' + res.status);
+    return await res.json();
+  } finally { clearTimeout(timer); }
+}
+
 // show one clear message and hide the controls that would do nothing
 function fail(why) {
   for (const id of ['cards', 'deck', 'logo']) document.getElementById(id).hidden = true;
@@ -91,4 +106,4 @@ function fail(why) {
   b.querySelector('p').textContent = why;
 }
 
-export { $, BENCH, BIOME_ROWS, LAND_DIP, LOOKS, OVER_SLOW, OVER_SLOW_T, OVER_ZOOM, TUTORIAL_SEED, COUNTDOWN, DEBUG, FIRST_ROW, FIXED_SEED, SHADOW_BASIC, G, GO_TIME, HOP_TIME, LANES_AHEAD, LANES_BEHIND, MODES, REPLAY_CODE, NIGHT_FULL, NIGHT_START, PLAY_HALF, PRIZE_COST, RESULTS_DELAY, RETRY_AFTER, SCORES_TOKEN, SOLO_COUNTDOWN, SCORES_URL, STEP, TAU, TRAIN_SPEED, WIPE_MS, WRAP, fail };
+export { $, BENCH, BEST_MIN, BIOME_ROWS, JOIN_COUNTDOWN, LAND_DIP, LOOKS, PAINT_KEYS, OVER_SLOW, OVER_SLOW_T, OVER_ZOOM, TUTORIAL_SEED, COUNTDOWN, DEBUG, FIRST_ROW, FIXED_SEED, SHADOW_BASIC, G, GO_TIME, LANES_AHEAD, LANES_BEHIND, MODES, REPLAY_CODE, NIGHT_FULL, NIGHT_START, PLAY_HALF, PRIZE_COST, RESULTS_DELAY, RETRY_AFTER, SCORES_TOKEN, SOLO_COUNTDOWN, SCORES_URL, STEP, TAU, TRAIN_SPEED, WIPE_MS, fail, fetchJson };

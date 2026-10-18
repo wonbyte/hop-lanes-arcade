@@ -6,3 +6,5 @@ bench/
 .scan-tools/
 _site/
 server/scores.days/
+server/scores.json
+server/*.tmp

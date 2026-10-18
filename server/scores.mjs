@@ -1,6 +1,6 @@
 // Hop Lanes optional online high-score server. Dependency-free, Node 20+.
 // Run: node server/scores.mjs
-// Env: PORT (8787), DATA_FILE (./scores.json next to this script: the entries without a day), DAYS_DIR (DATA_FILE without
+// Env: PORT (8787), HOST (0.0.0.0; 127.0.0.1 with TRUST_PROXY=1), DATA_FILE (./scores.json next to this script: the entries without a day), DAYS_DIR (DATA_FILE without
 //      .json, plus .days: one file per day), ALLOW_ORIGIN ('*'; set it to the game's origin in production: POSTs from
 //      another Origin get 403), POST_TOKEN ('' = none), MAX_SCORE (5000), RATE_MAX (10),
 //      TRUST_PROXY ('1' when a reverse proxy sits in front: the rate limit then keys on the client in X-Forwarded-For),
@@ -14,12 +14,14 @@ import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { MODES, MAX_RUN_TICKS, RULES, TICKS_PER_S, TRAITS, dailySeedFor, isoWeek, traitOf } from '../js/rules.js';
+import { MODES, MAX_RUN_TICKS, RULES, TICKS_PER_S, TRAITS, dailySeedFor, isoWeek } from '../js/rules.js';
 import { decodeReplay, encodeReplay } from '../js/replay.js';
 import { simulate } from '../js/sim.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT ?? 8787);
+// the address to listen on: behind a proxy (TRUST_PROXY) only the proxy may reach the server, so it stays on loopback
+const HOST = process.env.HOST || (process.env.TRUST_PROXY === '1' ? '127.0.0.1' : '0.0.0.0');
 const DATA_FILE = process.env.DATA_FILE || path.join(HERE, 'scores.json');
 const DAYS_DIR = process.env.DAYS_DIR || DATA_FILE.replace(/\.json$/i, '') + '.days';
 const ALLOW_ORIGIN = process.env.ALLOW_ORIGIN || '*';
@@ -401,7 +403,7 @@ const CORS = {
 };
 // a JSON reply is never a page: the browser must not sniff it as one, run anything in it, or frame it
 const SAFE = { 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'" };
-const JSON_HEADERS = { 'Content-Type': 'application/json; charset=utf-8', ...SAFE, ...CORS, ...(ALLOW_ORIGIN !== '*' ? { Vary: 'Origin' } : {}) };
+const JSON_HEADERS = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...SAFE, ...CORS, ...(ALLOW_ORIGIN !== '*' ? { Vary: 'Origin' } : {}) };
 function send(res, status, body, extra = {}) {
   res.writeHead(status, { ...(status === 400 ? { Connection: 'close' } : {}), ...extra, ...JSON_HEADERS });
   res.end(JSON.stringify(body));
@@ -471,12 +473,12 @@ function runRefused(entry) {
 // Daily runs must be on that day's world; classic, race and room runs may be on any seed.
 // The run as the server keeps it: only the hops the rules started (sim.js onHop), so a padded code (hops for a player
 // who never joined, after the end, refused or overwritten moves) is stored at its true size and fingerprinted as the
-// run it is. Coins-only traits (fox, pig) fingerprint as the frog: the same hops are the same run.
-const COIN_ONLY = new Set(['text', 'comboGap', 'magnet']);
-const runAnimal = k => (Object.keys(traitOf(k)).every(f => COIN_ONLY.has(f)) ? 'frog' : k);
+// run it is. The fingerprint covers what decides the run (the world, the start tick, who joined, the handicap, the
+// applied hops) and none of its labels: the mode and the animals can be rewritten on a stolen code without changing a
+// one-player run (every mode plays the same alone; a trait that never fires changes nothing), and a trait or mode that
+// did change the run changed its applied hops or its end too. The same hops are the same run, whatever the label
 function fingerprint(rp, hops) {
-  const who = rp.chars.map((k, i) => (rp.joined[i] ? runAnimal(k) : '-'));
-  return crypto.createHash('sha256').update(JSON.stringify([rp.seed, rp.mode, rp.startTick, who, rp.handicap, hops])).digest('base64url').slice(0, 22);
+  return crypto.createHash('sha256').update(JSON.stringify([rp.seed, rp.startTick, rp.joined, rp.handicap, hops])).digest('base64url').slice(0, 22);
 }
 // one timed replay; TIMEOUT when VERIFY_MS ran out (the server is slow, not the run wrong)
 const TIMEOUT = Symbol('timeout');
@@ -590,8 +592,8 @@ function warmUp() {
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   load();
   const warm = VERIFY ? warmUp() : 0;
-  server.listen(PORT, () => {
+  server.listen(PORT, HOST, () => {
     const addr = /** @type {import('node:net').AddressInfo} */ (server.address());
-    console.log(`hop-lanes scores on :${addr.port} (data: ${DATA_FILE}, days: ${DAYS_DIR})${VERIFY ? ` (verifying replays, rules ${MIN_RULES}+; warm-up ${warm} ms)` : ''}`);
+    console.log(`hop-lanes scores on ${HOST}:${addr.port} (data: ${DATA_FILE}, days: ${DAYS_DIR})${VERIFY ? ` (verifying replays, rules ${MIN_RULES}+; warm-up ${warm} ms)` : ''}`);
   });
 }

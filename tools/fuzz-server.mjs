@@ -14,7 +14,7 @@ import path from 'node:path';
 import { encodeReplay } from '../js/replay.js';
 import { simulate } from '../js/sim.js';
 import { MODES, dailySeedFor } from '../js/rules.js';
-import { ANIMALS, DIRS, SERVER, dayAgo, flagArg, seededRng, today } from './lib.mjs';
+import { ANIMALS, dayAgo, DIRS, flagArg, freePort, rssMB as rssOf, seededRng, SERVER, today } from './lib.mjs';
 
 const flag = flagArg;
 const SECONDS = Number(flag('--seconds', 600));
@@ -206,8 +206,7 @@ function rawRequest(host, port) {   // what node:http will not send
 
 // ---- server ----
 let proc = null, serverLog = '', base = EXTERNAL, host = '127.0.0.1', port = 0, dir = '';
-const rssMB = () => { try { const m = /VmRSS:\s+(\d+)/.exec(fs.readFileSync(`/proc/${proc.pid}/status`, 'utf8')); return m ? +(m[1] / 1024).toFixed(1) : null; } catch { return null; } };
-const freePort = () => new Promise(r => { const s = net.createServer().listen(0, () => { const p = s.address().port; s.close(() => r(p)); }); });
+const rssMB = () => rssOf(proc.pid);
 if (!EXTERNAL) {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hop-fuzz-'));
   port = await freePort();

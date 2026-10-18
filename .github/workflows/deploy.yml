@@ -20,7 +20,6 @@ jobs:
     permissions:
       contents: read
       actions: read
-      security-events: write   # CodeQL uploads its results
 
   deploy:
     name: Deploy
@@ -74,7 +73,9 @@ jobs:
         run: |
           npm ci --prefix tools/observatory --no-audit --no-fund --ignore-scripts
           npm --prefix tools/observatory/node_modules/@mdn/mdn-http-observatory run updateHsts   # the HSTS preload list (npm 11 runs no install script)
-          node tools/check-live-site.mjs --out live-headers.json
+          node tools/check-live-site.mjs --site "$SITE" --out live-headers.json
+        env:
+          SITE: ${{ needs.deploy.outputs.page_url }}
       - run: npx playwright install --with-deps chromium
       - name: Slow 4G load of the live page (docs/budgets.md), against tools/bench-budgets-live.json
         run: node tools/device-bench.mjs --url "$SITE" --load-only --no-spector --check tools/bench-budgets-live.json > live-load.json

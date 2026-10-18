@@ -1,5 +1,5 @@
 import { audio, isMuted, setMuted, sfx } from './audio.js';
-import { $, G, LOOKS, MODES, SCORES_URL } from './core.js';
+import { $, G, LOOKS, MODES, SCORES_URL, fetchJson } from './core.js';
 import { buzzIsOn, setBuzz } from './device.js';
 import { t } from './i18n.js';
 import { charOf, players } from './players.js';
@@ -10,9 +10,10 @@ import { LOCAL_KEY, LOOK_KEY, MOTION_KEY, loadText, parseLocal, save, today } fr
 
 // Small panels over the field: settings, the pause menu, the online top 10, and the screen-reader announcer.
 // ---------- dialogs (one open at a time; Escape and the close button close it) ----------
-let openBox = null;
+let openBox = null, opener = null;   // opener: the element that had the focus before the dialog (it gets it back)
 function openDialog(id) {
   closeDialog();
+  if (!openBox) opener = document.activeElement;
   openBox = $(id); openBox.hidden = false;
   const first = openBox.querySelector('button');
   if (first) try { first.focus({ preventScroll: true }); } catch (e) {}
@@ -21,8 +22,21 @@ function closeDialog() {
   if (!openBox) return false;
   openBox.hidden = true; openBox = null;
   answerCode(null);   // a question closed without OK (Escape, a join) answers nothing
+  if (opener instanceof HTMLElement && opener.isConnected) try { opener.focus({ preventScroll: true }); } catch (e) {}
+  opener = null;
   return true;
 }
+// aria-modal: Tab stays inside the open box (the title's buttons behind the shade are not reachable)
+const focusable = () => openBox ? [.../** @type {NodeListOf<HTMLElement>} */ (openBox.querySelectorAll('button:not([disabled]), textarea, input, [tabindex]:not([tabindex="-1"])'))].filter(el => el.offsetParent !== null) : [];
+document.addEventListener('keydown', e => {
+  if (e.code !== 'Tab' || !openBox) return;
+  const f = focusable();
+  if (!f.length) return;
+  const at = f.indexOf(/** @type {HTMLElement} */ (document.activeElement));
+  const next = at < 0 ? 0 : (at + (e.shiftKey ? -1 : 1) + f.length) % f.length;
+  f[next].focus({ preventScroll: true });
+  e.preventDefault();
+}, true);
 const dialogOpen = () => !!openBox && !openBox.hidden;
 document.addEventListener('hoplanes:join', closeDialog);   // screens.js join: the game starts, a panel left open goes
 
@@ -63,7 +77,7 @@ document.addEventListener('hoplanes:lang', labelSettings);
 const modeList = $('modeList');
 for (const m of MODES) {
   const b = document.createElement('button');
-  b.type = 'button'; b.dataset.mode = m;
+  b.type = 'button'; b.dataset.mode = m; b.setAttribute('role', 'radio');
   b.append(document.createElement('b'), document.createElement('small'));
   if (TWO_UP_MODES.includes(m)) b.appendChild(document.createElement('i'));   // a tag: made for two players
   b.addEventListener('click', () => { closeDialog(); pickMode(m); });
@@ -77,13 +91,13 @@ function labelModes() {
     b.querySelector('small').textContent = t(MODE_NOTE[m]);
     const tag = b.querySelector('i');
     if (tag) tag.textContent = t('2 PLAYERS');
-    b.setAttribute('aria-pressed', String(m === G.mode));
+    b.setAttribute('aria-checked', String(m === G.mode));
   }
 }
 $('mode').addEventListener('click', () => {
   if (G.state !== 'attract') return;
   audio(); sfx.tick(); labelModes(); openDialog('modeBox');
-  try { /** @type {HTMLElement} */ (modeList.querySelector('[aria-pressed="true"]')).focus({ preventScroll: true }); } catch (e) {}
+  try { /** @type {HTMLElement} */ (modeList.querySelector('[aria-checked="true"]')).focus({ preventScroll: true }); } catch (e) {}
 });
 $('closeModes').addEventListener('click', () => { sfx.tick(); closeDialog(); });
 
@@ -156,7 +170,7 @@ $('codeBox').addEventListener('keydown', e => {
   const m = /^(?:Key|Digit)([A-Z0-9])$/.exec(e.code);
   if (m) { codeLetters[codeAt] = ALPHA.indexOf(m[1]); codeAt = Math.min(codeLetters.length - 1, codeAt + 1); showSlots(); }
   else if (e.code === 'Backspace') { codeAt = Math.max(0, codeAt - 1); showSlots(); }
-  else if (e.code === 'Enter' && e.target !== $('codeCancel')) finishCode(true);
+  else if (e.code === 'Enter' && e.target !== $('codeCancel') && !/** @type {HTMLElement} */ (e.target).closest('.slot')) finishCode(true);
   else return;
   e.preventDefault(); e.stopPropagation();
 });
@@ -234,7 +248,7 @@ async function openBoard() {
   list.textContent = '';
   const note = $('boardNote');
   note.textContent = '…'; note.hidden = false;
-  openDialog('boardBox');
+  if ($('boardBox').hidden) openDialog('boardBox');   // a scope change refills the open box: the focus stays on its button
   if (scope === 'local') {   // saved on this device: no watch button (the runs are not kept)
     const local = parseLocal(loadText(LOCAL_KEY));
     for (const e of local) list.appendChild(boardRow(e.name, e.score));
@@ -246,9 +260,7 @@ async function openBoard() {
     const u = new URL(SCORES_URL, location.href);
     if (scope === 'day') u.searchParams.set('day', today()); else if (scope === 'week') u.searchParams.set('week', isoWeek(today()));
     if (daily && scope !== 'all') u.searchParams.set('mode', 'daily');
-    const ctrl = new AbortController();
-    setTimeout(() => ctrl.abort(), 4000);
-    const top = (await (await fetch(u, { signal: ctrl.signal })).json()).top;
+    const top = (await fetchJson(u, 4000)).top;
     if (req !== boardReq) return;   // a newer request (another scope, a reopen) owns the list now
     if (!Array.isArray(top)) throw new Error('bad list');
     list.textContent = '';

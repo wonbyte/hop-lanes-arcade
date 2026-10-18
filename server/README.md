@@ -7,6 +7,7 @@ Dependency-free Node 20 server for an online top-10 list.
 | Env | Default | Meaning |
 |-----|---------|---------|
 | `PORT` | `8787` | listen port |
+| `HOST` | `0.0.0.0`, or `127.0.0.1` with `TRUST_PROXY=1` | the address to listen on. Behind a proxy only the proxy may reach the server (a forged `X-Forwarded-For` would otherwise pick its own rate budget), so it binds to loopback unless told otherwise. The game page is served over https, so the server must be reached over TLS too (a terminator in front, `TRUST_PROXY=1`): browsers block mixed content, and the page's `connect-src` names an https origin |
 | `DATA_FILE` | `server/scores.json` | JSON store of the entries without a day (see storage below) |
 | `DAYS_DIR` | `DATA_FILE` without `.json`, plus `.days` (`server/scores.days`) | one JSON file per day (`YYYY-MM-DD.json`) |
 | `ALLOW_ORIGIN` | `*` | CORS `Access-Control-Allow-Origin`. **Set it to the game's origin in production** (for example `https://wonbyte.github.io`): then a POST whose `Origin` header names any other site is refused with 403 (a POST without `Origin` is not a browser's cross-site request and passes) |
