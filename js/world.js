@@ -208,8 +208,10 @@ const LANE_BUILDERS = {
   road(lane, { z, ground, B }) {
     ground.push([40, 0.3, 1, B.road, 0, -0.3, z]);
     edgeLines(ground, z, 0xdedede, 0);   // a light line on both edges: a road reads as a road without its colour
+    // the dashes cross the two edge lines between the roads (z +- 0.47): a hair taller than the lines, so their tops
+    // are not in one plane (at the same 0.02 the two light greys z-fought and the dashes shimmered as the view crept)
     if (lane.prevKind === 'road')
-      for (let x = -12; x <= 12; x += 2) ground.push([0.8, 0.02, 0.08, 0xe8e8e8, x, 0, z + 0.5]);
+      for (let x = -12; x <= 12; x += 2) ground.push([0.8, 0.025, 0.08, 0xe8e8e8, x, 0, z + 0.5]);
     // further out, some roads are police chases: faster, with flashing lights
     placeTraffic(lane, z, o => {
       const inst = lane.police ? new Inst('police', policeBoxes, true) : new Inst(lane.truck ? 'truck' : 'car', () => vehicleBoxes(lane.truck), true, o.color);

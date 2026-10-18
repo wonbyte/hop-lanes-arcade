@@ -109,6 +109,7 @@ function fitView(halfW, halfH) {
     if (sy > 0 && h === 0) topDepth = t;
   }
   sceneFog.near = topDepth - 6; sceneFog.far = topDepth + 14;   // about a third of the sky color at the top edge
+  G.visRows = rowReach(halfW, halfH);
   // the same corners seen from the sun: their bounds (plus room for shadows cast from just off screen)
   probe.position.copy(SUN_OFF); probe.lookAt(0, 0, 0); probe.updateMatrixWorld();
   const inv = probe.matrixWorldInverse;
@@ -123,16 +124,68 @@ function fitView(halfW, halfH) {
   fitShadowBias();
 }
 
+// How many rows from the focus row can show on screen (app.js showLane hides the rest, world.js builds only those).
+// Measured from the view itself: where the screen corners meet the lowest thing a row draws (a dropped cliff tile,
+// -1.3) and the tallest (a desert cactus, about 2.3), plus half a row and a row of shadow cast from just off screen.
+// It was camera.top * 1.35 + 2, which is only right for a tall phone: on a sideways phone, a tablet or a desktop the
+// corner rows were closer to 10 than to the 7.8 it gave, so rows at the screen corners were hidden and shown again as
+// the view crept (rows and their cars popping in and out at the edges).
+const REACH_LOW = -1.3, REACH_HIGH = 2.3, REACH_PAD = 1.5;
+function rowReach(halfW, halfH) {
+  let reach = 0;
+  for (const sy of [-1, 1]) for (const sx of [-1, 1]) for (const h of [REACH_LOW, 0, REACH_HIGH]) {
+    ray.copy(CAM_OFF).addScaledVector(right, sx * halfW).addScaledVector(up, sy * halfH);
+    const z = ray.z + dir.z * (h - ray.y) / dir.y;   // the depth (row = -z) where this corner ray meets height h
+    reach = Math.max(reach, Math.abs(z));
+  }
+  return reach + REACH_PAD;
+}
+
+// Shadow texels must not slide over the ground. The sun follows the view, and the view creeps a fraction of a texel
+// every frame, so every shadow edge was resampled at a new sub-texel offset each frame: the edges crawl and shimmer
+// (worst on a phone, where a 512 map texel is about 6 cm of ground). The sun's focus is snapped to whole texels of
+// the shadow map, across the sun's view only (along its view nothing is sampled), so the texel grid stays fixed on
+// the ground. A shift of under a texel is far inside the fitted box's margin (fitView: 1.5 units).
+const sunBasis = new THREE.OrthographicCamera();
+sunBasis.position.copy(SUN_OFF); sunBasis.lookAt(0, 0, 0); sunBasis.updateMatrixWorld();
+const SUN_RIGHT = new THREE.Vector3(1, 0, 0).applyQuaternion(sunBasis.quaternion);
+const SUN_UP = new THREE.Vector3(0, 1, 0).applyQuaternion(sunBasis.quaternion);
+const sunAt = new THREE.Vector3();
+function placeSun(at) {
+  const sc = sun.shadow.camera;
+  const tx = (sc.right - sc.left) / sun.shadow.mapSize.x, ty = (sc.top - sc.bottom) / sun.shadow.mapSize.y;
+  const a = at.dot(SUN_RIGHT), b = at.dot(SUN_UP);
+  sunAt.copy(at).addScaledVector(SUN_RIGHT, Math.round(a / tx) * tx - a).addScaledVector(SUN_UP, Math.round(b / ty) * ty - b);
+  sun.position.copy(sunAt).add(SUN_OFF);
+  sun.target.position.copy(sunAt);
+}
+
 // the score chips and the logo sit just under the top bar, whatever its height (one layout read: on a resize and when
 // the bar changes with the state, screens.js)
 const fitTopBar = () => stage.style.setProperty('--marquee-h', marquee.offsetHeight + 'px');
 const viewSize = { w: 1, h: 1 };   // the canvas size in CSS pixels, as of the last resize
+// Draws the current view at once. A canvas whose width or height is set (even to the same value) loses its drawing
+// buffer; with preserveDrawingBuffer off, WebKit then composites that empty buffer (black: the context has no alpha)
+// unless something is drawn before the task ends. The next drawn frame can be up to 4 screen frames away (menus,
+// app.js shouldDraw), and the quality ladder changes the ratio right AFTER the frame's render (app.js drawFrame),
+// so iOS showed a black frame on every resize and every ladder step. The shadow map is redrawn too: the shadow box
+// may have been refitted, and a skipped shadow pass would pair the new box with the old map.
+function renderNow() {
+  if (!lastCam) return;   // nothing placed yet (boot): app.js draws the first frame
+  renderer.shadowMap.needsUpdate = true;
+  renderer.render(scene, lastCam);
+}
+let lastCam = null;
+const setRenderCamera = cam => { lastCam = cam; };
 function resize() {
+  fitTopBar();   // the top bar may have changed alone (it is observed too): no canvas work for that
   const w = stage.clientWidth, h = stage.clientHeight;
   if (!w || !h) return;
+  // only a real change touches the canvas: setting its size, even to the same numbers, clears what it shows
+  if (w === viewSize.w && h === viewSize.h && renderer.getPixelRatio() === pixelRatio) return;
   viewSize.w = w; viewSize.h = h;   // read here once, so no frame needs a layout read
+  if (renderer.getPixelRatio() !== pixelRatio) renderer.setPixelRatio(pixelRatio);
   renderer.setSize(w, h, false);
-  fitTopBar();
   const aspect = w / h;
   // wide screens (a phone held sideways) zoom out so enough rows stay visible,
   // and aim lower so the players sit above the floating buttons
@@ -142,17 +195,35 @@ function resize() {
   G.camLead = wide ? 2.2 : 4.2;
   Object.assign(camera, { left: -halfW, right: halfW, top: halfW / aspect, bottom: -halfW / aspect });
   camera.updateProjectionMatrix();
-  // rows on screen (the ground is seen at an angle, so one screen unit covers ~1.35 rows) + a margin for shadows
-  G.visRows = camera.top * 1.35 + 2;
-  fitView(halfW, halfW / aspect);
+  fitView(halfW, halfW / aspect);   // also sets G.visRows, the rows on screen (rowReach)
   G.redraw = true;   // a paused game draws one new frame at the new size
+  renderNow();       // in this same task: the cleared canvas is never shown
+}
+// Resizes are settled: the first change after a quiet moment is applied at once (a phone turning, fonts arriving),
+// and a burst of changes (the iOS toolbar sliding, a window drag) is applied once, when it ends. Meanwhile the canvas
+// is stretched by CSS (width/height 100%), which shows the last frame, never an empty one.
+const SETTLE_MS = 150;
+let lastResizeEv = -Infinity, settleT = 0;
+function onResize() {
+  const now = performance.now(), quiet = now - lastResizeEv > SETTLE_MS;
+  lastResizeEv = now;
+  clearTimeout(settleT);
+  if (quiet) resize();
+  else { fitTopBar(); settleT = setTimeout(resize, SETTLE_MS); }
 }
 if (typeof ResizeObserver === 'function') {
   // the stage and the top bar both change size when fonts load or the phone turns
-  const ro = new ResizeObserver(resize);
+  const ro = new ResizeObserver(onResize);
   ro.observe(stage); ro.observe(marquee);
-} else window.addEventListener('resize', resize);
+} else window.addEventListener('resize', onResize);
 resize();
+
+// iOS drops the WebGL context when the page is in the background or memory runs low. Three.js keeps the context
+// restorable (it cancels the lost event) and rebuilds its GPU state on restore; what the game must add is a frame:
+// a paused game (the tab was hidden, screens.js pauses) draws only when asked, so it stayed black on return.
+// The shadow pass is forced, because the restored shadow map has no GPU texture until that pass makes one, and a
+// receiver drawn with an empty shadow sampler draws nothing (see shadowCadence).
+renderer.domElement.addEventListener('webglcontextrestored', () => { G.redraw = true; renderNow(); });
 
 // Slow device? Lower the resolution, then the shadow detail, one step at a time.
 // Only steps that need no shader rebuild are used (a rebuild mid-game is a hitch of its own).
@@ -182,11 +253,13 @@ function resetFrameWatch() {
   if (perf.rest > 0) perf.rest--; else perf.tried = 0;   // the next game climbs the ladder again from the first rung
   perf.kept = false;
 }
-function setRatio(r) { pixelRatio = r; renderer.setPixelRatio(r); resize(); }
+// resize() applies the ratio and draws at once (the canvas is cleared by the new size: renderNow)
+function setRatio(r) { pixelRatio = r; resize(); }
 function setShadowMapSize(n) {
   sun.shadow.mapSize.setScalar(n);
   fitShadowBias();
-  if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }   // rebuilt at the new size
+  if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }   // rebuilt at the new size (shadowCadence forces that pass)
+  renderNow();   // rebuild it now, in this task, at the new size
 }
 // the ladder: each rung lowers one thing and returns how to undo it, or null if it has nothing left to lower
 const LADDER = [
@@ -247,13 +320,18 @@ function setZoom(z) { if (camera.zoom !== z) { camera.zoom = z; camera.updatePro
 // shadows are redrawn with every frame while playing; on the menus and the results every other drawn frame
 // is enough (the title traffic moves slowly), which saves about a third of each frame there
 let shadowSkip = false, shadowHalf = false;   // shadowHalf: the ladder's last rung (every other frame in play too)
+// A skipped shadow pass is only safe once the light HAS a shadow map. Without one (the first frame after boot, after
+// the ladder's setShadowMapSize dropped it) Three.js r186 binds its fallback for the shadow sampler, a 1x1 depth
+// texture that is never uploaded, so every shadow-receiving draw fails with "GL_INVALID_OPERATION: Mismatch between
+// texture format and sampler type" and draws NOTHING: the ground and every car vanished for that frame. The title
+// skipped the very first pass (shadowSkip flips to true first), so the first title frame was empty on every load.
 function shadowCadence(idle) {
   if (!idle && !shadowHalf) { renderer.shadowMap.autoUpdate = true; return; }
   renderer.shadowMap.autoUpdate = false;
   shadowSkip = !shadowSkip;
-  if (!shadowSkip) renderer.shadowMap.needsUpdate = true;
+  if (!shadowSkip || !sun.shadow.map) renderer.shadowMap.needsUpdate = true;
 }
 // test hook: how the view was fitted
 const viewInfo = () => { const sc = sun.shadow.camera; return { shadowW: sc.right - sc.left, shadowH: sc.top - sc.bottom, fogNear: sceneFog.near, fogFar: sceneFog.far, mapSize: sun.shadow.mapSize.x, shadowHalf, shadowType: renderer.shadowMap.type === THREE.PCFShadowMap ? 'pcf' : 'basic', normalBias: sun.shadow.normalBias, bias: sun.shadow.bias }; };
 
-export { BLINK_STEPS, CAM_OFF, SUN_OFF, ONE, camera, fitTopBar, focus, getPixelRatio, holdFrameWatch, reduceMotion, renderer, resetFrameWatch, scene, setNight, setZoom, shadowCadence, stage, sun, touchQuery, viewInfo, viewSize, watchFrameTime };
+export { BLINK_STEPS, CAM_OFF, ONE, camera, placeSun, setRenderCamera, fitTopBar, focus, getPixelRatio, holdFrameWatch, reduceMotion, renderer, resetFrameWatch, scene, setNight, setZoom, shadowCadence, stage, sun, touchQuery, viewInfo, viewSize, watchFrameTime };

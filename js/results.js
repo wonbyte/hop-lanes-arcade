@@ -10,7 +10,7 @@ import { charOf, onGameOver, players } from './players.js';
 import { BEST_KEY, DAILY_KEY, INITIALS_KEY, LOCAL_KEY, STREAK_KEY, TIPS_KEY, cleanInitials, deviceTag, entersLocal, flushBank, load, loadText, localTop, parseLocal, refreshBests, save } from './storage.js';
 import { getSeed } from './world.js';
 import { saveGhost } from './ghost.js';
-import { missionProgress, payDaily, payMissions } from './missions-ui.js';
+import { missionRows, payDaily, payMissions } from './missions-ui.js';
 import { askCode, resultsEl, runDay, setAppState, setBanner } from './screens.js';
 
 // The end of a run: the records, the results panel (the cause, a tip, the stats, the notes), the share text and the
@@ -165,7 +165,9 @@ const CAUSE_TIP = { squash: 'WAIT FOR A GAP', splash: 'HOP ONLY ONTO LOGS AND PA
 const TIP_TIMES = 3;
 function causeLine(both) {
   return players.filter(p => p.joined && CAUSE_TEXT[p.cause])
-    .map(p => (both ? t('P' + (p.id + 1)) + ': ' : '') + t(CAUSE_TEXT[p.cause]) + ' · ' + t('ROW {n}', { n: p.row })).join('\n');
+    .map(p => (both ? t('P' + (p.id + 1)) + ': ' : '') + t(CAUSE_TEXT[p.cause])
+      // the row only when it says something the big score does not (two players, or a run that fell back)
+      + (both || p.row !== p.score ? ' · ' + t('ROW {n}', { n: p.row }) : '')).join('\n');
 }
 function tipLine(replay) {
   const p = players.find(q => q.joined && CAUSE_TIP[q.cause]);
@@ -189,16 +191,42 @@ function showResults(note, info) {
   $('res2').querySelector('b').textContent = p2.score;
   $('resCause').textContent = info.cause;
   $('resTip').textContent = info.tip; $('resTip').hidden = !info.tip;
-  $('resStats').textContent = info.stats;
+  showStats(info.stats);
   $('resNote').textContent = note;
   $('again').textContent = t(G.replay ? 'MENU' : 'PLAY AGAIN');
   $('toMenu').hidden = !!G.replay;
   setRetryHint();
 }
-// the stats line: the coins of this run and the missions' progress (before the payout moves them on)
-function statsLine(replay) {
-  if (replay || !G.run) return '';
-  return (G.run.coins ? (G.run.coins === 1 ? t('+1 COIN') : t('+{n} COINS', { n: G.run.coins })) + ' · ' : '') + missionProgress();
+// the stats: the coins of this run (one gold line) and each mission's progress before the payout moves them on (a
+// short list: the name, a thin bar and n/goal, a check when done). Built as nodes, not one long text line: the old
+// "+5 COINS · COINS 10: 5/10 · ROW 30: 30/30 · ..." line wrapped into a wall of text on a phone
+function statsInfo(replay) {
+  if (replay || !G.run) return null;
+  const coins = G.run.coins ? (G.run.coins === 1 ? t('+1 COIN') : t('+{n} COINS', { n: G.run.coins })) : '';
+  return { coins, rows: missionRows() };
+}
+function showStats(info) {
+  const box = $('resStats');
+  box.replaceChildren();
+  if (!info) return;
+  if (info.coins) {
+    const c = document.createElement('p');
+    c.className = 'coins'; c.textContent = info.coins;
+    box.append(c);
+  }
+  const list = document.createElement('ul');
+  list.className = 'mrows';
+  for (const r of info.rows) {
+    const li = document.createElement('li');
+    li.classList.toggle('done', r.have >= r.goal);
+    const name = document.createElement('span'); name.textContent = r.label;
+    const bar = document.createElement('i'); bar.setAttribute('aria-hidden', 'true');
+    bar.style.setProperty('--p', String(r.goal ? r.have / r.goal : 0));   // CSSOM, allowed by the CSP (no style attribute in markup)
+    const num = document.createElement('b'); num.textContent = r.have + '/' + r.goal;
+    li.append(name, bar, num);
+    list.append(li);
+  }
+  if (info.rows.length) box.append(list);
 }
 function checkOver() {
   if (G.state !== 'play') return;
@@ -218,7 +246,7 @@ function checkOver() {
   const code = shareTexts(scorer, top, replay);   // the replay code: the seed, the animals and every hop of this run
   saveGhost(code, top, scorer.id);   // daily and room worlds: the best run comes back as a ghost
   showBest(records.best, top);
-  const info = { cause: causeLine(both), tip: tipLine(replay), stats: statsLine(replay) };
+  const info = { cause: causeLine(both), tip: tipLine(replay), stats: statsInfo(replay) };
   if (!replay) note = payMissions() + payDaily(runDay()) + note;
   if (!replay) enterLocal(charOf(scorer).name, top);
   const hat = hatFor(G.bestAll);

@@ -1,9 +1,9 @@
 {
-  "//": "The headless proxy limits CI enforces on every push (tools/device-bench.mjs --check). SwiftShader on a CI runner is not a phone (docs/budgets.md): these catch a regression, they do not prove a budget. Counts and bytes are exact; times have a margin over the measured run (after the ladder fix: p95 83 ms, worst 200 ms at 4x CPU).",
+  "//": "The headless proxy limits CI enforces on every push (tools/device-bench.mjs --check). SwiftShader on a CI runner is not a phone (docs/budgets.md): these catch a regression, they do not prove a budget. Counts and bytes are exact; times have a margin over the measured run (after the ladder fix: p95 83 ms, worst 200 ms at 4x CPU). loadBytes counts this checkout's raw files with their comments (the live, minified load has its own limit in tools/bench-budgets-live.json); raised from 300000 to 310000 on 18 Oct 2026, when the iOS flicker fixes and their comments took it to 300707.",
   "p95Ms": 120,
   "worstMs": 350,
   "loadMs": 5000,
-  "loadBytes": 300000,
+  "loadBytes": 310000,
   "draws": 40,
   "useProgram": 8
 }

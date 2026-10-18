@@ -104,16 +104,29 @@ function crouch(i) {
   if (p.joined && p.alive && p.mesh) p.crouchT = CROUCH_T;
 }
 // ---------- words over the animals: WAIT FOR P2, +LIFE (DOM, placed once per drawn frame) ----------
-const bubbles = [];
+// The elements are pooled: a finished word is hidden and its class taken off (so `.say` lists only live ones), and the
+// next word reuses it, so the field above the canvas is not re-laid out by a node added and removed every time.
+const bubbles = [], bubblePool = [];
 const bubblePos = new THREE.Vector3();
+function bubbleEl() {
+  const el = bubblePool.pop();
+  if (el) { el.hidden = false; return el; }
+  const made = document.createElement('div');
+  made.setAttribute('aria-hidden', 'true');
+  made.appendChild(document.createElement('span'));
+  stage.appendChild(made);
+  return made;
+}
+function freeBubble(b) {
+  b.el.hidden = true; b.el.className = '';
+  bubblePool.push(b.el);
+}
 function say(p, text, kind) {
   let b = bubbles.find(q => q.p === p && q.kind === kind);
   if (!b) {
-    const el = document.createElement('div');
+    const el = bubbleEl();
     el.className = 'say ' + kind;
-    el.setAttribute('aria-hidden', 'true');
-    el.appendChild(document.createElement('span'));
-    stage.appendChild(el);
+    el.style.transform = '';
     b = { p, kind, el, t: 0, x: -1, y: -1 };
     bubbles.push(b);
   }
@@ -151,7 +164,7 @@ function placeBubbles(dt) {
   for (let i = bubbles.length - 1; i >= 0; i--) {
     const b = bubbles[i];
     b.t -= dt;
-    if (b.t <= 0 || !b.p.mesh) { b.el.remove(); bubbles.splice(i, 1); continue; }
+    if (b.t <= 0 || !b.p.mesh) { freeBubble(b); bubbles.splice(i, 1); continue; }
     bubblePos.copy(b.p.mesh.position); bubblePos.y += 1.4 + (b.kind === 'pop' ? (1.2 - b.t) * 0.8 : 0);
     bubblePos.project(camera);
     const x = Math.round((bubblePos.x + 1) / 2 * viewSize.w), y = Math.round((1 - bubblePos.y) / 2 * viewSize.h);
@@ -425,4 +438,4 @@ function dressPlayer(p, dt) {
   if (air) p.blob.position.set(p.mesh.position.x, 0.02, p.mesh.position.z);
 }
 
-export { blobGeo, blobMat, bubbleGeo, bubbleMat, charOf, crouch, despawn, fx, placeBubbles, dressPlayer, onGameOver, restorePicks, giveShield, kill, players, queueMove, applyMoves, resetRules, spawn, updateParts, updatePlayer };
+export { blobGeo, blobMat, bubbleGeo, bubbleMat, ropeMat, charOf, crouch, despawn, fx, placeBubbles, dressPlayer, onGameOver, restorePicks, giveShield, kill, players, queueMove, applyMoves, resetRules, spawn, updateParts, updatePlayer };

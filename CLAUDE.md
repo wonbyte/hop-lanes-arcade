@@ -203,4 +203,12 @@ and every scanner's result.
 - Bridge planks keep `breakAt` / `backAt` in world ticks on the lane (rules.js `plankState`), so their state is a function of
   `G.worldTick` like traffic: never step them per frame. New late kinds must weigh 0 below their first row in `nextLaneKind`, or
   every existing world (and saved replay) changes.
+- iOS flicker rules (gfx.js): touching the canvas size clears it, so `resize()` changes it only when the size or ratio
+  really changes and then draws at once (`renderNow()`, shadow pass forced); a burst of resize events (the Safari toolbar)
+  is applied once, 150 ms after it ends. The shadow pass always runs while `sun.shadow.map` is missing (a skipped first
+  pass bound an unloaded depth texture: every shadow-receiving draw failed, whole frames empty). A restored WebGL
+  context redraws. `rowReach()` sizes the built rows from the real view (wide screens see farther corners). The sun
+  snaps to whole shadow texels (`placeSun`). Faces of different colors never share a plane (z-fighting).
+- The results show the missions as a list (`#resStats li`: name, bar, n/goal, `.done`), built by results.js `showStats`;
+  the cause line drops the row in one-player games when it equals the score.
 - Don't add a service worker: the CSP has `worker-src 'none'` and the PWA installs without one.

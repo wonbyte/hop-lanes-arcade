@@ -59,10 +59,11 @@ function payMissions() {   // at game over: which missions this run finished (co
   showMissions();
   return t('MISSION DONE +{n}', { n: MISSION_REWARD * done.length }) + ': ' + text + '. ';
 }
-// before the payout: how far this run took each active mission ("ROW 30: 22/30")
-const missionProgress = () => missions.active.map(i => {
+// before the payout: how far this run took each active mission, one row each on the results ("ROW 30", 22 of 30).
+// results.js draws them as a short list with a bar, so the panel reads at a glance instead of one long line
+const missionRows = () => missions.active.map(i => {
   const m = missionAt(i);
-  return t(MISSION_SHORT[m.stat], { n: m.goal }) + ': ' + Math.min(m.goal, missionValue(i, G.run, carried)) + '/' + m.goal;
-}).join(' · ');
+  return { label: t(MISSION_SHORT[m.stat], { n: m.goal }), have: Math.min(m.goal, missionValue(i, G.run, carried)), goal: m.goal };
+});
 
-export { missionProgress, payDaily, payMissions, showMissions };
+export { missionRows, payDaily, payMissions, showMissions };

@@ -5,12 +5,12 @@ import { decodeReplay } from './replay.js';
 import { camLead, creepCamera } from './sim.js';
 import { ghostInfo, ghostMat, ghostWarmGeo, placeGhost, primeGhost, stepGhost } from './ghost.js';
 import { CHARACTERS } from './models.js';
-import { CAM_OFF, SUN_OFF, camera, focus, getPixelRatio, holdFrameWatch, reduceMotion, renderer, scene, setNight, setZoom, shadowCadence, sun, touchQuery, viewInfo, viewSize, watchFrameTime } from './gfx.js';
+import { CAM_OFF, camera, focus, getPixelRatio, holdFrameWatch, placeSun, reduceMotion, renderer, scene, setNight, setRenderCamera, setZoom, shadowCadence, sun, touchQuery, viewInfo, viewSize, watchFrameTime } from './gfx.js';
 import { announceFrame } from './panels.js';   // also sets up the settings, pause, mode and top-10 panels
 import './paint.js';   // the paint shop dialog (side effects only)
 import { keepAwake } from './device.js';
 import { flushBank } from './storage.js';
-import { applyMoves, blobGeo, blobMat, bubbleGeo, bubbleMat, charOf, fx, giveShield, kill, placeBubbles, players, dressPlayer, updateParts, updatePlayer } from './players.js';
+import { applyMoves, blobGeo, blobMat, bubbleGeo, bubbleMat, charOf, ropeMat, fx, giveShield, kill, placeBubbles, players, dressPlayer, updateParts, updatePlayer } from './players.js';
 import { canRetry, join, resultsEl, setBanner, setModeLabel, showHowto, startPlay, toAttract } from './screens.js';
 import { revealResults } from './results.js';   // also wires the game-over hook
 import { HINT_KEY, HOWTO_KEY, dailySeed, loadText, owned, paintOf, save } from './storage.js';
@@ -46,8 +46,7 @@ function placeCamera() {
   if (G.landT > 0) focus.y -= Math.sin(G.landT / LAND_DIP * Math.PI) * 0.07;   // a landing dips the view a hair
   camera.position.copy(focus).add(CAM_OFF);
   camera.lookAt(focus);
-  sun.position.copy(focus).add(SUN_OFF);
-  sun.target.position.copy(focus);
+  placeSun(focus);   // the sun follows the view, snapped to whole shadow texels (gfx.js: no shadow shimmer)
   const focusRow = G.camRow + G.camLead;
   G.weather = weatherAt(Math.round(focusRow));
   setNight(G.camRow, G.weather, biomeAt(focusRow).sky);
@@ -204,6 +203,7 @@ function drawFrame(now, idle, work0, dt) {
   announceFrame();
   shadowCadence(idle);
   renderer.render(scene, camera);
+  setRenderCamera(camera);   // the view is placed: a resize or a ladder step may now draw at once (gfx.js renderNow)
   if (lastDraw) watchFrameTime((now - lastDraw) / 1000);   // judge drawn frames only
   if (DEBUG) { if (lastDraw) recordFrame(now - lastDraw, performance.now() - work0); countFrame(now); }
   lastDraw = now;
@@ -317,12 +317,12 @@ renderer.domElement.dataset.i18nLabel = 'GAME VIEW: ROADS, RIVERS AND TRAIN TRAC
 applyLang();
 playReplay(REPLAY_CODE);
 if (loadText(HOWTO_KEY) !== '1' && !G.replay) showHowto();
-// build the other shaders (the see-through landing spot, shield bubble and ghost) after the first title frame, so
+// build the other shaders (the see-through landing spot, shield bubble, ghost and the leash rope) after the first title frame, so
 // they do not delay it: built on the first join or ghost instead, each one would stutter the game. compileAsync
 // builds them in the background where the browser can (KHR_parallel_shader_compile), with the scene's lights.
 function warmShaders() {
   const warm = new THREE.Group();
-  warm.add(new THREE.Mesh(blobGeo, blobMat), new THREE.Mesh(bubbleGeo, bubbleMat), new THREE.Mesh(ghostWarmGeo(), ghostMat));
+  warm.add(new THREE.Mesh(blobGeo, blobMat), new THREE.Mesh(bubbleGeo, bubbleMat), new THREE.Mesh(ghostWarmGeo(), ghostMat), new THREE.Mesh(blobGeo, ropeMat));
   renderer.compileAsync(warm, camera, scene).catch(() => {});
 }
 requestAnimationFrame(now => { frame(now); setTimeout(warmShaders, 0); });

@@ -956,9 +956,11 @@ test('14a. the results: PLAY AGAIN first and focused, the cause and a tip, the s
     assert.deepEqual(order, ['again', 'share', 'replayBtn', 'toMenu'], 'focus order');
     const h = (await page.locator('#again').boundingBox()).height;
     assert.ok(h >= 48, 'PLAY AGAIN is at least 48px high: ' + h);
-    assert.equal(await page.locator('#resCause').textContent(), 'HIT BY A CAR · ROW 1');
+    assert.equal(await page.locator('#resCause').textContent(), 'HIT BY A CAR', 'one player: no row when it is the score');
     assert.equal(await page.locator('#resTip').textContent(), 'WAIT FOR A GAP', 'the third death of a kind still has its tip');
-    assert.match(await page.locator('#resStats').textContent(), /ROW 15: 1\/15/, 'the missions\' progress');
+    // the missions' progress: one row each (name, bar, n/goal)
+    const rows = await page.locator('#resStats li').evaluateAll(els => els.map(li => [li.querySelector('span').textContent, li.querySelector('b').textContent]));
+    assert.ok(rows.some(([n, v]) => n === 'ROW 15' && v === '1/15'), 'the missions\' progress: ' + JSON.stringify(rows));
     assert.equal(await page.locator('#resHint').textContent(), 'SPACE TO PLAY AGAIN', 'a keyboard plays again with Space');
     assert.equal(await page.locator('#score1').isVisible(), false, 'the live score chips hide');
     assert.equal(await page.locator('#start').evaluate(el => getComputedStyle(el).visibility), 'hidden', 'START hides at game over');
@@ -1035,7 +1037,10 @@ test('14d. coin missions add up over runs; missions done today count on the chip
     await hop(page, () => { const h = window.hopLanes; h.kill(h.players[0], 'test'); });
     await resultsVisible(page);
     assert.match(await page.locator('#resNote').textContent(), /MISSION DONE \+20: COLLECT 10 COINS/);
-    assert.match(await page.locator('#resStats').textContent(), /^\+1 COIN · COINS 10: 10\/10/);
+    assert.equal(await page.locator('#resStats .coins').textContent(), '+1 COIN');
+    const first = page.locator('#resStats li').first();
+    assert.deepEqual([await first.locator('span').textContent(), await first.locator('b').textContent()], ['COINS 10', '10/10']);
+    assert.equal(await first.evaluate(li => li.classList.contains('done')), true, 'a done mission is marked');
     assert.equal(await page.evaluate(() => localStorage.getItem('hoplanes.missions')), '4,3,1,2');
     assert.equal(await page.evaluate(() => localStorage.getItem('hoplanes.mcoins')), '', 'the done mission takes its coins with it');
     assert.match(await page.locator('#chipMissions').textContent(), /MISSIONS 1\/3/);

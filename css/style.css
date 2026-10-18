@@ -418,8 +418,23 @@ body {
 #results p { margin: 0; font: 500 13px/1.45 var(--font-ui); white-space: pre-line; }
 #results p:empty { display: none; }
 #resCause { font-weight: 700 !important; color: #ffb3a8; letter-spacing: .02em; }   /* bold is made from the 500 face: no third font file */
-#resTip { color: #10131c; background: #9fd89a; border-radius: 8px; padding: 4px 8px; }
-#resStats { color: #c9d2ea; }
+/* the tip: a quiet line under the cause (a bright box drew the eye away from the score and PLAY AGAIN) */
+#resTip { color: #9fd89a; font-size: 12px !important; }
+/* the coins and missions: a gold coin line, then one short row per mission (name, thin bar, n/goal), split from the
+   score part by a hairline, so the panel reads top down: what happened, what it earned, what to do next */
+#resStats:empty { display: none; }
+#resStats { display: flex; flex-direction: column; gap: 6px; margin-top: 2px; padding-top: 10px; border-top: 1px solid var(--panel-edge); }
+#resStats .coins { color: var(--gold); font: 11px/1.4 var(--font-pixel) !important; }
+#resStats .mrows { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 5px; text-align: left; }
+#resStats li { display: grid; grid-template-columns: minmax(0, 1fr) 72px 44px; align-items: center; gap: 10px; font: 500 12px/1.3 var(--font-ui); color: #c9d2ea; }
+#resStats li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#resStats li i { height: 6px; border-radius: 3px; background: rgba(255, 255, 255, .12); overflow: hidden; position: relative; }
+#resStats li i::after { content: ''; position: absolute; inset: 0; transform-origin: left; transform: scaleX(var(--p, 0)); background: #7fb7ff; border-radius: 3px; }
+#resStats li b { text-align: right; font-weight: 500; font-variant-numeric: tabular-nums; }
+#resStats li.done { color: var(--gold); }
+#resStats li.done i::after { background: var(--gold); }
+#resStats li.done span::before { content: '\2713  '; }
+#resNote { color: var(--gold); font-size: 12px !important; }
 #world { color: var(--gold); }
 #resHint { font-size: 11px !important; opacity: .75; }
 @media (pointer: coarse) { #resHint { display: none; } }   /* a touch screen has the big button */

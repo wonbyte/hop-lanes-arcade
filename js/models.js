@@ -203,7 +203,7 @@ function catBoxes() {
   for (const s of [-1, 1]) b.push(
     [0.12, 0.16, 0.1, c.dark, s * 0.17, 0.52, -0.1],    // ears
     [0.09, 0.08, 0.04, c.eye, s * 0.14, 0.38, -0.31],
-    [0.03, 0.08, 0.05, c.pupil, s * 0.14, 0.38, -0.32],
+    [0.03, 0.07, 0.05, c.pupil, s * 0.14, 0.385, -0.32],   // a hair shorter than the eye: no shared top face (z-fighting)
     [0.1, 0.12, 0.1, c.dark, s * 0.15, 0, -0.14],       // legs
     [0.1, 0.12, 0.1, c.dark, s * 0.15, 0, 0.16]);
   return b;
@@ -276,16 +276,16 @@ const eagleBoxes = () => {
     [0.14, 0.1, 0.22, 0xf2c33a, 0, 0.2, -0.76],       // beak
     [0.1, 0.06, 0.08, 0x3a281d, 0, 0.17, -0.86],      // beak tip (hooked)
     [0.44, 0.08, 0.36, 0xf4f1ec, 0, 0.1, 0.4],        // tail
-    [0.2, 0.06, 0.16, 0xe8e2d8, 0, 0.12, 0.58],       // tail tip
+    [0.2, 0.065, 0.16, 0xe8e2d8, 0, 0.12, 0.58],      // tail tip (a hair taller: its top is not in the tail's top plane)
     [0.3, 0.14, 0.16, 0xf2c33a, 0, -0.12, -0.1]       // talons
   ];
   for (const s of [-1, 1]) {
     b.push([1.1, 0.09, 0.5, 0x3a281d, s * 0.9, 0.2, 0.02],        // wing
-           [0.7, 0.08, 0.42, 0x2e2016, s * 1.75, 0.22, 0.06],      // wing tip, a little back
+           [0.7, 0.08, 0.41, 0x2e2016, s * 1.75, 0.22, 0.06],      // wing tip, a little back (its back face inside the wing's)
            [0.5, 0.06, 0.1, 0x241910, s * 1.9, 0.21, 0.3],         // feather
            [0.3, 0.06, 0.1, 0x241910, s * 2.0, 0.21, 0.42],
            [0.06, 0.06, 0.05, 0x111111, s * 0.11, 0.3, -0.66],     // eye
-           [0.08, 0.03, 0.08, 0x4a3426, s * 0.11, 0.35, -0.64]);   // brow
+           [0.08, 0.03, 0.08, 0x4a3426, s * 0.11, 0.35, -0.65]);   // brow (out of the head's front face, not in its plane)
   }
   return b;
 };
@@ -370,15 +370,20 @@ function trainBoxes(dir, cars = TRAIN_CARS) {
     b.push([0.4, 0.15, 0.9, 0x222222, -len / 2 + 0.6 + i * (len - 1.2) / (wheels - 1), 0, 0]);
   return b;
 }
-// a boulder (rocks rows): a round-ish grey ball of boxes, about 0.9 across
-const boulderBoxes = () => [[0.9, 0.5, 0.62, 0x8b8b86, 0, 0.2, 0], [0.62, 0.9, 0.62, 0x7f7f7a, 0, 0, 0], [0.62, 0.5, 0.9, 0x8b8b86, 0, 0.2, 0],
+// a boulder (rocks rows): a round-ish grey ball of boxes, about 0.9 across.
+// No two boxes of different colors may share a face plane: the tall middle box is 0.6 across, inside the 0.62 faces of
+// the wide ones (at 0.62 both drew the same front and side faces, and the rolling boulder shimmered in two greys)
+const boulderBoxes = () => [[0.9, 0.5, 0.62, 0x8b8b86, 0, 0.2, 0], [0.6, 0.9, 0.6, 0x7f7f7a, 0, 0, 0], [0.62, 0.5, 0.9, 0x8b8b86, 0, 0.2, 0],
   [0.22, 0.2, 0.06, 0x62625d, 0.15, 0.55, -0.46], [0.18, 0.16, 0.06, 0x62625d, -0.2, 0.25, 0.46]];
 // a bridge plank: boards with two darker cross slats (its top sits just under the feet)
-const plankBoxes = () => [[0.9, 0.1, 0.82, 0x9a6a3a, 0, -0.12, 0], [0.08, 0.11, 0.82, 0x6e4826, -0.3, -0.12, 0], [0.08, 0.11, 0.82, 0x6e4826, 0.3, -0.12, 0]];
+// (the slats are 0.8 deep, inside the board's 0.82: the same depth put both front faces in one plane, which z-fights)
+const plankBoxes = () => [[0.9, 0.1, 0.82, 0x9a6a3a, 0, -0.12, 0], [0.08, 0.11, 0.8, 0x6e4826, -0.3, -0.12, 0], [0.08, 0.11, 0.8, 0x6e4826, 0.3, -0.12, 0]];
 // power-ups: a blue shield gem and a red magnet
 const shieldBoxes = () => [[0.5, 0.5, 0.5, 0x4fb8ff, 0, 0.3, 0], [0.3, 0.3, 0.3, 0xeaf6ff, 0, 0.4, 0]];
 const magnetBoxes = () => [[0.16, 0.5, 0.16, 0xe8513a, -0.2, 0.25, 0], [0.16, 0.5, 0.16, 0xe8513a, 0.2, 0.25, 0],
-  [0.56, 0.16, 0.16, 0xe8513a, 0, 0.2, 0], [0.16, 0.14, 0.16, 0xeeeeee, -0.2, 0.61, 0], [0.16, 0.14, 0.16, 0xeeeeee, 0.2, 0.61, 0]];
+  // the white tips are a hair wider and taller than the red legs: with the same size the tip and the leg drew four
+  // side faces and the top in one plane, and the spinning magnet flickered red and white
+  [0.56, 0.16, 0.16, 0xe8513a, 0, 0.2, 0], [0.17, 0.15, 0.17, 0xeeeeee, -0.2, 0.61, 0], [0.17, 0.15, 0.17, 0xeeeeee, 0.2, 0.61, 0]];
 // a twister (the grass boss): grey boxes that widen upward, turned every frame; dark bits of debris. No pure white (instanced)
 const twisterBoxes = () => [[0.3, 0.3, 0.3, 0x9a9a9a, 0, 0, 0], [0.5, 0.35, 0.5, 0xa8a8a8, 0.05, 0.3, 0.05], [0.7, 0.4, 0.7, 0xb5b5b5, -0.05, 0.65, 0],
   [0.9, 0.4, 0.9, 0xc2c2c2, 0.05, 1.05, -0.05], [0.12, 0.12, 0.12, 0x5a4a3a, 0.5, 0.9, 0.3], [0.1, 0.1, 0.1, 0x3a6a2a, -0.5, 1.2, -0.2]];
