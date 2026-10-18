@@ -274,10 +274,15 @@ test('5. race mode: idle P1 is taken by the eagle, P2 wins', { timeout: 180000 }
     await page.keyboard.press('ArrowUp');
     await page.waitForFunction(() => window.hopLanes.players[0].joined && window.hopLanes.players[1].joined, null, { timeout: T });
     await waitState(page, 'play');
-    // P1 stays idle; P2 keeps hopping so it is never idle long enough for the eagle
+    // P1 stays idle; P2 keeps hopping so it is never idle long enough for the eagle.
+    // P2 hops side to side on row 0, not forward: a forward hop can land in a car or the river and P2 then dies
+    // before the eagle takes P1 (the flake this test had). gen.js puts no tree in play on rows 0 and 1, and the
+    // scroll line needs far longer than the eagle's EAGLE_IDLE to catch row 0, so these hops are always safe.
     const deadline = Date.now() + 90000;
+    let side = 'ArrowLeft';
     while (Date.now() < deadline && (await hop(page, () => window.hopLanes.state)) !== 'over') {
-      await page.keyboard.press('ArrowUp');
+      await page.keyboard.press(side);
+      side = side === 'ArrowLeft' ? 'ArrowRight' : 'ArrowLeft';
       await waitTicks(page, Math.round(1.5 / STEP));   // 1.5 s of game steps between hops
     }
     assert.equal(await hop(page, () => window.hopLanes.state), 'over');

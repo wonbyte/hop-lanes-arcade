@@ -107,6 +107,9 @@ function touchRing(clientX, clientY, i, r) {
   el.style.left = (clientX - r.left) + 'px';
   el.style.top = (clientY - r.top) + 'px';
   el.hidden = false;
+  // a ring taken while it still shows (the 7th quick tap) was hidden and shown in the same task, which restarts nothing:
+  // it stayed at its last keyframe (opacity 0) and that tap had no ring. Restart its animation without a layout read
+  if (el.getAnimations) for (const a of el.getAnimations()) { a.cancel(); a.play(); }
   clearTimeout(ringT.get(el));
   ringT.set(el, setTimeout(() => { el.hidden = true; }, 500));   // after the animation (also without one: reduced motion)
 }

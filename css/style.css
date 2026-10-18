@@ -1,6 +1,8 @@
 /* fonts are served from fonts/ (SIL Open Font License 1.1, see fonts/OFL-*.txt); no third-party requests */
-@font-face { font-family: "Press Start 2P"; font-weight: 400; font-display: swap; src: url("../fonts/press-start-2p-latin-400-normal.woff2") format("woff2"); }
-@font-face { font-family: "Rubik"; font-weight: 500; font-display: swap; src: url("../fonts/rubik-latin-500-normal.woff2") format("woff2"); }
+/* font-display: block, not swap: both files are preloaded from this origin (index.html), so the wait is short, and swap
+   drew every label in the fallback font first and then jumped to the pixel font (a visible flash of the whole UI) */
+@font-face { font-family: "Press Start 2P"; font-weight: 400; font-display: block; src: url("../fonts/press-start-2p-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: "Rubik"; font-weight: 500; font-display: block; src: url("../fonts/rubik-latin-500-normal.woff2") format("woff2"); }
 
 /* Layout: full-bleed 3D playfield, marquee bar on top, two-player control deck at the bottom. Single arcade look. */
 :root {
@@ -19,21 +21,34 @@
   /* the logo shrinks on a short screen so the logo, the menu and the mission boxes fit above the join cards: about
      592px of the height is the score bar, the cards and the deck (~400) plus the buttons and boxes (~190) */
   --logo-size: clamp(22px, min(7.5vw, calc((100vh - 592px) / 3)), 50px);
+  /* svh where supported: on iOS 100vh is the height with the toolbar hidden (taller than what shows), and dvh would
+     change with the toolbar; svh is the visible height with the toolbar shown and never changes */
+  --logo-size: clamp(22px, min(7.5vw, calc((100svh - 592px) / 3)), 50px);
   --font-pixel: "Press Start 2P", ui-monospace, "Courier New", monospace;
   --font-ui: "Rubik", system-ui, sans-serif;
   color-scheme: dark;
 }
 /* safe areas: the top bar and the deck pad themselves (the field runs under a notch, the controls never do) */
-html { box-sizing: border-box; }
-html, body { height: 100%; }
+/* iOS: the page must never move. A drag on the deck or the top bar rubber-banded the whole document, and in Safari a
+   drag can collapse or bring back the toolbar: the viewport height changes, the canvas is resized (a resize clears a
+   WebGL canvas) and a black frame shows. The root gets overscroll-behavior (on #app it did nothing: #app is not a
+   scroll container) and the body is pinned with position: fixed, so there is nothing to scroll or bounce.
+   -webkit-tap-highlight-color is inherited: set on html it covers the field too (it was only on buttons, and #stage,
+   which has pointer listeners, flashed a grey box over the whole game on every tap). text-size-adjust: iOS enlarges
+   text when the phone turns sideways, which reflowed the bars on every rotation. */
+html {
+  box-sizing: border-box; height: 100%; overflow: hidden; overscroll-behavior: none; background: var(--bg);
+  -webkit-text-size-adjust: 100%; text-size-adjust: 100%; -webkit-tap-highlight-color: transparent;
+}
 [hidden] { display: none !important; }
 body {
-  margin: 0; background: var(--bg); color: var(--ink);
-  font-family: var(--font-ui); overflow: hidden;
-  -webkit-user-select: none; user-select: none; touch-action: manipulation;
+  position: fixed; inset: 0; margin: 0; background: var(--bg); color: var(--ink);
+  font-family: var(--font-ui); overflow: hidden; overscroll-behavior: none;
+  -webkit-user-select: none; user-select: none; touch-action: manipulation; -webkit-touch-callout: none;
 }
-#app { position: relative; height: 100%; display: flex; flex-direction: column; overscroll-behavior: none; -webkit-touch-callout: none; }
-#stage { position: relative; flex: 1; min-height: 0; touch-action: none; }
+#app { position: relative; height: 100%; display: flex; flex-direction: column; }
+/* the sky behind the canvas: before the first frame is drawn the field shows the scene's day sky, not a dark box */
+#stage { position: relative; flex: 1; min-height: 0; touch-action: none; background: var(--sky); }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 #stage canvas { display: block; width: 100%; height: 100%; }
 
@@ -74,7 +89,9 @@ body {
 }
 .pill.combo { background: var(--gold); color: #10131c; }
 .pill.mag { background: #6f58d8; color: #fff; padding-bottom: 5px; }
-.pill.mag s { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--gold); transform-origin: left; }
+/* the time bar's scaleX is written once per drawn frame while the magnet lasts (players.js magnetBar): its own layer, so
+   that is a compositor change and not a repaint of the chip over the canvas (the pill is display: none otherwise) */
+.pill.mag s { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--gold); transform-origin: left; will-change: transform; }
 .pill.slow { background: #d8402a; color: #fff; }
 .pill.out { background: #2c3348; color: #c9d2ea; }
 .score.dead { opacity: .45; }
@@ -103,6 +120,9 @@ body {
 .card .head { white-space: pre-line; min-height: 2.4em; font-size: 11px; }   /* join text uses a newline, not <br> */
 /* player 1's open card calls for a join: a gold pulse */
 .card.p1.open .head { color: var(--gold); animation: pulse .6s ease-in-out infinite alternate; }
+/* in play and on the results the cards are visibility: hidden (screens.js setCard), but an open card kept pulsing: an
+   animated layer over the canvas for the whole run that nobody sees */
+#app.playing .card .head, #app.over .card .head { animation: none; }
 @keyframes pulse { from { transform: scale(1); } to { transform: scale(1.06); } }
 .card.locked .head { color: var(--gold); }
 .card.locked svg { opacity: .55; }
@@ -127,7 +147,10 @@ body {
   padding: calc(4px + env(safe-area-inset-top, 0px)) 12px 4px; border-radius: 0 0 12px 12px; box-shadow: 0 2px 0 rgba(0,0,0,.25);
 }
 #app.playing .hs { flex-direction: row; align-items: baseline; flex: none; }
-#app.playing .hs b { font-size: 16px; }
+/* min-width: in play the bar is as wide as its content, and gfx.js watches its size (ResizeObserver -> resize ->
+   renderer.setSize, which clears the canvas): a coin count going from 9 to 10 resized the canvas mid-run, a flash on
+   iOS. Four pixel-font digits fit, so the bar keeps its width while the coins count up */
+#app.playing .hs b { font-size: 16px; min-width: 4ch; text-align: right; }
 #app.playing #pauseBtn { display: block; }
 @media (hover: hover) and (pointer: fine) { #app.playing #pauseBtn { display: none; } }
 
@@ -258,7 +281,8 @@ body {
   background: var(--panel); color: var(--gold); border: 2px solid var(--panel-edge); box-shadow: 0 3px 0 rgba(0,0,0,.45);
   white-space: nowrap; transition: transform .08s, box-shadow .08s, border-color .15s;
 }
-#menu button:hover, #share:hover, #replayBtn:hover { border-color: rgba(255, 216, 74, .6); }
+/* hover only where a pointer can hover: iOS keeps :hover on the last tapped button (a sticky gold edge) */
+@media (hover: hover) and (pointer: fine) { #menu button:hover, #share:hover, #replayBtn:hover { border-color: rgba(255, 216, 74, .6); } }
 #menu button:active, #share:active, #replayBtn:active { transform: translateY(2px); box-shadow: 0 1px 0 rgba(0,0,0,.45); }
 #menu button:disabled { opacity: .45; }
 /* the mode button with its arrows inside, and one line under it that says what the mode is */
@@ -359,12 +383,15 @@ body {
   position: absolute; z-index: 5; width: 56px; height: 56px; margin: -28px 0 0 -28px; border-radius: 50%;
   border: 3px solid var(--p1-glow); box-shadow: 0 0 12px var(--p1-glow); pointer-events: none;
   opacity: .9; animation: ring .35s ease-out forwards;
+  will-change: transform, opacity;   /* composited from its first frame (not promoted mid-animation over the canvas) */
 }
 .ring.p2 { border-color: var(--p2-glow); box-shadow: 0 0 12px var(--p2-glow); }
 @keyframes ring { from { transform: scale(.5); opacity: .9; } to { transform: scale(1.5); opacity: 0; } }
 
 /* restart cover: the next world is built while this hides the screen */
-#wipe { position: absolute; inset: 0; z-index: 8; background: var(--sky); opacity: 0; pointer-events: none; transition: opacity .12s; }
+/* will-change keeps one stable layer: WebKit otherwise makes a layer for each fade and drops it when the fade ends,
+   and a full-screen layer coming and going over the WebGL canvas shows as a one-frame flash (iOS Safari) */
+#wipe { position: absolute; inset: 0; z-index: 8; background: var(--sky); opacity: 0; pointer-events: none; transition: opacity .12s; will-change: opacity; }
 #wipe.on { opacity: 1; }
 
 /* results: built around PLAY AGAIN. The panel sits between the top bar and the bottom of the field (centred there,
@@ -397,11 +424,19 @@ body {
 #resHint { font-size: 11px !important; opacity: .75; }
 @media (pointer: coarse) { #resHint { display: none; } }   /* a touch screen has the big button */
 /* the new best: a gold ribbon over the panel's top */
+/* The notched shape is cut on a ::before under the text, not on the element: the element itself runs a transform
+   animation (its own compositing layer), and WebKit drew a clip-path on an animating layer unclipped (or not at all)
+   for a frame at the start and end of the animation, a flicker of the ribbon. On the pseudo-element the clip is plain
+   painting inside that layer. (The old box-shadow was cut off by the clip-path anyway.) */
 #resBest {
-  align-self: center; margin: -6px 0 0 !important; padding: 6px 18px; border-radius: 4px;
-  font: 11px/1.4 var(--font-pixel) !important; color: #10131c; background: var(--gold); box-shadow: 0 3px 0 #a88a1c;
-  clip-path: polygon(0 0, 100% 0, calc(100% - 8px) 50%, 100% 100%, 0 100%, 8px 50%);
+  position: relative; isolation: isolate;
+  align-self: center; margin: -6px 0 0 !important; padding: 6px 18px;
+  font: 11px/1.4 var(--font-pixel) !important; color: #10131c;
   animation: pop .6s ease-out both;
+}
+#resBest::before {
+  content: ''; position: absolute; inset: 0; z-index: -1; border-radius: 4px; background: var(--gold);
+  clip-path: polygon(0 0, 100% 0, calc(100% - 8px) 50%, 100% 100%, 0 100%, 8px 50%);
 }
 @keyframes pop { 0% { transform: scale(.3); opacity: 0; } 60% { transform: scale(1.15); opacity: 1; } 100% { transform: scale(1); } }
 #again {
@@ -426,7 +461,9 @@ body {
 }
 .pad { display: flex; align-items: center; justify-content: center; gap: 8px; transition: opacity .2s; }
 .pad.idle { opacity: .3; }
-.pad .lbl { font-family: var(--font-pixel); font-size: 9px; letter-spacing: .1em; white-space: nowrap; }
+/* a line height of its own (not 'normal', which comes from the font's metrics): the deck's height, and so the canvas
+   size, must not change when the pixel font arrives (a canvas resize clears it) */
+.pad .lbl { font-family: var(--font-pixel); font-size: 9px; line-height: 1.3; letter-spacing: .1em; white-space: nowrap; }
 .pad.p1 .lbl { color: var(--p1-glow); } .pad.p2 .lbl { color: var(--p2-glow); }
 button { font: inherit; color: inherit; border: 0; cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
 button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
