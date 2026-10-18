@@ -27,6 +27,7 @@
 <link rel="modulepreload" href="js/ghost.js">
 <link rel="modulepreload" href="js/screens.js">
 <link rel="modulepreload" href="js/panels.js">
+<link rel="modulepreload" href="js/paint.js">
 <link rel="modulepreload" href="js/input.js">
 <link rel="modulepreload" href="js/app.js">
 <meta name="mobile-web-app-capable" content="yes">
@@ -57,8 +58,9 @@
     <div id="score2" class="score" hidden><span class="lbl">P2 FOX</span><b>0</b><span class="pills"><i class="pill out" hidden>OUT</i><i class="pill combo" hidden></i><i class="pill mag" hidden><span>MAGNET</span><s></s></i><i class="pill slow" hidden>SLOW</i></span></div>
     <div id="logo"><h1><small>ARCADE</small>HOP<br>LANES</h1></div>
     <div id="menu">
-      <div class="modebox"><button type="button" id="mode"><span class="arr" aria-hidden="true">&#9664;</span><span id="modeText">MODE: CLASSIC</span><span class="arr" aria-hidden="true">&#9654;</span></button><small id="modeNote"></small></div>
+      <div class="modebox"><button type="button" id="mode" aria-haspopup="dialog"><span id="modeText">MODE: CLASSIC</span><span class="arr" aria-hidden="true">&#9662;</span></button><small id="modeNote"></small></div>
       <button type="button" id="prize">PRIZE &#183; 50 COINS</button>
+      <button type="button" id="paintBtn">PAINT SHOP</button>
       <button type="button" id="board" data-i18n="TOP 10">TOP 10</button>
       <button type="button" id="settings" data-i18n="SETTINGS">SETTINGS</button>
       <button type="button" id="missionChip"><span id="chipMissions">MISSIONS 0/3</span> <span class="dot">&#183;</span> <span id="chipToday">TODAY 0/3</span></button>
@@ -108,6 +110,27 @@
         <div id="missions"><h3>MISSIONS</h3><ul><li></li><li></li><li></li></ul></div>
         <div id="dayMissions"><h3>TODAY'S MISSIONS</h3><ul><li></li><li></li><li></li></ul></div>
         <button type="button" id="closeMissions" class="go" data-i18n="CLOSE">CLOSE</button>
+      </div>
+    </div>
+    <div id="modeBox" class="dialog" role="dialog" aria-modal="true" aria-labelledby="modesTitle" hidden>
+      <div class="box">
+        <h2 id="modesTitle" data-i18n="GAME MODE">GAME MODE</h2>
+        <div id="modeList" class="opts"></div>
+        <button type="button" id="closeModes" class="go" data-i18n="CLOSE">CLOSE</button>
+      </div>
+    </div>
+    <div id="paintBox" class="dialog" role="dialog" aria-modal="true" aria-labelledby="paintTitle" hidden>
+      <div class="box">
+        <h2 id="paintTitle" data-i18n="PAINT SHOP">PAINT SHOP</h2>
+        <div class="pickrow">
+          <button type="button" class="pickbtn" id="paintPrev" aria-label="PREVIOUS ANIMAL" data-i18n-label="PREVIOUS ANIMAL">&#9664;</button>
+          <svg id="paintPic" viewBox="0 0 12 12" shape-rendering="crispEdges" aria-hidden="true"></svg>
+          <button type="button" class="pickbtn" id="paintNext" aria-label="NEXT ANIMAL" data-i18n-label="NEXT ANIMAL">&#9654;</button>
+        </div>
+        <p id="paintName">FROG</p>
+        <div id="swatches"></div>
+        <p id="paintNote"></p>
+        <button type="button" id="closePaint" class="go" data-i18n="CLOSE">CLOSE</button>
       </div>
     </div>
     <div id="codeBox" class="dialog" role="dialog" aria-modal="true" aria-labelledby="codeTitle" hidden>

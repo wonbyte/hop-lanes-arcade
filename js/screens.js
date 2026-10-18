@@ -1,15 +1,15 @@
 import { audio, isMuted, setMuted, sfx, startPlayLoop, stopPlayLoop, stopTune } from './audio.js';
 import { $, COUNTDOWN, FIXED_SEED, G, GO_TIME, MODES, PRIZE_COST, RETRY_AFTER, SCORES_TOKEN, SCORES_URL, SOLO_COUNTDOWN, WIPE_MS } from './core.js';
 import { nextLang, setLang, t } from './i18n.js';
-import { DAILY, DAILY_REWARD, MISSION_REWARD, advanceMissions, carriedText, carryCoins, dailyDoneText, dailyMissions, doneCarried, doneDaily, emptyStats, missionAt, missionValue, missionsText, newMissions, parseCarried, parseDailyDone, parseMissions } from './missions.js';
+import { DAILY, DAILY_REWARD, MISSION_REWARD, advanceMissions, carriedText, carryCoins, comebackBonus, dailyDoneText, dailyMissions, doneCarried, doneDaily, emptyStats, missionAt, missionValue, missionsText, newMissions, parseCarried, parseDailyDone, parseMissions } from './missions.js';
 import { encodeReplay } from './replay.js';
 import { DAY_PREFIX, RULES, dailySeedFor, dayBefore, hatFor, streakAfter, traitOf } from './rules.js';
 import { runOver, topScore, winnerOf } from './sim.js';
 import { keepAwake } from './device.js';
 import { marquee, reduceMotion, resetFrameWatch, stage, touchQuery } from './gfx.js';
-import { CHARACTERS, PIX, PRIZES, drawPix, isOwned } from './models.js';
+import { CHARACTERS, PRIZES, drawPix, isOwned, paintedPix } from './models.js';
 import { charOf, despawn, onGameOver, players, resetRules, restorePicks, spawn } from './players.js';
-import { BEST_KEY, DAILYDONE_KEY, DAILY_KEY, HANDICAP_KEY, HINT_KEY, HOWTO_KEY, INITIALS_KEY, LOCAL_KEY, MCOINS_KEY, MDONE_KEY, STREAK_KEY, INSTALL_KEY, MISSIONS_KEY, MODE_KEY, OWNED_KEY, PICK_KEY, ROOM_KEY, TIPS_KEY, cleanInitials, dayKey, deviceTag, entersLocal, flushBank, load, loadText, localTop, owned, parseLocal, refreshBests, save, savedMode, setBank, today } from './storage.js';
+import { BEST_KEY, DAILYDONE_KEY, DAILY_KEY, HANDICAP_KEY, HINT_KEY, HOWTO_KEY, INITIALS_KEY, LOCAL_KEY, MCOINS_KEY, MDONE_KEY, STREAK_KEY, INSTALL_KEY, MISSIONS_KEY, MODE_KEY, OWNED_KEY, PICK_KEY, ROOM_KEY, TIPS_KEY, VISIT_KEY, cleanInitials, dayKey, deviceTag, entersLocal, flushBank, load, loadText, localTop, owned, paintOf, parseLocal, refreshBests, save, savedMode, setBank, today } from './storage.js';
 import { getSeed, refreshPowerLooks, resetWorld } from './world.js';
 import { saveGhost, startGhost, stopGhost } from './ghost.js';
 
@@ -23,6 +23,7 @@ function setBanner(h, sub = '') {
   if (key === bannerKey) return;      // only touch the DOM when the text changes
   bannerKey = key;
   banner.hidden = !h;
+  banner.classList.remove('note');
   bannerH.textContent = h; bannerP.textContent = sub;
 }
 // the top bar is slimmer during play: the score chips and the logo sit under it, whatever its height (one layout read
@@ -45,7 +46,8 @@ function setCard(i) {
   c.classList.toggle('locked', locked && !p.joined);
   c.classList.toggle('open', !p.joined && !locked);   // the join line pulses (player 1)
   c.style.visibility = G.state === 'play' || G.state === 'over' ? 'hidden' : 'visible';
-  if (p.shownChar !== ch.key) { drawPix($('pic' + (i + 1)), PIX[ch.key]); p.shownChar = ch.key; }
+  const look = ch.key + '/' + paintOf(ch.key);   // the animal in its paint (paint.js changes it)
+  if (p.shownChar !== look) { drawPix($('pic' + (i + 1)), paintedPix(ch.key, paintOf(ch.key))); p.shownChar = look; }
   const head = c.querySelector('.head'), st = c.querySelector('.state');
   if (p.joined) { head.textContent = t('READY!'); st.textContent = t('PLAYER {n}', { n: i + 1 }); }
   else if (locked) { const [h, sub] = lockedText(ch); head.textContent = h; st.textContent = sub; }
@@ -79,11 +81,12 @@ const setCards = () => { setCard(0); setCard(1); menu.hidden = G.state !== 'attr
 const askCode = (title, len, value, done) => document.dispatchEvent(new CustomEvent('hoplanes:ask', { detail: { title, len, value, done } }));
 
 // ---------- title menu: game mode, room code, prize machine, handicap, language, missions ----------
-const MODE_TEXT = { classic: 'MODE: CLASSIC', race: 'MODE: RACE', coinwar: 'MODE: COIN WAR', tag: 'MODE: TAG', daily: 'MODE: DAILY' };
-// one short line under the button: what the mode is
+const MODE_NAME = { classic: 'CLASSIC', race: 'RACE', coinwar: 'COIN WAR', tag: 'TAG', daily: 'DAILY', room: 'ROOM' };
+// one short line under the button (and in the picker): what the mode is
 const MODE_NOTE = { classic: 'HOP AS FAR AS YOU CAN', race: 'FIRST TO FALL LOSES', coinwar: 'MOST COINS WINS', tag: 'THE ONE BEHIND HOPS FASTER', daily: 'ONE WORLD FOR ALL TODAY', room: 'SAME CODE, SAME WORLD' };
+const TWO_UP_MODES = ['race', 'coinwar', 'tag'];   // modes made for two players (the picker says so)
 function setModeLabel() {
-  $('modeText').textContent = G.mode === 'room' ? t('ROOM: {code}', { code: G.room }) : t(MODE_TEXT[G.mode]);
+  $('modeText').textContent = G.mode === 'room' ? t('ROOM: {code}', { code: G.room }) : t('MODE: {name}', { name: t(MODE_NAME[G.mode]) });
   $('modeNote').textContent = t(MODE_NOTE[G.mode]);
 }
 function setMode(mode) {
@@ -112,15 +115,13 @@ function setLook(key) {
 }
 // room mode: two phones that enter the same code play the same world (seed = the code)
 const randomCode = () => Array.from({ length: 4 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ'[Math.floor(Math.random() * 24)]).join('');
-const modeAfter = (mode, d) => MODES[(MODES.indexOf(mode) + d + MODES.length) % MODES.length];
-// d: +1 the next mode, -1 the one before; room mode asks for its code first (closed: the mode after it)
-function cycleMode(d) {
+// the mode picker (panels.js) chose a mode; room mode asks for its code first (closed: the mode stays as it was)
+function pickMode(mode) {
+  if (G.state !== 'attract' || !MODES.includes(mode)) return;
   sfx.tick();
-  const mode = modeAfter(G.mode, d);
   if (mode !== 'room') { setMode(mode); return; }
   askCode(t('ROOM CODE'), 4, (G.room || randomCode()).slice(0, 4), code => {
-    if (G.state !== 'attract') return;
-    if (!code) { setMode(modeAfter('room', d)); return; }
+    if (G.state !== 'attract' || !code) return;
     G.room = code; save(ROOM_KEY, code);
     setMode('room');
   });
@@ -226,8 +227,10 @@ function refreshTexts() {
   if (G.state === 'over') { $('share').textContent = t('SHARE'); setRetryHint(); }
 }
 let menuNote = 0;
+// a note on the title (a prize, the come-back bonus, the install hint): smaller than the countdown, on a panel
 function flashBanner(h, sub, ms) {
   setBanner(h, sub);
+  banner.classList.add('note');
   clearTimeout(menuNote);
   menuNote = setTimeout(() => { if (G.state === 'attract') setBanner(''); }, ms);
 }
@@ -246,12 +249,6 @@ function prizeMachine() {
   updatePrize();
   setCards();
 }
-// the mode button has its arrows inside: a click on the left third goes back, anywhere else on
-$('mode').addEventListener('click', e => {
-  audio();
-  const r = $('mode').getBoundingClientRect();
-  cycleMode(e.detail && e.clientX < r.left + r.width / 3 ? -1 : 1);
-});
 $('prize').addEventListener('click', () => { audio(); prizeMachine(); });
 setModeLabel();   // the world is built once, by toAttract at boot
 updatePrize();
@@ -300,6 +297,19 @@ function confetti() {
   confettiTimer = setTimeout(() => { confettiBox.textContent = ''; }, 6000);
 }
 
+// the come-back bonus: the first title of a day pays coins, more for days in a row (missions.js comebackBonus; the
+// count is kept like the daily streak). A brand new player (no best yet) only starts the count; a replay link waits
+function payComeback() {
+  const day = today(), saved = loadText(VISIT_KEY);
+  if (G.replay || saved.split('|')[0] === day) return;
+  const visit = streakAfter(saved, day, dayBefore());
+  save(VISIT_KEY, visit);
+  if (!G.bestAll) return;
+  const days = Number(visit.split('|')[1]) || 1, coins = comebackBonus(days);
+  setBank(G.bank + coins);
+  sfx.prize();
+  flashBanner(t('WELCOME BACK!'), days > 1 ? t('+{n} COINS · DAY {d} IN A ROW', { n: coins, d: days }) : t('+{n} COINS', { n: coins }), 3200);
+}
 function toAttract() {
   G.state = 'attract'; G.stateT = 0; G.camRow = 0; G.biomeBlock = 0;
   // a restart from the pause menu skips endPlay: the run's coins are saved and the play look ends here too
@@ -321,6 +331,7 @@ function toAttract() {
   $('replayTag').hidden = !G.replay;
   setBanner('');
   setCards();
+  payComeback();
 }
 // cover the screen, build the new world under the cover, then fade back in. who: the players who join at once (a
 // retry); a retry of a one-player game counts down quickly
@@ -641,4 +652,4 @@ $('gotit').addEventListener('click', hideHowto);
 
 onGameOver(checkOver);   // players.js calls it when the rules end the game
 
-export { setLook, setModeLabel, banner, canRetry, confetti, cycleChar, hideHowto, howto, join, menu, pads, pauseGame, playAgain, restart, resultsEl, resumeGame, revealResults, setBanner, showHowto, startPlay, toAttract, toMenu, wipe };
+export { MODE_NAME, MODE_NOTE, TWO_UP_MODES, pickMode, setCards, setLook, setModeLabel, banner, canRetry, confetti, cycleChar, hideHowto, howto, join, menu, pads, pauseGame, playAgain, restart, resultsEl, resumeGame, revealResults, setBanner, showHowto, startPlay, toAttract, toMenu, wipe };

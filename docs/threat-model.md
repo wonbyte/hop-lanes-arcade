@@ -126,7 +126,7 @@ GitHub Pages does not let a site set its own HTTP headers.
 ## 7. Local data (localStorage)
 
 - **Attacker**: the player (or anyone with the device).
-- **Gain**: more coins, a higher local best, every animal.
+- **Gain**: more coins, a higher local best, every animal and paint job, the come-back bonus every day.
 - **Controls**: every read is checked and falls back to a default (`storage.js`); bad JSON is ignored.
 - **Accepted risk**: local data is the player's own. It never counts online: the server checks the replay, not the
   local best.

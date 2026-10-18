@@ -305,6 +305,29 @@ const LANE_BUILDERS = {
   }
 };
 
+// ---------- the BEST ribbon: a gold line on the ground across the row of the all-time best ----------
+// Drawn with the row (part of its ground, so it costs no draw call): hop past it and the run is a new best. A look only:
+// no rng draw, nothing the rules see. On water it floats; a cliff row gets the two flags on its banks only
+const RIBBON_MIN = 10;   // like the results' BEST_MIN: a best of a few rows gets no line
+const RIBBON = 0xffd84a, RIBBON_INK = 0x7a3a10, PX = 0.14;
+const LETTERS = { B: ['111', '101', '110', '101', '111'], E: ['111', '100', '111', '100', '111'], S: ['111', '100', '111', '001', '111'], T: ['111', '010', '010', '010', '010'] };
+const WATER_KINDS = new Set(['river', 'lily', 'bridge']);
+let ribbonAt = -1;   // the row this world's ribbon lies on (-1: none yet); a test hook
+const ribbonRow = () => ribbonAt;
+function ribbonBoxes(ground, kind, z) {
+  const y = WATER_KINDS.has(kind) ? -0.15 : kind === 'rail' ? 0.12 : 0;
+  for (const s of [-1, 1]) {   // a flag post on each side of the play area
+    ground.push([0.08, 0.9, 0.08, 0x6e4826, s * (PLAY_HALF + 1.3), kind === 'cliff' ? -0.2 : y, z], [0.4, 0.26, 0.05, RIBBON, s * (PLAY_HALF + 1.3) + s * 0.22, (kind === 'cliff' ? -0.2 : y) + 0.6, z]);
+  }
+  if (kind === 'cliff') return;
+  ground.push([PLAY_HALF * 2 + 1.6, 0.03, 0.56, RIBBON, 0, y + 0.005, z]);
+  // BEST in pixel letters, read from the camera (forward is -z, so the top of a letter is the far side)
+  let x = -(4 * 3 + 3) / 2 * PX + PX / 2;
+  for (const ch of 'BEST') {
+    LETTERS[ch].forEach((row, k) => [...row].forEach((on, c) => { if (on === '1') ground.push([PX, 0.02, PX, RIBBON_INK, x + c * PX, y + 0.035, z + (k - 2) * PX]); }));
+    x += 4 * PX;
+  }
+}
 function addLane(r) {
   // every row has its own generator from the seed and the row: a row is the same whatever rows were built
   // before it (the first built row depends on the screen size)
@@ -314,6 +337,7 @@ function addLane(r) {
   lane.group.matrixAutoUpdate = false;   // never moves (identity): Three.js skips it in the per-draw matrix walk
   const ground = [];
   LANE_BUILDERS[kind](lane, { r, z: -r, ground, B: biomeAt(r) });   // nosemgrep: unsafe-dynamic-method -- kind is a gen.js lane kind (a fixed set)
+  if (r === G.bestAll && r >= RIBBON_MIN) { ribbonBoxes(ground, kind, -r); ribbonAt = r; }
   placeCoins(lane, -r);
   // unique per lane, disposed with the lane; flat ground does not cast shadows, trees and the rail pole do
   lane.ground = voxelMesh(mergeBoxes(ground), kind === 'grass' || kind === 'ice' ? lane.trees.size > 0 : kind === 'rail');
@@ -529,6 +553,7 @@ function resetWorld() {
     : G.mode === 'classic' && loadText(HINT_KEY) !== '1' ? TUTORIAL_SEED : (Math.random() * 4294967296) >>> 0;
   for (const k of [...chunks.keys()]) releaseChunk(k);   // nothing should be left; frees any chunk that is
   hot.clear();
+  ribbonAt = -1;
   G.worldTick = 0;
   snowSeason = new Date().getMonth() === 11;
   weatherCache.clear();
@@ -555,4 +580,4 @@ function laneKinds() {   // lane types for rows 0..30 (builds missing rows ahead
   return out;
 }
 
-export { Inst, biomeAt, biomeIndex, blockColumn, refreshPowerLooks, unblockColumn, chunks, dropSpinner, ensureLanes, fleet, fxRand, getSeed, laneCoins, laneKinds, lanes, near, resetWorld, showLane, spinAll, updateFarLanes, updateLanes, weatherAt };
+export { Inst, biomeAt, biomeIndex, blockColumn, refreshPowerLooks, unblockColumn, chunks, dropSpinner, ensureLanes, fleet, fxRand, getSeed, laneCoins, laneKinds, lanes, near, resetWorld, ribbonRow, showLane, spinAll, updateFarLanes, updateLanes, weatherAt };

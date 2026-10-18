@@ -101,7 +101,7 @@ for (const vp of VIEWPORTS) {
     try {
       await waitState(page, 'attract');
       await check('attract');
-      for (const [btn, close] of [['settings', 'closeSettings'], ['board', 'closeBoard'], ['missionChip', 'closeMissions']]) {
+      for (const [btn, close] of [['settings', 'closeSettings'], ['board', 'closeBoard'], ['missionChip', 'closeMissions'], ['mode', 'closeModes'], ['paintBtn', 'closePaint']]) {
         await page.evaluate(id => document.getElementById(id).click(), btn);
         await check(btn);
         await page.evaluate(id => document.getElementById(id).click(), close);

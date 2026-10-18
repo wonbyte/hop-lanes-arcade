@@ -107,4 +107,8 @@ const dailyDoneText = (day, mask) => day + '|' + mask;
 // the stats of a run: which slots (0..2) of the day's missions are done now and were not paid before
 const doneDaily = (picks, mask, stats) => [...picks.keys()].filter(k => !(mask & (1 << k)) && (stats[DAILY[picks[k]].stat] || 0) >= DAILY[picks[k]].goal);
 
-export { DAILY, DAILY_COUNT, DAILY_REWARD, MISSIONS, MISSION_REWARD, advanceMissions, carriedText, carryCoins, doneCarried, missionAt, missionValue, newMissions, parseCarried, dailyDoneText, dailyMissions, doneDaily, doneMissions, emptyStats, missionsText, parseDailyDone, parseMissions };
+// ---------- the come-back bonus: coins for the first visit of a day, more for days in a row ----------
+const COMEBACK = [10, 15, 20, 25, 30];   // day 1, 2, 3, 4, 5 and more in a row
+const comebackBonus = days => COMEBACK[Math.min(COMEBACK.length, Math.max(1, Math.floor(days) || 1)) - 1];
+
+export { comebackBonus, DAILY, DAILY_COUNT, DAILY_REWARD, MISSIONS, MISSION_REWARD, advanceMissions, carriedText, carryCoins, doneCarried, missionAt, missionValue, newMissions, parseCarried, dailyDoneText, dailyMissions, doneDaily, doneMissions, emptyStats, missionsText, parseDailyDone, parseMissions };

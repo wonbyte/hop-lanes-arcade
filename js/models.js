@@ -304,6 +304,36 @@ const CHARACTERS = [
 ];
 const PRIZES = CHARACTERS.filter(c => c.prize).map(c => c.key);
 const isOwned = ch => (ch.price === 0 && !ch.prize) || owned.has(ch.key);
+// paint jobs (the coin sink): a new main color for an animal, bought once per animal (paint.js). 'classic' is the
+// animal's own color. A paint changes the look only: the rules, the replay code and the online name never see it
+const PAINTS = [
+  { key: 'classic', name: 'CLASSIC', price: 0, color: 0 },
+  { key: 'gold', name: 'GOLD', price: 25, color: 0xffd84a },
+  { key: 'sky', name: 'SKY', price: 25, color: 0x4fb8ff },
+  { key: 'pink', name: 'PINK', price: 25, color: 0xf76fa0 },
+  { key: 'mint', name: 'MINT', price: 25, color: 0x5ee0a0 },
+  { key: 'lava', name: 'LAVA', price: 40, color: 0xff5a2a },
+  { key: 'night', name: 'NIGHT', price: 40, color: 0x2a2f3a }
+];
+// the color a paint replaces: the animal's main one (body, fur, skin, shell)
+const MAIN_COLOR = { frog: COLORS.frog.body, fox: COLORS.fox.fur, bunny: COLORS.bunny.fur, cat: COLORS.cat.fur, robot: COLORS.robot.body, pig: COLORS.pig.skin, penguin: COLORS.penguin.back, turtle: COLORS.turtle.shell };
+const paintColor = paint => (PAINTS.find(p => p.key === paint) || PAINTS[0]).color;
+// the boxes of an animal with its main color swapped for the paint ('classic' or an unknown paint: as they are)
+function paintBoxes(boxes, key, paint) {
+  const color = paintColor(paint);
+  if (!color) return boxes;
+  return boxes.map(b => (b[3] === MAIN_COLOR[key] ? [b[0], b[1], b[2], color, ...b.slice(4)] : b));
+}
+// the CSS color of an animal's main color in a paint (the shop's swatches)
+const paintCss = (key, paint) => css(paintColor(paint) || MAIN_COLOR[key]);
+// the pixel portrait of an animal in a paint (drawPix draws it)
+function paintedPix(key, paint) {
+  const art = PIX[key], color = paintColor(paint);
+  if (!color) return art;
+  const pal = {};
+  for (const k in art.pal) pal[k] = art.pal[k] === MAIN_COLOR[key] ? color : art.pal[k];
+  return { rows: art.rows, pal };
+}
 // the paint (pure white here) is tinted per instance; nothing else may be pure white
 function vehicleBoxes(truck, c = 0xffffff) {
   const len = truck ? 2.4 : 1.4;
@@ -372,9 +402,10 @@ function hatBoxes(hat, top) {
   return b;
 }
 const topOf = boxes => Math.max(...boxes.map(b => b[5] + b[1]));
-function makeCharacter(boxesFn, key, hat = '') {
+// the animal's mesh: its boxes in its paint (PAINTS), with the hat the all-time best unlocked on top
+function makeCharacter(boxesFn, key, hat = '', paint = 'classic') {
   const g = new THREE.Group();
-  const body = voxelMesh(cachedGeo(hat ? key + '-' + hat : key, () => { const b = boxesFn(); return hat ? b.concat(hatBoxes(hat, topOf(b))) : b; }));
+  const body = voxelMesh(cachedGeo(key + '-' + paint + (hat ? '-' + hat : ''), () => { const b = paintBoxes(boxesFn(), key, paint); return hat ? b.concat(hatBoxes(hat, topOf(b))) : b; }));
   g.add(body); g.userData.body = body;
   return g;
 }
@@ -384,4 +415,4 @@ function makeCharacter(boxesFn, key, hat = '') {
 const lightBoxes = () => [[0.38, 0.2, 0.14, 0xffffff, 0, 0, 0, 1]];
 const LIGHT_TINT = { off: 0x331111, on: 0xff2222, red: 0xff2a2a, blue: 0x3a7bff };
 
-export { CHARACTERS, COLORS, blockBoxes, bombBoxes, tileBoxes, twisterBoxes, LIGHT_TINT, PIX, PRIZES, boulderBoxes, coinBoxes, drawPix, eagleBoxes, isOwned, lightBoxes, logBoxes, magnetBoxes, makeCharacter, plankBoxes, policeBoxes, shieldBoxes, trainBoxes, vehicleBoxes };
+export { CHARACTERS, COLORS, PAINTS, paintCss, paintedPix, blockBoxes, bombBoxes, tileBoxes, twisterBoxes, LIGHT_TINT, PRIZES, boulderBoxes, coinBoxes, drawPix, eagleBoxes, isOwned, lightBoxes, logBoxes, magnetBoxes, makeCharacter, plankBoxes, policeBoxes, shieldBoxes, trainBoxes, vehicleBoxes };

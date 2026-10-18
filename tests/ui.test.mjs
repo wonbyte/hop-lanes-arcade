@@ -195,22 +195,37 @@ test('2c. prize machine: disabled once every prize is owned', async () => {
   } finally { await context.close(); }
 });
 
-test('3. mode button cycles CLASSIC, RACE, COIN WAR, TAG, DAILY and persists', async () => {
+// the mode picker: MODE opens a dialog with every mode; a tap on one picks it and closes the dialog
+const pickMode = async (page, mode) => {
+  await page.click('#mode');
+  await page.locator('#modeBox').waitFor({ state: 'visible', timeout: T });
+  await page.click('#modeList button[data-mode="' + mode + '"]');
+};
+test('3. the mode picker lists every mode with a line on it; a pick persists; a closed room code keeps the mode', async () => {
   const { context, page, errors } = await open(INDEX);
   try {
     await waitState(page, 'attract');
     assert.equal(await hop(page, () => window.hopLanes.mode), 'classic');
     assert.match(await page.locator('#mode').textContent(), /CLASSIC/);
     await page.click('#mode');
+    await page.locator('#modeBox').waitFor({ state: 'visible', timeout: T });
+    const names = await page.locator('#modeList button b').allTextContents();
+    assert.deepEqual(names, ['CLASSIC', 'RACE', 'COIN WAR', 'TAG', 'DAILY', 'ROOM']);
+    assert.match(await page.locator('#modeList button[data-mode="race"] small').textContent(), /FIRST TO FALL LOSES/);
+    assert.equal(await page.locator('#modeList button[data-mode="race"] i').textContent(), '2 PLAYERS', 'the two-player modes say so');
+    assert.equal(await page.locator('#modeList button[data-mode="daily"] i').count(), 0);
+    assert.equal(await page.locator('#modeList button[aria-pressed="true"]').getAttribute('data-mode'), 'classic', 'the current mode is marked');
+    await page.click('#modeList button[data-mode="race"]');
+    assert.equal(await page.locator('#modeBox').isHidden(), true, 'a pick closes the dialog');
     assert.equal(await hop(page, () => window.hopLanes.mode), 'race');
     assert.match(await page.locator('#mode').textContent(), /RACE/);
-    await page.click('#mode');
+    assert.match(await page.locator('#modeNote').textContent(), /FIRST TO FALL LOSES/);
+    await pickMode(page, 'coinwar');
     assert.equal(await hop(page, () => window.hopLanes.mode), 'coinwar');
     assert.match(await page.locator('#mode').textContent(), /COIN WAR/);
-    await page.click('#mode');
+    await pickMode(page, 'tag');
     assert.equal(await hop(page, () => window.hopLanes.mode), 'tag');
-    assert.match(await page.locator('#mode').textContent(), /TAG/);
-    await page.click('#mode');
+    await pickMode(page, 'daily');
     assert.equal(await hop(page, () => window.hopLanes.mode), 'daily');
     assert.match(await page.locator('#mode').textContent(), /DAILY/);
     await page.reload();
@@ -218,11 +233,17 @@ test('3. mode button cycles CLASSIC, RACE, COIN WAR, TAG, DAILY and persists', a
     assert.equal(await hop(page, () => window.hopLanes.mode), 'daily', 'mode survives reload');
     assert.match(await page.locator('#mode').textContent(), /DAILY/);
     assert.equal(await page.evaluate(() => localStorage.getItem('hoplanes.mode')), 'daily');
-    await page.click('#mode');   // room mode asks for its code first; closed, the mode after it
+    await page.click('#mode');
+    await page.locator('#modeBox').waitFor({ state: 'visible', timeout: T });
+    assert.equal(await page.locator('#modeList button[aria-pressed="true"]').getAttribute('data-mode'), 'daily');
+    await page.keyboard.press('Escape');
+    assert.equal(await page.locator('#modeBox').isHidden(), true, 'Escape closes the picker');
+    assert.equal(await hop(page, () => window.hopLanes.mode), 'daily', 'and changes nothing');
+    await pickMode(page, 'room');   // room mode asks for its code first; closed, the mode stays
     await page.locator('#codeBox').waitFor({ state: 'visible', timeout: T });
     await page.click('#codeCancel');
-    assert.equal(await hop(page, () => window.hopLanes.mode), 'classic');
-    assert.match(await page.locator('#mode').textContent(), /CLASSIC/);
+    assert.equal(await hop(page, () => window.hopLanes.mode), 'daily');
+    assert.match(await page.locator('#mode').textContent(), /DAILY/);
     assert.deepEqual(errors, []);
   } finally { await context.close(); }
 });
@@ -231,7 +252,7 @@ test('4. daily mode uses the daily seed in attract and in play', async () => {
   const { context, page, errors } = await open(INDEX);
   try {
     await waitState(page, 'attract');
-    for (let i = 0; i < 4; i++) await page.click('#mode');   // race, coin war, tag, daily
+    await pickMode(page, 'daily');
     assert.equal(await hop(page, () => window.hopLanes.mode), 'daily');
     const daily = await hop(page, () => window.hopLanes.dailySeed);
     assert.equal(typeof daily, 'number');
@@ -965,12 +986,11 @@ test('14b. fast retry: PLAY AGAIN rejoins a two-player game with a full countdow
   } finally { await context.close(); }
 });
 
-test('14c. the room code is asked in the page; MODE goes back with its left arrow', async () => {
+test('14c. the room code is asked in the page; the picker names the room by its code', async () => {
   const { context, page, errors } = await open(INDEX);
   try {
     await waitState(page, 'attract');
-    const back = async () => { const box = await page.locator('#mode').boundingBox(); await page.mouse.click(box.x + 8, box.y + box.height / 2); };
-    await back();   // the left arrow: classic -> room
+    await pickMode(page, 'room');   // classic -> room
     await page.locator('#codeBox').waitFor({ state: 'visible', timeout: T });
     assert.match(await page.locator('#codeTitle').textContent(), /ROOM CODE/);
     assert.equal(await page.locator('#slots .slot').count(), 4);
@@ -980,12 +1000,15 @@ test('14c. the room code is asked in the page; MODE goes back with its left arro
     assert.equal(await hop(page, () => window.hopLanes.mode), 'room');
     assert.equal(await page.locator('#modeText').textContent(), 'ROOM: ZZ12');
     assert.equal(await page.evaluate(() => localStorage.getItem('hoplanes.room')), 'ZZ12');
-    await back();   // back: daily
+    await page.click('#mode');
+    await page.locator('#modeBox').waitFor({ state: 'visible', timeout: T });
+    assert.equal(await page.locator('#modeList button[data-mode="room"] b').textContent(), 'ROOM: ZZ12', 'the picker shows the code');
+    await page.click('#modeList button[data-mode="daily"]');
     assert.equal(await hop(page, () => window.hopLanes.mode), 'daily');
-    await page.click('#mode');   // on: room again, asked again; closed, the mode after it
+    await pickMode(page, 'room');   // room again: asked again; closed, the mode stays
     await page.locator('#codeBox').waitFor({ state: 'visible', timeout: T });
     await page.keyboard.press('Escape');
-    assert.equal(await hop(page, () => window.hopLanes.mode), 'classic');
+    assert.equal(await hop(page, () => window.hopLanes.mode), 'daily');
     assert.equal(await hop(page, () => window.hopLanes.state), 'attract', 'nothing joined');
     assert.deepEqual(errors, []);
   } finally { await context.close(); }
@@ -1074,4 +1097,115 @@ test('14g. a finger on the field: the animal crouches at once, the hop comes on 
     await page.waitForFunction(() => window.hopLanes.record.length === 1, null, { timeout: T });
     assert.deepEqual(errors, []);
   } finally { await context.close(); }
+});
+
+// ---- the leftovers of the design review: the paint shop, the BEST ribbon, the come-back bonus ----
+test('15a. the paint shop: a paint is bought once per animal with coins, worn at once, and shows on the card and in play', { timeout: SLOW }, async () => {
+  const { context, page, errors } = await open(INDEX, { storage: { 'hoplanes.coins': '40' } });
+  try {
+    await waitState(page, 'attract');
+    await page.click('#paintBtn');
+    await page.locator('#paintBox').waitFor({ state: 'visible', timeout: T });
+    assert.match(await page.locator('#paintName').textContent(), /FROG · CLASSIC/, 'opens on player 1\'s animal');
+    assert.equal(await page.locator('#swatches button').count(), 7);
+    assert.equal(await page.locator('#swatches button[aria-pressed="true"]').getAttribute('data-i'), '0', 'classic is worn');
+    assert.match(await page.locator('#swatches button[data-i="1"]').textContent(), /GOLD · 25/, 'a locked paint shows its price');
+    assert.match(await page.locator('#paintNote').textContent(), /YOU HAVE 40 COINS/);
+    await page.click('#swatches button[data-i="5"]');   // LAVA costs 40: the whole bank
+    assert.equal(await hop(page, () => window.hopLanes.bank), 0, 'LAVA cost 40');
+    assert.equal(await hop(page, () => window.hopLanes.paintOf('frog')), 'lava');
+    assert.match(await page.locator('#paintName').textContent(), /FROG · LAVA/);
+    assert.equal(await page.locator('#swatches button[aria-pressed="true"]').getAttribute('data-i'), '5');
+    assert.doesNotMatch(await page.locator('#swatches button[data-i="5"]').textContent(), /40/, 'a bought paint shows no price');
+    await page.click('#swatches button[data-i="6"]');   // NIGHT: no coins left
+    assert.match(await page.locator('#paintNote').textContent(), /NEED 40 COINS/);
+    assert.equal(await hop(page, () => window.hopLanes.paintOf('frog')), 'lava', 'still lava');
+    await page.click('#swatches button[data-i="0"]');   // back to classic: free
+    assert.equal(await hop(page, () => window.hopLanes.paintOf('frog')), 'classic');
+    await page.click('#swatches button[data-i="5"]');   // lava again: bought already, no coins asked
+    assert.equal(await hop(page, () => window.hopLanes.paintOf('frog')), 'lava');
+    assert.equal(await page.evaluate(() => localStorage.getItem('hoplanes.paints')), 'frog:lava');
+    assert.equal(await page.evaluate(() => localStorage.getItem('hoplanes.painted')), 'frog=lava');
+    await page.click('#paintNext');   // the fox (owned): classic, its own paints
+    assert.match(await page.locator('#paintName').textContent(), /FOX · CLASSIC/);
+    assert.match(await page.locator('#swatches button[data-i="5"]').textContent(), /LAVA · 40/, 'a paint is bought per animal');
+    await page.click('#paintNext');   // bunny is not owned: back to the frog
+    assert.match(await page.locator('#paintName').textContent(), /FROG · LAVA/);
+    await page.click('#closePaint');
+    assert.equal(await page.locator('#paintBox').isHidden(), true);
+    // the join card draws the frog in lava, and the animal in play is built in it (a reload keeps it)
+    const lava = await page.evaluate(() => [...document.querySelectorAll('#pic1 rect')].filter(r => r.getAttribute('fill') === '#ff5a2a').length);
+    assert.ok(lava > 10, 'the portrait is painted: ' + lava);
+    await page.reload();
+    await waitState(page, 'attract');
+    assert.equal(await hop(page, () => window.hopLanes.paintOf('frog')), 'lava', 'the paint is kept');
+    await page.keyboard.press('KeyW');
+    await waitState(page, 'play');
+    const body = await page.evaluate(() => { const g = window.hopLanes.players[0].mesh.userData.body.geometry.attributes.color.array; let n = 0; for (let i = 0; i < g.length; i += 3) if (g[i] > 0.9 && g[i + 1] < 0.5 && g[i + 2] < 0.3) n++; return n; });
+    assert.ok(body > 0, 'the frog\'s body is lava red in play: ' + body);
+    assert.deepEqual(errors, []);
+  } finally { await context.close(); }
+});
+
+test('15b. the BEST ribbon lies on the row of the all-time best (10 or more), in every world built', async () => {
+  const { context, page, errors } = await open(INDEX, { storage: { 'hoplanes.best': '15' } });
+  try {
+    await waitState(page, 'attract');
+    assert.equal(await hop(page, () => window.hopLanes.ribbonRow), 15);
+    await page.keyboard.press('KeyW');
+    await waitState(page, 'play');
+    assert.equal(await hop(page, () => window.hopLanes.ribbonRow), 15, 'the game world has it too');
+    await page.reload();
+    await waitState(page, 'attract');
+    assert.equal(await hop(page, () => window.hopLanes.ribbonRow), 15);
+    assert.deepEqual(errors, []);
+  } finally { await context.close(); }
+  const low = await open(INDEX, { storage: { 'hoplanes.best': '7' } });
+  try {
+    await waitState(low.page, 'attract');
+    assert.equal(await hop(low.page, () => window.hopLanes.ribbonRow), -1, 'a best under 10 gets no ribbon');
+    assert.deepEqual(low.errors, []);
+  } finally { await low.context.close(); }
+});
+
+test('15c. the come-back bonus: the first title of a day pays coins, more for days in a row, once a day; a new player only starts the count', async () => {
+  const day = d => d.toISOString().slice(0, 10);   // the page runs in UTC
+  const today = day(new Date()), yesterday = day(new Date(Date.now() - 86400000));
+  const back = await open(INDEX, { storage: { 'hoplanes.best': '20', 'hoplanes.coins': '5', 'hoplanes.visit': yesterday + '|2' }, context: { timezoneId: 'UTC' } });
+  try {
+    await waitState(back.page, 'attract');
+    await back.page.waitForFunction(() => /WELCOME BACK/.test(document.querySelector('#banner h2').textContent), null, { timeout: T });
+    assert.match(await back.page.locator('#banner p').textContent(), /\+20 COINS · DAY 3 IN A ROW/);
+    assert.equal(await hop(back.page, () => window.hopLanes.bank), 25);
+    assert.equal(await back.page.evaluate(() => localStorage.getItem('hoplanes.visit')), today + '|3');
+    // back on the title the same day (a game played to its end, then MENU): nothing more
+    await back.page.keyboard.press('KeyW');
+    await waitState(back.page, 'play');
+    await hop(back.page, () => { const h = window.hopLanes; h.kill(h.players[0], 'test'); });
+    await waitState(back.page, 'over');
+    await resultsVisible(back.page);
+    await toTitle(back.page);
+    await waitState(back.page, 'attract');
+    await settle(back.page, 300);
+    assert.equal(await hop(back.page, () => window.hopLanes.bank), 25, 'paid once a day');
+    assert.doesNotMatch(await back.page.locator('#banner h2').textContent(), /WELCOME/);
+    assert.equal(await back.page.evaluate(() => localStorage.getItem('hoplanes.visit')), today + '|3');
+    assert.deepEqual(back.errors, []);
+  } finally { await back.context.close(); }
+  const gap = await open(INDEX, { storage: { 'hoplanes.best': '20', 'hoplanes.visit': '2026-01-01|4' }, context: { timezoneId: 'UTC' } });
+  try {
+    await waitState(gap.page, 'attract');
+    await gap.page.waitForFunction(() => /WELCOME BACK/.test(document.querySelector('#banner h2').textContent), null, { timeout: T });
+    assert.match(await gap.page.locator('#banner p').textContent(), /^\+10 COINS$/, 'a gap starts over at day 1');
+    assert.equal(await hop(gap.page, () => window.hopLanes.bank), 10);
+    assert.deepEqual(gap.errors, []);
+  } finally { await gap.context.close(); }
+  const fresh = await open(INDEX, { context: { timezoneId: 'UTC' } });
+  try {
+    await waitState(fresh.page, 'attract');
+    await settle(fresh.page, 300);
+    assert.equal(await hop(fresh.page, () => window.hopLanes.bank), 0, 'a new player gets no bonus yet');
+    assert.equal(await fresh.page.evaluate(() => localStorage.getItem('hoplanes.visit')), today + '|1', 'but the count starts');
+    assert.deepEqual(fresh.errors, []);
+  } finally { await fresh.context.close(); }
 });

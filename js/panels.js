@@ -1,11 +1,11 @@
 import { audio, isMuted, setMuted, sfx } from './audio.js';
-import { $, G, LOOKS, SCORES_URL } from './core.js';
+import { $, G, LOOKS, MODES, SCORES_URL } from './core.js';
 import { buzzIsOn, setBuzz } from './device.js';
 import { t } from './i18n.js';
 import { charOf, players } from './players.js';
 import { camera, renderer, scene } from './gfx.js';
 import { isoWeek } from './rules.js';
-import { restart, resumeGame, setLook } from './screens.js';
+import { MODE_NAME, MODE_NOTE, TWO_UP_MODES, pickMode, restart, resumeGame, setLook } from './screens.js';
 import { LOCAL_KEY, LOOK_KEY, MOTION_KEY, loadText, parseLocal, save, today } from './storage.js';
 
 // Small panels over the field: settings, the pause menu, the online top 10, and the screen-reader announcer.
@@ -58,6 +58,34 @@ $('look').addEventListener('click', () => {
   labelLook();
 });
 document.addEventListener('hoplanes:lang', labelSettings);
+
+// ---------- the mode picker: every mode with a line on what it is; the current one is marked ----------
+const modeList = $('modeList');
+for (const m of MODES) {
+  const b = document.createElement('button');
+  b.type = 'button'; b.dataset.mode = m;
+  b.append(document.createElement('b'), document.createElement('small'));
+  if (TWO_UP_MODES.includes(m)) b.appendChild(document.createElement('i'));   // a tag: made for two players
+  b.addEventListener('click', () => { closeDialog(); pickMode(m); });
+  modeList.appendChild(b);
+}
+function labelModes() {
+  $('modesTitle').textContent = t('GAME MODE'); $('closeModes').textContent = t('CLOSE');
+  for (const b of /** @type {HTMLCollectionOf<HTMLElement>} */ (modeList.children)) {
+    const m = b.dataset.mode;
+    b.querySelector('b').textContent = m === 'room' && G.room ? t('ROOM: {code}', { code: G.room }) : t(MODE_NAME[m]);
+    b.querySelector('small').textContent = t(MODE_NOTE[m]);
+    const tag = b.querySelector('i');
+    if (tag) tag.textContent = t('2 PLAYERS');
+    b.setAttribute('aria-pressed', String(m === G.mode));
+  }
+}
+$('mode').addEventListener('click', () => {
+  if (G.state !== 'attract') return;
+  audio(); sfx.tick(); labelModes(); openDialog('modeBox');
+  try { /** @type {HTMLElement} */ (modeList.querySelector('[aria-pressed="true"]')).focus({ preventScroll: true }); } catch (e) {}
+});
+$('closeModes').addEventListener('click', () => { sfx.tick(); closeDialog(); });
 
 // ---------- missions: the title's chip opens both lists (screens.js fills them) ----------
 $('missionChip').addEventListener('click', () => { audio(); sfx.tick(); openDialog('missionsBox'); });
@@ -274,4 +302,4 @@ function announceFrame() {
 // a warning for one player (players.js: the eagle, the rapids): said at once
 document.addEventListener('hoplanes:say', e => announce(String(/** @type {CustomEvent} */ (e).detail)));
 
-export { announceFrame, closeDialog, dialogOpen };
+export { announceFrame, closeDialog, dialogOpen, openDialog };

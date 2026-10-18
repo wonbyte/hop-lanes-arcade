@@ -108,7 +108,7 @@ body {
 .card.locked .head { color: var(--gold); }
 .card.locked svg { opacity: .55; }
 .pickrow { display: flex; align-items: center; justify-content: center; gap: 2px; width: 100%; }
-.cyc {
+.cyc, .pickbtn {   /* the card arrows, and the paint shop's (its own class: the card handler must not take them) */
   pointer-events: auto; flex: none; width: 44px; height: 44px; border-radius: 8px;
   background: rgba(0,0,0,.35); color: #fff; font-size: 11px; box-shadow: 0 2px 0 rgba(0,0,0,.35);
 }
@@ -163,6 +163,28 @@ body {
 .dialog .opts.two { flex-direction: row; justify-content: center; }
 .dialog .opts.two button { flex: 1; min-height: 44px; }
 .dialog .opts .go { min-height: 44px; }
+/* the mode picker: one button per mode, its name over a line on what it is, a tag on the two-player modes; the
+   current mode has a gold edge */
+#modeList { gap: 6px; }
+#modeList button:not(.go) { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; position: relative; text-align: left; white-space: normal; padding: 6px 86px 6px 12px; }
+#modeList button b { font-size: 10px; line-height: 1.4; }
+#modeList button small { font: 500 11px/1.4 var(--font-ui); color: #fff; opacity: .85; }
+#modeList button i { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); padding: 4px 6px; border-radius: 6px; font-style: normal; font-size: 8px; background: rgba(255,255,255,.12); color: #c9d2ea; }
+#modeList button[aria-pressed="true"] { outline: 2px solid var(--gold); background: rgba(255,216,74,.12); }
+/* the paint shop: the animal in its paint between two arrows, the paint jobs as swatches (a color chip, the name, the price) */
+#paintBox .pickrow { margin-bottom: 4px; }
+#paintPic { width: 64px; height: 64px; image-rendering: pixelated; }
+#paintName { font: 10px/1.6 var(--font-pixel); color: var(--gold); margin-bottom: 10px; }
+#swatches { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 0 0 10px; }
+#swatches button {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 60px; padding: 6px 4px; border-radius: 10px;
+  background: rgba(10,12,20,.6); color: var(--gold); font-family: var(--font-pixel); font-size: 8px; line-height: 1.4; box-shadow: 0 3px 0 rgba(0,0,0,.5);
+}
+#swatches button i { width: 22px; height: 22px; border-radius: 6px; box-shadow: inset 0 0 0 2px rgba(255,255,255,.25); }
+#swatches button small { font-size: 8px; color: #c9d2ea; }
+#swatches button.locked { color: #c9d2ea; } #swatches button.locked i { opacity: .6; }
+#swatches button[aria-pressed="true"] { outline: 2px solid var(--gold); background: rgba(255,216,74,.12); }
+#paintNote { font-size: 11px !important; opacity: .85; }
 /* the letter slots of a question: a 44px button up, the letter, a 44px button down */
 #slots { display: flex; justify-content: center; gap: 8px; margin: 0 0 14px; }
 .slot { display: flex; flex-direction: column; align-items: center; gap: 4px; }
@@ -182,6 +204,18 @@ body {
   .slot { flex-direction: row; gap: 2px; }
   .slot b { width: 28px; font-size: 18px; }
 }
+/* a phone held sideways: the paint shop puts the animal beside its swatches, four to a row, so nothing scrolls */
+@media (max-height: 420px) and (min-width: 480px) {
+  #paintBox .box { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; align-items: center; width: min(100%, 620px); max-width: none; }
+  #paintBox .box > h2 { grid-column: 1 / -1; margin: 0; }
+  #paintBox .pickrow { grid-column: 1; grid-row: 2; width: auto; margin: 0; }
+  #paintName { grid-column: 1; grid-row: 3; margin: 0; }
+  #swatches { grid-column: 2; grid-row: 2 / span 2; grid-template-columns: repeat(4, 1fr); margin: 0; }
+  #swatches button { min-height: 40px; flex-direction: row; gap: 6px; }
+  #swatches button i { width: 16px; height: 16px; }
+  #paintNote { display: none; }
+  #paintBox .box > .go { grid-column: 1 / -1; position: static; box-shadow: 0 4px 0 #a88a1c; }
+}
 /* very short and wide (a phone held sideways in a browser or an app frame): settings and the pause menu lay their
    buttons out in three columns, CLOSE among them, so nothing needs a scroll */
 @media (max-height: 300px) and (min-width: 480px) {
@@ -191,6 +225,13 @@ body {
   #settingsBox .opts p { grid-column: span 2; text-align: left; }
   #settingsBox .opts p + p { grid-column: 1 / 3; }
   #settingsBox .box > .go { grid-column: 3; grid-row: 4 / span 2; position: static; box-shadow: 0 4px 0 #a88a1c; }
+  /* the mode picker: six names in one row, the notes and the tags go */
+  #modeBox .box { width: min(100%, 620px); max-width: none; }
+  #modeList { grid-template-columns: repeat(6, 1fr); }
+  #modeList button:not(.go) { padding: 8px 4px; align-items: center; }
+  #modeList button b { font-size: 8px; }
+  #modeList button small, #modeList button i { display: none; }
+  #modeBox .box > .go { position: static; box-shadow: 0 4px 0 #a88a1c; }
   #settingsBox .opt { grid-column: auto; padding: 0; }
 }
 /* a short phone: the results get tighter (the buttons stay, the texts scroll) */
@@ -302,6 +343,11 @@ body {
   text-shadow: 4px 4px 0 #1d3b6b; text-wrap: balance;
 }
 #banner p { white-space: pre-line; margin: 14px 0 0; font-size: clamp(9px, 2.6vw, 13px); line-height: 1.8; text-shadow: 2px 2px 0 #000; }
+/* a note on the title (a prize, the come-back bonus): smaller, on a panel, under the menu */
+#banner.note { top: auto; bottom: 30%; }   /* of the field: between the menu and the join cards on a phone */
+#banner.note h2, #banner.note p { display: inline-block; margin: 0; padding: 8px 14px; border-radius: 10px; background: var(--panel); border: 2px solid var(--panel-edge); }
+#banner.note h2 { font-size: clamp(14px, 4.5vw, 24px); text-shadow: 2px 2px 0 #1d3b6b; }
+#banner.note p { margin-top: 6px; }
 #logo { position: absolute; z-index: 4; left: 16px; right: 16px; top: calc(var(--marquee-h, 74px) + 18px); text-align: center; pointer-events: none; }
 #logo h1 {
   margin: 0; font-weight: 400;
@@ -495,7 +541,10 @@ html:lang(de) .tap { font-size: clamp(8px, 2.2vw, 13px); }
   #cards { top: calc(var(--marquee-h, 48px) + 4px); transform: none; }
   #logo { display: none; }
   #menu { top: calc(var(--marquee-h, 48px) + 4px); left: 140px; right: 140px; }
-  .modebox { gap: 1px; }
+  /* three rows of buttons at most: the mission chip shares the first row with the mode button, the note goes */
+  .modebox { flex-basis: auto; }
+  #modeNote { display: none; }
+  #missionChip { order: -1; }
   #missionChip { flex-direction: column; line-height: 1.5; padding-block: 4px; }
   #missionChip .dot { display: none; }
   .score { font-size: 16px; }

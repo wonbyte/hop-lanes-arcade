@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { decodeReplay, encodeReplay } from '../js/replay.js';
 import { RULES } from '../js/rules.js';
-import { DAILY, DAILY_COUNT, advanceMissions, dailyDoneText, dailyMissions, doneDaily, doneMissions, emptyStats, MISSIONS, missionsText, parseDailyDone, parseMissions } from '../js/missions.js';
+import { DAILY, DAILY_COUNT, advanceMissions, comebackBonus, dailyDoneText, dailyMissions, doneDaily, doneMissions, emptyStats, MISSIONS, missionsText, parseDailyDone, parseMissions } from '../js/missions.js';
 
 // storage.js touches the page at import (the coin counter, the marquee, storage events): stub just enough of a browser
 const el = () => ({ textContent: '', hidden: false });
@@ -237,4 +237,11 @@ test('the bench replay (docs/budgets.md) plays to row 160 on seed 21, and the do
   assert.equal(end.score, 160);
   const doc = fs.readFileSync(new URL('../docs/budgets.md', import.meta.url), 'utf8');
   assert.ok(doc.includes('#debug-bench-replay-' + code + '\n'), 'docs/budgets.md links the current bench replay');
+});
+
+test('the come-back bonus grows with the days in a row and tops out at 30', () => {
+  assert.deepEqual([1, 2, 3, 4, 5, 6, 30].map(comebackBonus), [10, 15, 20, 25, 30, 30, 30]);
+  assert.equal(comebackBonus(0), 10, 'a bad count pays the first day');
+  assert.equal(comebackBonus(NaN), 10);
+  assert.equal(comebackBonus(2.7), 15, 'whole days');
 });

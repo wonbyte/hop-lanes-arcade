@@ -37,6 +37,9 @@ const INITIALS_KEY = 'hoplanes.initials';   // the 3 letters in front of the ani
 const MCOINS_KEY = 'hoplanes.mcoins';   // 'i:n,...': the coins each active coin mission has collected in earlier runs
 const MDONE_KEY = 'hoplanes.mdone';     // 'YYYY-MM-DD|n': missions done today (the title's mission chip)
 const TIPS_KEY = 'hoplanes.tips';       // JSON { cause: n }: how many results have shown the tip for that cause
+const PAINTS_KEY = 'hoplanes.paints';   // 'frog:gold,fox:sky': the paint jobs bought (paint.js)
+const PAINTED_KEY = 'hoplanes.painted'; // 'frog=gold,fox=classic': the paint each animal wears
+const VISIT_KEY = 'hoplanes.visit';     // 'YYYY-MM-DD|n': the last day the come-back bonus was paid and the days in a row
 // ---------- the local top 10 (pure: tests/replay.test.mjs) ----------
 const LOCAL_MAX = 10, LOCAL_MAX_SCORE = 100000;   // a tampered list can not freeze the board with absurd scores
 const cleanInitials = s => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 3);
@@ -63,6 +66,21 @@ function localTop(list, entry) {
 function loadText(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
 G.bank = load(COINS_KEY);   // coins collected over all games
 const owned = new Set(loadText(OWNED_KEY).split(',').filter(Boolean));
+// ---------- paint jobs (models.js PAINTS): bought once per animal, one worn per animal ----------
+const paints = new Set(loadText(PAINTS_KEY).split(',').filter(Boolean));   // 'animal:paint'
+const painted = new Map();   // animal -> the paint it wears
+for (const part of loadText(PAINTED_KEY).split(',')) { const [a, k] = part.split('='); if (a && k) painted.set(a, k); }
+const hasPaint = (animal, paint) => paint === 'classic' || paints.has(animal + ':' + paint);
+// the paint an animal wears: a bought one, or classic
+const paintOf = animal => { const k = painted.get(animal) || 'classic'; return hasPaint(animal, k) ? k : 'classic'; };
+function wearPaint(animal, paint) {
+  painted.set(animal, paint);
+  save(PAINTED_KEY, [...painted].map(([a, k]) => a + '=' + k).join(','));
+}
+function addPaint(animal, paint) {
+  paints.add(animal + ':' + paint);
+  save(PAINTS_KEY, [...paints].join(','));
+}
 // later = true during play: the count shows at once but is written to storage at game over (flushBank),
 // so a run of coins is not a run of synchronous storage writes
 let bankDirty = false;
@@ -114,4 +132,4 @@ function checkDay() {
 }
 setInterval(checkDay, 60000);
 
-export { BEST_KEY, LOOK_KEY, DAILY_KEY, DAILYDONE_KEY, DAY_PREFIX, HANDICAP_KEY, HINT_KEY, HOWTO_KEY, INITIALS_KEY, LOCAL_KEY, MCOINS_KEY, MDONE_KEY, STREAK_KEY, TIPS_KEY, INSTALL_KEY, MISSIONS_KEY, MOTION_KEY, ROOM_KEY, MODE_KEY, MUTE_KEY, OWNED_KEY, PICK_KEY, cleanInitials, dailySeed, dayKey, deviceTag, entersLocal, flushBank, load, loadText, localTop, owned, parseLocal, refreshBests, save, savedMode, setBank, today };
+export { BEST_KEY, LOOK_KEY, DAILY_KEY, DAILYDONE_KEY, DAY_PREFIX, HANDICAP_KEY, HINT_KEY, HOWTO_KEY, INITIALS_KEY, LOCAL_KEY, MCOINS_KEY, MDONE_KEY, STREAK_KEY, TIPS_KEY, VISIT_KEY, INSTALL_KEY, MISSIONS_KEY, MOTION_KEY, ROOM_KEY, MODE_KEY, MUTE_KEY, OWNED_KEY, PICK_KEY, addPaint, cleanInitials, dailySeed, dayKey, deviceTag, entersLocal, flushBank, hasPaint, load, loadText, localTop, owned, paintOf, parseLocal, refreshBests, save, savedMode, setBank, today, wearPaint };

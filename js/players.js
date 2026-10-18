@@ -6,7 +6,7 @@ import { feedReplay, makeRules, resetPlayer } from './sim.js';
 import { buzz } from './device.js';
 import { ONE, camera, reduceMotion, scene, stage, viewSize } from './gfx.js';
 import { CHARACTERS, COLORS, eagleBoxes, makeCharacter } from './models.js';
-import { PICK_KEY, loadText, setBank } from './storage.js';
+import { PICK_KEY, loadText, paintOf, setBank } from './storage.js';
 import { cachedGeo, voxelMesh } from './voxel.js';
 import { Inst, blockColumn, dropSpinner, fxRand, lanes, unblockColumn } from './world.js';
 
@@ -36,7 +36,7 @@ const blobMat = new THREE.MeshLambertMaterial({ color: 0x000000, transparent: tr
 function spawn(p) {
   despawn(p);
   const ch = charOf(p), hat = hatFor(G.bestAll);
-  p.mesh = makeCharacter(ch.boxes, ch.key, hat ? hat.key : '');
+  p.mesh = makeCharacter(ch.boxes, ch.key, hat ? hat.key : '', paintOf(ch.key));
   scene.add(p.mesh);
   p.blob = new THREE.Mesh(blobGeo, blobMat);
   p.blob.visible = false;
@@ -164,7 +164,7 @@ function comeBack(p, eagle) {
   if (eagle && eagle.mesh) scene.remove(eagle.mesh);
   if (p.mesh) scene.remove(p.mesh);
   const ch = charOf(p), hat = hatFor(G.bestAll);
-  p.mesh = makeCharacter(ch.boxes, ch.key, hat ? hat.key : '');
+  p.mesh = makeCharacter(ch.boxes, ch.key, hat ? hat.key : '', paintOf(ch.key));
   p.mesh.position.set(p.x, 0, -p.row);
   p.mesh.userData.body.scale.set(1.3, 0.62, 1.3);   // lands with a squash; stand() eases it back
   scene.add(p.mesh);

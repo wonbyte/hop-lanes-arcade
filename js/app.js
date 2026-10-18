@@ -6,13 +6,14 @@ import { camLead, creepCamera } from './sim.js';
 import { ghostInfo, ghostMat, ghostWarmGeo, placeGhost, primeGhost, stepGhost } from './ghost.js';
 import { CHARACTERS } from './models.js';
 import { CAM_OFF, SUN_OFF, camera, focus, getPixelRatio, holdFrameWatch, reduceMotion, renderer, scene, setNight, setZoom, shadowCadence, sun, touchQuery, viewInfo, viewSize, watchFrameTime } from './gfx.js';
-import { announceFrame } from './panels.js';   // also sets up the settings, pause and top-10 panels
+import { announceFrame } from './panels.js';   // also sets up the settings, pause, mode and top-10 panels
+import './paint.js';   // the paint shop dialog (side effects only)
 import { keepAwake } from './device.js';
 import { flushBank } from './storage.js';
 import { applyMoves, blobGeo, blobMat, bubbleGeo, bubbleMat, charOf, fx, giveShield, kill, placeBubbles, players, dressPlayer, updateParts, updatePlayer } from './players.js';
 import { canRetry, join, resultsEl, revealResults, setBanner, setModeLabel, showHowto, startPlay, toAttract } from './screens.js';
-import { HINT_KEY, HOWTO_KEY, dailySeed, loadText, owned, save } from './storage.js';
-import { biomeAt, biomeIndex, ensureLanes, getSeed, laneCoins, laneKinds, lanes, showLane, spinAll, updateFarLanes, updateLanes, weatherAt } from './world.js';
+import { HINT_KEY, HOWTO_KEY, dailySeed, loadText, owned, paintOf, save } from './storage.js';
+import { biomeAt, biomeIndex, ensureLanes, getSeed, laneCoins, laneKinds, lanes, ribbonRow, showLane, spinAll, updateFarLanes, updateLanes, weatherAt } from './world.js';
 import { applyLang, t } from './i18n.js';
 
 // The game loop and boot. main.js loads this once Three.js is present.
@@ -255,6 +256,8 @@ if (DEBUG) {
     get bank() { return G.bank; },
     get muted() { return isMuted(); },
     get owned() { return [...owned]; },
+    paintOf,   // the paint an animal wears (the paint shop test)
+    get ribbonRow() { return ribbonRow(); },   // the row the BEST ribbon lies on in this world (-1: none)
     get mode() { return G.mode; },
     get dailySeed() { return dailySeed(); },
     get run() { return G.run; },
