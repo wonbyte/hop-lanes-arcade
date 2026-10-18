@@ -1150,23 +1150,26 @@ test('15a. the paint shop: a paint is bought once per animal with coins, worn at
   } finally { await context.close(); }
 });
 
+// the ribbon's row as built: on a wide screen the title builds rows to about 11 at once and the rest one a frame, so the
+// rows to 30 are built first (laneKinds builds the missing ones), whatever the frame timing (CI once read it too early)
+const ribbonBuilt = page => hop(page, () => { window.hopLanes.laneKinds(); return window.hopLanes.ribbonRow; });
 test('15b. the BEST ribbon lies on the row of the all-time best (10 or more), in every world built', async () => {
   const { context, page, errors } = await open(INDEX, { storage: { 'hoplanes.best': '15' } });
   try {
     await waitState(page, 'attract');
-    assert.equal(await hop(page, () => window.hopLanes.ribbonRow), 15);
+    assert.equal(await ribbonBuilt(page), 15);
     await page.keyboard.press('KeyW');
     await waitState(page, 'play');
-    assert.equal(await hop(page, () => window.hopLanes.ribbonRow), 15, 'the game world has it too');
+    assert.equal(await ribbonBuilt(page), 15, 'the game world has it too');
     await page.reload();
     await waitState(page, 'attract');
-    assert.equal(await hop(page, () => window.hopLanes.ribbonRow), 15);
+    assert.equal(await ribbonBuilt(page), 15);
     assert.deepEqual(errors, []);
   } finally { await context.close(); }
   const low = await open(INDEX, { storage: { 'hoplanes.best': '7' } });
   try {
     await waitState(low.page, 'attract');
-    assert.equal(await hop(low.page, () => window.hopLanes.ribbonRow), -1, 'a best under 10 gets no ribbon');
+    assert.equal(await ribbonBuilt(low.page), -1, 'a best under 10 gets no ribbon');
     assert.deepEqual(low.errors, []);
   } finally { await low.context.close(); }
 });
