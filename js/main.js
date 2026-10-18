@@ -7,6 +7,7 @@ import { fail } from './core.js';
 // with a fresh URL (no cached copy), before giving up, and when that fails too, say why (the load failed, or the
 // script ran and threw), so a report says what happened.
 function loadThreeAgain() {
+  /** @type {HTMLScriptElement | null} */
   const tag = document.querySelector('script[src*="three.min.js"]');
   if (!tag) return Promise.reject(new Error('no script tag'));   // the offline build inlines Three.js: nothing to fetch
   const url = new URL(tag.src, document.baseURI);
