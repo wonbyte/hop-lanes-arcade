@@ -99,9 +99,11 @@ async function fetchJson(url, ms, init = {}) {
 
 // show one clear message and hide the controls that would do nothing
 function fail(why) {
-  for (const id of ['cards', 'deck', 'logo']) document.getElementById(id).hidden = true;
+  // the title menu too: the message sat on top of its buttons and neither could be read
+  for (const id of ['cards', 'deck', 'logo', 'menu']) { const el = document.getElementById(id); if (el) el.hidden = true; }
   const b = document.getElementById('banner');
   b.hidden = false;
+  b.classList.add('fail');
   b.querySelector('h2').textContent = 'CAN NOT LOAD';
   b.querySelector('p').textContent = why;
 }

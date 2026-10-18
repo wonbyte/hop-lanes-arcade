@@ -29,6 +29,32 @@ test('1. loads with no page errors and reaches attract', async () => {
   } finally { await context.close(); }
 });
 
+test('1b. a failed download of Three.js is tried once more; when that fails too, the message says why', async () => {
+  // a phone on a mobile network lost three.min.js once: the page must fetch it again and start (main.js loadThreeAgain)
+  for (const [blocked, starts] of [[1, true], [99, false]]) {
+    const context = await browser.newContext();
+    await context.addInitScript(() => { try { localStorage.setItem('hoplanes.howto', '1'); } catch (e) {} });
+    let n = 0;
+    await context.route(/three\.min\.js/, r => (n++ < blocked ? r.abort() : r.continue()));
+    const page = await context.newPage();
+    const errors = [];
+    page.on('pageerror', e => errors.push(String(e)));
+    try {
+      await page.goto(INDEX + '#debug');
+      if (starts) {
+        await waitState(page, 'attract');
+        assert.equal(n, 2, 'the library was fetched a second time');
+      } else {
+        await page.locator('#banner').waitFor({ state: 'visible', timeout: T });
+        assert.match(await page.locator('#banner p').textContent(), /did not load \(the download failed\)/);
+        assert.equal(await page.locator('#menu').isHidden(), true, 'the menu hides: the message is not drawn over it');
+        assert.equal(n, 2, 'one retry, no loop');
+      }
+      assert.deepEqual(errors, []);
+    } finally { await context.close(); }
+  }
+});
+
 test('2. keyboard: join P1, hop forward', async () => {
   const { context, page, errors } = await open({}, INDEX + '#debug');
   try {
