@@ -129,6 +129,8 @@ and every scanner's result.
 - Two modules never import each other (`npm run deps`): pass a hook instead (players.js `onGameOver`, set by screens.js).
 - Every GitHub Action is pinned to a full commit SHA (zizmor checks it); a `${{ }}` value reaches a `run:` line only
   through `env:`.
+- Every job runs on `ubuntu-24.04`, not `ubuntu-latest` (that label moved to Ubuntu 26 on 19 Oct 2026): move to a new
+  Ubuntu in its own commit, and compare the device bench before and after.
 - Characters are original (Frog, Fox, Bunny, Cat, Robot). Do not copy characters from existing games.
 - Keep the game playable from `hop-lanes-standalone.html` with no network: the build strips every outbound link and tag.
 
