@@ -1,5 +1,5 @@
 import { sfx, stopPlayLoop } from './audio.js';
-import { $, BEST_MIN, FIXED_SEED, G, SCORES_TOKEN, SCORES_URL, fetchJson } from './core.js';
+import { $, BEST_MIN, FIXED_SEED, G, SCORES_TOKEN, SCORES_URL, TUTORIAL_SEED, fetchJson } from './core.js';
 import { t } from './i18n.js';
 import { encodeReplay } from './replay.js';
 import { DAY_PREFIX, dayBefore, hatFor, streakAfter } from './rules.js';
@@ -7,7 +7,7 @@ import { runOver, topScore, winnerOf } from './sim.js';
 import { keepAwake } from './device.js';
 import { reduceMotion, touchQuery } from './gfx.js';
 import { charOf, onGameOver, players } from './players.js';
-import { BEST_KEY, DAILY_KEY, INITIALS_KEY, LOCAL_KEY, STREAK_KEY, TIPS_KEY, cleanInitials, deviceTag, entersLocal, flushBank, load, loadText, localTop, parseLocal, refreshBests, save } from './storage.js';
+import { BEST_KEY, DAILY_KEY, HINT_KEY, INITIALS_KEY, LOCAL_KEY, STREAK_KEY, TIPS_KEY, cleanInitials, deviceTag, entersLocal, flushBank, load, loadText, localTop, parseLocal, refreshBests, save } from './storage.js';
 import { getSeed } from './world.js';
 import { saveGhost } from './ghost.js';
 import { missionRows, payDaily, payMissions } from './missions-ui.js';
@@ -123,6 +123,7 @@ function endPlay() {
   flushBank();
   stopPlayLoop();
   G.hint = false;
+  if (!G.replay && getSeed() === TUTORIAL_SEED) save(HINT_KEY, 1);   // the tutorial world is one game, wherever it ended
   setAppState(false, true, false);
   keepAwake(false);
   setBanner('');
@@ -252,7 +253,7 @@ function checkOver() {
   const hat = hatFor(G.bestAll);
   if (!replay && hat && hat !== hatBefore) note = t('NEW HAT: {name}!', { name: t(hat.name) }) + ' ' + note;
   $('world').hidden = true;
-  if (!replay && canPost()) postScore(charOf(scorer).name + ' ' + deviceTag, top, code || runCode(), overN);   // the server keeps one entry per name
+  if (!replay && top > 0 && canPost()) postScore(charOf(scorer).name + ' ' + deviceTag, top, code || runCode(), overN);   // the server keeps one entry per name
   showResults(note, info);
 }
 

@@ -8,3 +8,4 @@ _site/
 server/scores.days/
 server/scores.json
 server/*.tmp
+.serena/

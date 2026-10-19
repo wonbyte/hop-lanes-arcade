@@ -346,6 +346,8 @@ test('6b. a finished game posts its score (today, mode) and the world best shows
     await waitState(page, 'attract');
     await page.keyboard.press('KeyW');
     await waitState(page, 'play');
+    await page.keyboard.press('KeyW');   // a run of 0 is not posted
+    await page.waitForFunction(() => window.hopLanes.players[0].row >= 1, null, { timeout: T });
     await waitState(page, 'over', 90000);
     await page.locator('#world').waitFor({ state: 'visible', timeout: T });
     const score = await hop(page, () => window.hopLanes.players[0].score);
@@ -582,6 +584,7 @@ test('8g. the first classic game is the tutorial world with guided hints; game o
     await toTitle(page);
     await waitState(page, 'attract', T);
     assert.equal(await hop(page, () => window.hopLanes.zoom), 1, 'the title view is back to normal');
+    assert.notEqual(await hop(page, () => window.hopLanes.seed), 21216, 'one game of the tutorial world, even one that ended at row 3');
     assert.deepEqual(errors, []);
   } finally { await context.close(); }
 });
