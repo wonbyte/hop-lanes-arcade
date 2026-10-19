@@ -42,7 +42,7 @@ game runs), while everything else grew 0.6%. A leak shows in the game's objects,
   (`--android`), and writes the raw Chrome trace, a Spector.js capture of one play frame, heap snapshots and a JSON
   summary to `bench/`.
 - Any browser, iPhone included: open the bench link below on the live site. The game plays the bench replay again and
-  again and shows the p50 / p95 / worst frame times of the last run (and the p95 of the first) in the bottom corner.
+  again and shows the p50 / p95 / worst frame times of the last run (the row of the worst frame, the count over 100 ms, and the p95 of the first run) in the bottom corner.
   Safari Web Inspector (Timelines) records the raw trace. `node tools/device-bench.mjs --print-url` prints the link.
 
 The bench link (`tests/replay.test.mjs` checks that it is the bench replay):
@@ -69,6 +69,18 @@ node tools/device-bench.mjs --android --soak 30 --out bench-android
 iPhone SE 2 and the laptop: open the bench link above in Safari or Chrome, keep the screen on, and wait. Read the line in
 the bottom corner after the first run (about 70 s) and after 30 minutes. For the raw trace on the iPhone: connect it to
 a Mac, Safari > Develop > the iPhone > Timelines, record during a run.
+
+## Measured on real devices
+
+| Date | Device | Browser | Run | p50 | p95 | Worst | Verdict |
+|---|---|---|---|---|---|---|---|
+| 18 Oct 2026 | iPhone 12 Pro (A14, above the floor), pixel ratio 2, 60 Hz | Safari | 1 | 17 ms | 17 ms | 144 ms | p95 passes both budgets; the worst frame misses the 100 ms budget |
+
+- Safari rounds frame times to whole milliseconds, so a steady 60 frames a second reads 16 or 17 ms: a p95 of 17 ms is
+  60 frames a second, not a miss of the mid budget (16.7 ms).
+- The 144 ms frame was in run 1. The bench line now also shows the row of the worst frame and the count of frames over
+  100 ms: a hitch only in run 1 is a first-time cost (a model or shader built on first use); one in every run is a real
+  cost at that row.
 
 ## The headless proxy
 

@@ -313,7 +313,7 @@ body {
 @keyframes hintbob { from { transform: translate(-50%, -100%); } to { transform: translate(-50%, calc(-100% - 8px)); } }
 @media (prefers-reduced-motion: reduce) { #hint span { animation: none; } }
 #boardList li .watch { font-family: inherit; font-size: 9px; min-width: 44px; min-height: 36px; padding: 0 8px; border-radius: 8px; background: var(--gold); color: #10131c; }
-#fps { position: absolute; z-index: 9; right: 6px; bottom: 6px; padding: 3px 6px; background: rgba(0,0,0,.6); color: #9f9; font: 10px/1.4 monospace; pointer-events: none; }
+#fps { position: absolute; z-index: 9; right: 6px; bottom: 6px; padding: 3px 6px; white-space: pre-line; text-align: right; background: rgba(0,0,0,.6); color: #9f9; font: 10px/1.4 monospace; pointer-events: none; }
 #replayTag {
   position: absolute; z-index: 5; left: 50%; transform: translateX(-50%); top: calc(var(--marquee-h, 74px) + 8px);
   padding: 4px 10px; border-radius: 8px; background: rgba(216,58,58,.85); color: #fff; font-family: var(--font-pixel); font-size: 9px; letter-spacing: .1em;

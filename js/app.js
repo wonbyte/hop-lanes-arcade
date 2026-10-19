@@ -244,8 +244,11 @@ function benchStep() {
   benchOver = true;
   benchRuns.push({ ...frameSummary(), at: Math.round(performance.now() / 1000) });
   const first = benchRuns[0], last = benchRuns[benchRuns.length - 1];
-  fpsEl.textContent = 'BENCH RUN ' + benchRuns.length + ' \u00b7 P50 ' + last.p50 + ' \u00b7 P95 ' + last.p95 + ' \u00b7 WORST ' + last.worst + ' MS'
-    + (benchRuns.length > 1 ? ' \u00b7 P95 RUN 1 ' + first.p95 : '');
+  // the row of the worst frame and the count over 100 ms: a phone shows only this line (no trace), so it says where a
+  // hitch was (a first-time model or shader shows at one row in run 1 only; a row in every run is a real cost there)
+  const worstRow = last.slow.length ? last.slow[0].row : 0;
+  fpsEl.textContent = 'BENCH RUN ' + benchRuns.length + ' \u00b7 P50 ' + last.p50 + ' \u00b7 P95 ' + last.p95 + ' \u00b7 WORST ' + last.worst
+    + ' MS\nWORST AT ROW ' + worstRow + ' \u00b7 OVER 100 MS: ' + last.over100 + (benchRuns.length > 1 ? ' \u00b7 P95 RUN 1 ' + first.p95 : '');
   playReplay(REPLAY_CODE);
 }
 if (DEBUG) {
