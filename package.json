@@ -6,7 +6,8 @@
   "description": "Hop Lanes arcade game",
   "scripts": {
     "check": "for f in js/*.js server/*.mjs tests/*.mjs; do node --check \"$f\" || exit 1; done",
-    "test": "npm run check && npm run lint && node tests/rules.test.mjs && node tests/replay.test.mjs && node tests/sim.test.mjs && node tests/gen.test.mjs && node tests/property.test.mjs && node tests/smoke.test.mjs && node tests/layout.test.mjs && node tests/ui.test.mjs && node tests/scores-server.test.mjs",
+    "test": "npm run quick && node tests/rules.test.mjs && node tests/replay.test.mjs && node tests/sim.test.mjs && node tests/gen.test.mjs && node tests/property.test.mjs && node tests/smoke.test.mjs && node tests/layout.test.mjs && node tests/ui.test.mjs && node tests/scores-server.test.mjs",
+    "quick": "npm run check && npm run lint && npm run typecheck && npm run deps && npm run dupes",
     "build": "./tools/build-standalone.sh",
     "scores": "node server/scores.mjs",
     "icons": "python3 tools/make-icons.py",

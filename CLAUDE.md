@@ -8,7 +8,8 @@ except the small offline build script. Keep it that way.
 | Command | What it does |
 |---|---|
 | `npm install` | Installs Playwright, Three.js and the check tools (test, build and CI only; the game itself has no dependencies). Node 22 |
-| `npm test` | Syntax check, lint, the pure tests (`rules`, `replay`, `sim`, `gen`, instant), the property tests (`tests/property.test.mjs`: 2000 random replays through the codec and `simulate()`, then 3 random runs in the real page checked against `simulate()`), then the browser tests `smoke`, `layout`, `ui` and `scores-server` (~8 min) |
+| `npm run quick` | The fast checks (about 10 s): syntax check, lint, typecheck, deps, dupes. `npm test` runs it first, so a type error fails in seconds, not in CI |
+| `npm test` | `npm run quick`, then the pure tests (`rules`, `replay`, `sim`, `gen`, instant), the property tests (`tests/property.test.mjs`: 2000 random replays through the codec and `simulate()`, then 3 random runs in the real page checked against `simulate()`), then the browser tests `smoke`, `layout`, `ui` and `scores-server` (~8 min) |
 | `npm run lint` | ESLint (recommended + security plugin, no unused variables, no warnings; in `js/` and `server/` a function has at most 20 paths, nesting 4, 5 parameters) and `tools/check-exports.mjs` (no export that no other file imports by name: a word in a comment does not count) |
 | `npm run typecheck` | TypeScript checks the JavaScript with no build (`tsconfig.json`: the game, DOM types, `THREE` from `@types/three` via `types/globals.d.ts`; `tsconfig.server.json`: the server). Zero errors |
 | `npm run deps` | dependency-cruiser (`.dependency-cruiser.cjs`): no import cycle, rules/gen/sim/replay/missions import only each other, the server imports only those, no orphan module |
@@ -27,7 +28,7 @@ except the small offline build script. Keep it that way.
 | `npm run icons` | Regenerates `icons/` from the frog pixel art (needs Pillow) |
 | `npm run scores` | Starts the optional score server (`server/`) |
 
-Run `npm test` and `npm run build` before every commit (CI also lints, type-checks, scans, fuzzes and runs the bench). Commit the rebuilt `hop-lanes-standalone.html` with the change.
+Run `npm test` and `npm run build` before every commit (`npm test` also lints, type-checks and checks the module graph and copies; CI also scans, fuzzes and runs the bench). Commit the rebuilt `hop-lanes-standalone.html` with the change.
 
 `docs/budgets.md` holds the performance budgets per device and `docs/threat-model.md` every door with its accepted risk: a
 budget a device misses, or a risk not written there, is a bug. `docs/evidence.md` holds the measured before/after numbers
