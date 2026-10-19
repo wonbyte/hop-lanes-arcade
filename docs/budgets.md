@@ -75,11 +75,14 @@ a Mac, Safari > Develop > the iPhone > Timelines, record during a run.
 | Date | Device | Browser | Run | p50 | p95 | Worst | Verdict |
 |---|---|---|---|---|---|---|---|
 | 18 Oct 2026 | iPhone 12 Pro (A14, above the floor), pixel ratio 2, 60 Hz | Safari | 1 | 17 ms | 17 ms | 144 ms | p95 passes both budgets; the worst frame misses the 100 ms budget |
+| 18 Oct 2026 | iPhone 12 Pro, the same, after a fresh reload | Safari | 1 | 17 ms | 17 ms | 23 ms (at the first play frame), 0 over 100 ms | passes every frame budget |
 
 - Safari rounds frame times to whole milliseconds, so a steady 60 frames a second reads 16 or 17 ms: a p95 of 17 ms is
   60 frames a second, not a miss of the mid budget (16.7 ms).
-- The 144 ms frame was in run 1. The bench line now also shows the row of the worst frame and the count of frames over
-  100 ms: a hitch only in run 1 is a first-time cost (a model or shader built on first use); one in every run is a real
+- The 144 ms frame did not come back: a fresh run 1 had its worst frame at 23 ms and none over 100 ms. Its cause is not known;
+  measure again if a stutter is seen in play.
+- The bench line now also shows the row of the worst frame and the count of frames over
+  100 ms. A hitch only in run 1 is a first-time cost (a model or shader built on first use); one in every run is a real
   cost at that row.
 
 ## The headless proxy
